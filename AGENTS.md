@@ -2,7 +2,6 @@
 
 Read the `docs/` folder before implementing anything in this repository.
 The documentation in `docs/` is the only source of truth for the project.
-Do not treat the PDF report in the repository root as authoritative.
 
 ## Required Reading Order
 
