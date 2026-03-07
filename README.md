@@ -4,8 +4,19 @@ Systematic crypto spot trading bot for Kraken spot markets with a CLI-first oper
 
 ## Status
 
-The repository is in Phase 1 of the roadmap.
-The current implementation provides the Python project skeleton, configuration foundation, logging foundation, test tooling, Docker support, and CI scaffolding that later phases will build on.
+The repository is in Phase 2 of the roadmap.
+The current implementation provides:
+
+- the Python project skeleton and toolchain foundation
+- typed configuration loading from YAML and `.env`
+- structured logging
+- CLI scaffolding and runtime bootstrap commands
+- Docker and GitHub Actions CI validation
+- raw Kraken trade-data ingestion for the fixed V1 universe
+- canonical 1-hour and 1-day candle generation
+- canonical data integrity reports
+- source coverage reporting
+- incremental Kraken sync with Binance and Coinbase fallback support when needed
 
 ## Quick Start
 
@@ -14,6 +25,14 @@ The current implementation provides the Python project skeleton, configuration f
 3. Copy `.env.example` to `.env` and adjust values as needed.
 4. Review `config/settings.yaml`.
 5. Run the CLI: `uv run bot --help`
+
+Useful Phase 2 data commands:
+
+- `uv run bot data source`
+- `uv run bot data import`
+- `uv run bot data check`
+- `uv run bot data sync`
+- `uv run bot data prune-raw`
 
 ## Docker
 
