@@ -7,13 +7,17 @@ import typer
 
 from spotbot import __version__
 from spotbot.config import load_config
+from spotbot.data.service import DataService
 from spotbot.logging_config import configure_logging
 from spotbot.runtime import RuntimeService
 
 app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
+data_app = typer.Typer(help="Import, inspect, and validate local market data.")
+ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
+app.add_typer(data_app, name="data")
 
 
 @app.command("version")
@@ -96,3 +100,29 @@ def sanitized_config(config: Any) -> dict[str, Any]:
         "smtp_password": bool(config.secrets.smtp_password),
     }
     return payload
+
+
+@data_app.command("import")
+def data_import(assets: list[str] | None = ASSETS_OPTION) -> None:
+    """Import raw Kraken trade files into canonical candles."""
+    config = load_config()
+    service = DataService(config)
+    summary = service.import_kraken_raw(assets=tuple(assets) if assets else None)
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@data_app.command("check")
+def data_check(assets: list[str] | None = ASSETS_OPTION) -> None:
+    """Validate canonical Kraken candles and emit an integrity report."""
+    config = load_config()
+    service = DataService(config)
+    summary = service.check_canonical(assets=tuple(assets) if assets else None)
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@data_app.command("source")
+def data_source() -> None:
+    """Show raw and canonical source coverage for the fixed-universe assets."""
+    config = load_config()
+    service = DataService(config)
+    typer.echo(json.dumps(service.source_summary(), indent=2, sort_keys=True))

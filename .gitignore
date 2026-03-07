@@ -193,9 +193,9 @@ cython_debug/
 **/.DS_Store
 
 # Local project data and runtime artifacts
-data/
-artifacts/
-runtime/
+/data/
+/artifacts/
+/runtime/
 
 # Ruff stuff:
 .ruff_cache/

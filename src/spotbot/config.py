@@ -41,6 +41,15 @@ class ExchangeSettings(BaseModel):
     supplementary_exchanges: tuple[str, ...] = ("binance", "coinbase")
 
 
+class DataSettings(BaseModel):
+    """Data ingestion and storage settings."""
+
+    raw_kraken_dir: Path = Path("data/kraken_data")
+    canonical_dir: Path = Path("data/canonical")
+    reports_dir: Path = Path("artifacts/reports/data")
+    intervals: tuple[Literal["1h", "1d"], ...] = ("1h", "1d")
+
+
 class StrategySettings(BaseModel):
     """Strategy-level settings that are fixed in V1."""
 
@@ -88,6 +97,7 @@ class AppConfig(BaseModel):
     app: AppSettings
     runtime: RuntimeSettings
     exchange: ExchangeSettings
+    data: DataSettings = Field(default_factory=DataSettings)
     strategy: StrategySettings
     alerts: AlertSettings
     paths: PathsSettings
@@ -112,6 +122,15 @@ class AppConfig(BaseModel):
             artifacts_dir=(self.project_root / self.paths.artifacts_dir).resolve(),
             logs_dir=(self.project_root / self.paths.logs_dir).resolve(),
             state_dir=(self.project_root / self.paths.state_dir).resolve(),
+        )
+
+    def resolved_data_settings(self) -> DataSettings:
+        """Return absolute data-related paths resolved against the project root."""
+        return DataSettings(
+            raw_kraken_dir=(self.project_root / self.data.raw_kraken_dir).resolve(),
+            canonical_dir=(self.project_root / self.data.canonical_dir).resolve(),
+            reports_dir=(self.project_root / self.data.reports_dir).resolve(),
+            intervals=self.data.intervals,
         )
 
 
