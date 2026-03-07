@@ -27,6 +27,7 @@ def apply_decision(
 ) -> tuple[PortfolioState, list[OrderIntent], list[FillEvent], float, float]:
     """Apply a target-weight decision through the simulated execution path."""
     fee_rate = settings.fee_rate_bps / 10_000
+    slippage_rate = settings.slippage_bps / 10_000
     portfolio = replace(
         portfolio,
         last_timestamp=decision.timestamp,
@@ -47,9 +48,9 @@ def apply_decision(
     for intent in intents:
         bar = execution_bars[intent.asset]
         if intent.side == "sell":
-            portfolio, fill = _apply_sell(portfolio, intent, bar, fee_rate)
+            portfolio, fill = _apply_sell(portfolio, intent, bar, fee_rate, slippage_rate, settings)
         else:
-            portfolio, fill = _apply_buy(portfolio, intent, bar, fee_rate)
+            portfolio, fill = _apply_buy(portfolio, intent, bar, fee_rate, slippage_rate, settings)
         if fill is not None:
             fills.append(fill)
 
@@ -116,18 +117,29 @@ def _apply_sell(
     intent: OrderIntent,
     bar: Candle,
     fee_rate: float,
+    slippage_rate: float,
+    settings: BacktestSettings,
 ) -> tuple[PortfolioState, FillEvent | None]:
     position = portfolio.positions.get(intent.asset)
     if position is None or position.quantity <= 0:
         return portfolio, None
 
     quantity = min(position.quantity, intent.quantity)
-    fill_price = max(bar.low, bar.open * (1 - fee_rate - 0.001))
+    fill_price = max(bar.low, bar.open * (1 - slippage_rate))
+
+    remaining_quantity = position.quantity - quantity
+    remaining_notional = remaining_quantity * fill_price
+    if 0 < remaining_notional < settings.min_order_notional_usd:
+        quantity = position.quantity
+        remaining_quantity = 0.0
+
     gross_notional = quantity * fill_price
+    if gross_notional < settings.min_order_notional_usd:
+        return portfolio, None
+
     fee_paid = gross_notional * fee_rate
     realized_pnl = (fill_price - position.average_entry_price) * quantity - fee_paid
 
-    remaining_quantity = position.quantity - quantity
     new_positions = dict(portfolio.positions)
     if remaining_quantity <= 0:
         new_positions.pop(intent.asset, None)
@@ -164,15 +176,20 @@ def _apply_buy(
     intent: OrderIntent,
     bar: Candle,
     fee_rate: float,
+    slippage_rate: float,
+    settings: BacktestSettings,
 ) -> tuple[PortfolioState, FillEvent | None]:
-    fill_price = min(bar.high, bar.open * (1 + fee_rate + 0.001))
+    fill_price = min(bar.high, bar.open * (1 + slippage_rate))
     affordable_quantity = portfolio.cash_usd / (fill_price * (1 + fee_rate))
-    quantity = min(intent.quantity, affordable_quantity)
+    quantity = _round_quantity(
+        min(intent.quantity, affordable_quantity),
+        settings.quantity_precision,
+    )
     if quantity <= 0:
         return portfolio, None
 
     gross_notional = quantity * fill_price
-    if gross_notional < 0:
+    if gross_notional < settings.min_order_notional_usd:
         return portfolio, None
     fee_paid = gross_notional * fee_rate
     total_cost = gross_notional + fee_paid

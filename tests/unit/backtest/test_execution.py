@@ -81,3 +81,47 @@ def test_apply_decision_sells_existing_position() -> None:
     assert fills[0].side == "sell"
     assert updated.cash_usd > 100.0
     assert "BTC" not in updated.positions
+
+
+def test_apply_decision_uses_slippage_and_avoids_dust_positions() -> None:
+    settings = BacktestSettings(
+        initial_cash_usd=1_000.0,
+        fee_rate_bps=0.0,
+        slippage_bps=100.0,
+        min_order_notional_usd=25.0,
+        quantity_precision=4,
+    )
+    portfolio = PortfolioState(
+        cash_usd=10.0,
+        positions={"BTC": PositionState(asset="BTC", quantity=1.2, average_entry_price=90.0)},
+    )
+    decision = DecisionSnapshot(
+        timestamp=1_700_000_000,
+        regime_state="defensive",
+        exposure_fraction=0.0,
+        target_weights={},
+        scores={},
+    )
+    bar = Candle(
+        timestamp=1_700_000_000,
+        open=100.0,
+        high=105.0,
+        low=95.0,
+        close=100.0,
+        volume=1_000.0,
+        trade_count=100,
+        source="kraken_api",
+    )
+
+    updated, _, fills, _, _ = apply_decision(
+        portfolio=portfolio,
+        decision=decision,
+        execution_bars={"BTC": bar},
+        mark_bars={"BTC": bar},
+        settings=settings,
+    )
+
+    assert len(fills) == 1
+    assert fills[0].fill_price == 99.0
+    assert fills[0].quantity == 1.2
+    assert "BTC" not in updated.positions
