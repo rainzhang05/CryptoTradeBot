@@ -1,0 +1,83 @@
+"""Unit tests for configuration loading."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from spotbot.config import ConfigError, load_config
+
+
+def write_config(root: Path, content: str) -> Path:
+    config_dir = root / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "settings.yaml"
+    config_path.write_text(content, encoding="utf-8")
+    return config_path
+
+
+def test_load_config_resolves_paths_and_env(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app:
+  environment: test
+  log_level: DEBUG
+  log_format: console
+runtime:
+  default_mode: simulate
+  max_cycles: 2
+  cycle_interval_seconds: 2
+exchange:
+  name: kraken
+  base_currency: USD
+  supplementary_exchanges: [binance, coinbase]
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts:
+  email_recipient: trader@example.com
+paths:
+  data_dir: data
+  artifacts_dir: artifacts
+  logs_dir: runtime/logs
+  state_dir: runtime/state
+""",
+    )
+    env_path = tmp_path / ".env"
+    env_path.write_text("KRAKEN_API_KEY=demo-key\nSMTP_PORT=2525\n", encoding="utf-8")
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+
+    config = load_config(config_path=config_path, env_path=env_path)
+
+    assert config.app.environment == "test"
+    assert config.runtime.max_cycles == 2
+    assert config.alerts.email_recipient == "trader@example.com"
+    assert config.secrets.kraken_api_key == "demo-key"
+    assert config.secrets.smtp_port == 2525
+    assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
+
+
+def test_load_config_rejects_wrong_universe(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app: {}
+runtime: {}
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH]
+alerts: {}
+paths: {}
+""",
+    )
+
+    with pytest.raises(ConfigError):
+        load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+
+def test_load_config_rejects_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError):
+        load_config(config_path=tmp_path / "config" / "settings.yaml", env_path=tmp_path / ".env")

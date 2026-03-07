@@ -1,0 +1,38 @@
+app:
+  environment: local
+  log_level: INFO
+  log_format: json
+
+runtime:
+  default_mode: simulate
+  max_cycles: 1
+  cycle_interval_seconds: 1
+
+exchange:
+  name: kraken
+  base_currency: USD
+  supplementary_exchanges:
+    - binance
+    - coinbase
+
+strategy:
+  fixed_universe:
+    - BTC
+    - ETH
+    - BNB
+    - XRP
+    - SOL
+    - ADA
+    - DOGE
+    - TRX
+    - AVAX
+    - LINK
+
+alerts:
+  email_recipient: null
+
+paths:
+  data_dir: data
+  artifacts_dir: artifacts
+  logs_dir: runtime/logs
+  state_dir: runtime/state
