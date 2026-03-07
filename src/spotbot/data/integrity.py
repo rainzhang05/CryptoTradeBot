@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from spotbot.data.models import Candle, IntegrityResult, Interval, INTERVAL_SECONDS
+from spotbot.data.models import INTERVAL_SECONDS, Candle, IntegrityResult, Interval
 
 
 def read_candles(path: Path) -> list[Candle]:

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from spotbot.data.models import Candle, Interval
 
@@ -33,7 +34,16 @@ def write_candles(path: Path, candles: Iterable[Candle]) -> int:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["timestamp", "open", "high", "low", "close", "volume", "trade_count", "source"],
+            fieldnames=[
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "trade_count",
+                "source",
+            ],
         )
         writer.writeheader()
         for candle in candles:
