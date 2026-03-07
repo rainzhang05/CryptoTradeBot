@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from spotbot.data.models import Candle, Interval
+from tradebot.data.models import Candle, Interval
 
 
 def canonical_asset_dir(root: Path, asset: str) -> Path:

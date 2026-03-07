@@ -5,9 +5,9 @@ from pathlib import Path
 
 import httpx
 
-from spotbot.config import load_config
-from spotbot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
-from spotbot.data.service import DataService
+from tradebot.config import load_config
+from tradebot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
+from tradebot.data.service import DataService
 
 
 def test_import_kraken_raw_creates_canonical_files(tmp_path: Path) -> None:

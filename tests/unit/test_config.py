@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from spotbot.config import ConfigError, load_config
+from tradebot.config import ConfigError, load_config
 
 
 def write_config(root: Path, content: str) -> Path:

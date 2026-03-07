@@ -1,7 +1,7 @@
 """Unit tests for trade aggregation into candles."""
 
-from spotbot.data.aggregation import CandleAccumulator
-from spotbot.data.models import RawTrade
+from tradebot.data.aggregation import CandleAccumulator
+from tradebot.data.models import RawTrade
 
 
 def test_candle_accumulator_rolls_hour_bucket() -> None:

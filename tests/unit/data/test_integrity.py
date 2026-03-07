@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from spotbot.data.integrity import check_candles
+from tradebot.data.integrity import check_candles
 
 
 def test_check_candles_detects_missing_interval(tmp_path: Path) -> None:

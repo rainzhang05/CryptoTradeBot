@@ -8,7 +8,7 @@ from typing import TextIO
 
 from pythonjsonlogger.json import JsonFormatter
 
-from spotbot.config import AppConfig
+from tradebot.config import AppConfig
 
 
 def configure_logging(config: AppConfig, stream: TextIO | None = None) -> None:

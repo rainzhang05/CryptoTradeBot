@@ -6,8 +6,8 @@ import io
 import logging
 from pathlib import Path
 
-from spotbot.config import load_config
-from spotbot.logging_config import configure_logging, get_logger
+from tradebot.config import load_config
+from tradebot.logging_config import configure_logging, get_logger
 
 
 def test_configure_logging_emits_json(tmp_path: Path) -> None:
@@ -34,9 +34,9 @@ paths: {}
     buffer = io.StringIO()
 
     configure_logging(config, stream=buffer)
-    get_logger("spotbot.test").info("hello")
+    get_logger("tradebot.test").info("hello")
 
     output = buffer.getvalue()
     assert '"message": "hello"' in output
-    assert '"name": "spotbot.test"' in output
+    assert '"name": "tradebot.test"' in output
     logging.getLogger().handlers.clear()

@@ -7,8 +7,8 @@ from collections import Counter
 from collections.abc import Iterable
 from typing import cast
 
-from spotbot.config import ResearchSettings
-from spotbot.data.models import Candle
+from tradebot.config import ResearchSettings
+from tradebot.data.models import Candle
 
 REGIME_STATES = ("constructive", "neutral", "defensive", "frozen")
 

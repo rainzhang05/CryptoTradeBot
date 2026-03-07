@@ -47,9 +47,17 @@ jobs:
 
       - name: Docker smoke test
         run: |
+          rm -rf .ci-smoke
+          mkdir -p .ci-smoke/data/kraken_data .ci-smoke/artifacts
+          cp tests/fixtures/raw/kraken/XBTUSD.csv .ci-smoke/data/kraken_data/XBTUSD.csv
+          cp tests/fixtures/raw/kraken/ETHUSD.csv .ci-smoke/data/kraken_data/ETHUSD.csv
           docker run --rm crypto-spot-trading-bot:ci doctor
           docker run --rm crypto-spot-trading-bot:ci run --mode simulate --max-cycles 1
           docker run --rm \
-            -v "$PWD/data:/app/data" \
-            -v "$PWD/artifacts:/app/artifacts" \
+            -v "$PWD/.ci-smoke/data:/app/data" \
+            -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
+            crypto-spot-trading-bot:ci data import --assets BTC --assets ETH
+          docker run --rm \
+            -v "$PWD/.ci-smoke/data:/app/data" \
+            -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
             crypto-spot-trading-bot:ci features build --assets BTC --assets ETH

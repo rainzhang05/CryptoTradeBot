@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from spotbot.config import AppConfig
-from spotbot.constants import SUPPORTED_MODES
-from spotbot.logging_config import get_logger
+from tradebot.config import AppConfig
+from tradebot.constants import SUPPORTED_MODES
+from tradebot.logging_config import get_logger
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class RuntimeService:
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.logger = get_logger("spotbot.runtime")
+        self.logger = get_logger("tradebot.runtime")
 
     def bootstrap(self) -> None:
         """Ensure the runtime filesystem layout exists."""

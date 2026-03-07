@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from spotbot.data.models import INTERVAL_SECONDS, Candle, Interval, RawTrade
+from tradebot.data.models import INTERVAL_SECONDS, Candle, Interval, RawTrade
 
 
 @dataclass

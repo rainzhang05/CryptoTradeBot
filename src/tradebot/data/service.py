@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from spotbot.config import AppConfig
-from spotbot.data.aggregation import CandleAccumulator
-from spotbot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
-from spotbot.data.integrity import check_candles, read_candles
-from spotbot.data.models import (
+from tradebot.config import AppConfig
+from tradebot.data.aggregation import CandleAccumulator
+from tradebot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
+from tradebot.data.integrity import check_candles, read_candles
+from tradebot.data.models import (
     AssetImportResult,
     Candle,
     ImportSummary,
@@ -19,13 +19,13 @@ from spotbot.data.models import (
     SourceState,
     path_to_string,
 )
-from spotbot.data.storage import (
+from tradebot.data.storage import (
     canonical_candle_file,
     manifest_file,
     write_candles,
     write_json,
 )
-from spotbot.data.symbols import ASSET_SYMBOLS, AssetSymbolMap
+from tradebot.data.symbols import ASSET_SYMBOLS, AssetSymbolMap
 
 
 class DataService:

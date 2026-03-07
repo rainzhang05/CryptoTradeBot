@@ -5,12 +5,12 @@ from typing import Any, cast
 
 import typer
 
-from spotbot import __version__
-from spotbot.config import load_config
-from spotbot.data.service import DataService
-from spotbot.logging_config import configure_logging
-from spotbot.research.service import ResearchService
-from spotbot.runtime import RuntimeService
+from tradebot import __version__
+from tradebot.config import load_config
+from tradebot.data.service import DataService
+from tradebot.logging_config import configure_logging
+from tradebot.research.service import ResearchService
+from tradebot.runtime import RuntimeService
 
 app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")

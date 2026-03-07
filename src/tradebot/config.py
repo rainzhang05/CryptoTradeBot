@@ -10,7 +10,7 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from spotbot.constants import BASE_CURRENCY, FIXED_UNIVERSE, PRIMARY_EXCHANGE, SUPPORTED_MODES
+from tradebot.constants import BASE_CURRENCY, FIXED_UNIVERSE, PRIMARY_EXCHANGE, SUPPORTED_MODES
 
 
 class ConfigError(RuntimeError):

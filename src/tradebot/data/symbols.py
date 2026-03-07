@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from spotbot.constants import FIXED_UNIVERSE
+from tradebot.constants import FIXED_UNIVERSE
 
 
 @dataclass(frozen=True)

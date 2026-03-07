@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spotbot.config import load_config
-from spotbot.runtime import RuntimeService
+from tradebot.config import load_config
+from tradebot.runtime import RuntimeService
 
 
 def test_runtime_bootstrap_and_run(tmp_path: Path) -> None:

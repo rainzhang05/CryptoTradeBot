@@ -2,7 +2,7 @@
 
 import httpx
 
-from spotbot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
+from tradebot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
 
 
 def test_kraken_public_client_drops_uncommitted_last_row() -> None:

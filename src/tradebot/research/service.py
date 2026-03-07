@@ -7,14 +7,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from spotbot.config import AppConfig
-from spotbot.constants import FIXED_UNIVERSE
-from spotbot.data.integrity import read_candles
-from spotbot.data.models import Candle
-from spotbot.data.storage import canonical_candle_file, write_json
-from spotbot.research.features import build_feature_rows, feature_column_names
-from spotbot.research.models import AssetDatasetStats, FeatureBuildSummary
-from spotbot.research.storage import (
+from tradebot.config import AppConfig
+from tradebot.constants import FIXED_UNIVERSE
+from tradebot.data.integrity import read_candles
+from tradebot.data.models import Candle
+from tradebot.data.storage import canonical_candle_file, write_json
+from tradebot.research.features import build_feature_rows, feature_column_names
+from tradebot.research.models import AssetDatasetStats, FeatureBuildSummary
+from tradebot.research.storage import (
     feature_dataset_file,
     feature_manifest_file,
     write_dataset_rows,

@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from spotbot.config import load_config
-from spotbot.data.models import Candle
-from spotbot.data.storage import write_candles
-from spotbot.research.features import build_feature_rows
-from spotbot.research.service import ResearchService
+from tradebot.config import load_config
+from tradebot.data.models import Candle
+from tradebot.data.storage import write_candles
+from tradebot.research.features import build_feature_rows
+from tradebot.research.service import ResearchService
 
 
 def _write_config(root: Path) -> Path:

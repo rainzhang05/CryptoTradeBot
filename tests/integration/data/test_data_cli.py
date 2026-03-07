@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from spotbot.cli import app
+from tradebot.cli import app
 
 runner = CliRunner()
 

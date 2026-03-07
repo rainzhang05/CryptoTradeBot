@@ -31,18 +31,18 @@ dev = [
 ]
 
 [project.scripts]
-bot = "spotbot.cli:app"
+bot = "tradebot.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/spotbot"]
+packages = ["src/tradebot"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=spotbot --cov-report=term-missing --cov-report=xml"
+addopts = "--cov=tradebot --cov-report=term-missing --cov-report=xml"
 testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["spotbot"]
+source = ["tradebot"]
 
 [tool.coverage.report]
 fail_under = 80
@@ -57,6 +57,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["spotbot"]
+packages = ["tradebot"]
 strict = true
 warn_unused_configs = true

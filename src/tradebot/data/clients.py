@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from spotbot.data.models import Candle, Interval
+from tradebot.data.models import Candle, Interval
 
 
 class KrakenPublicClient:

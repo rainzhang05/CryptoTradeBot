@@ -6,9 +6,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from spotbot.cli import app
-from spotbot.data.models import Candle
-from spotbot.data.storage import write_candles
+from tradebot.cli import app
+from tradebot.data.models import Candle
+from tradebot.data.storage import write_candles
 
 runner = CliRunner()
 
