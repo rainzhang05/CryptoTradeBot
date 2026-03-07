@@ -4,7 +4,7 @@ Systematic crypto spot trading bot for Kraken spot markets with a CLI-first oper
 
 ## Status
 
-The repository is in Phase 4 of the roadmap.
+The repository is in Phase 5 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -25,6 +25,8 @@ The current implementation provides:
 - backtest artifacts including report, fills, equity curve, and decision logs
 - a simulate-mode runtime path that reuses the backtest decision and execution flow
 - persisted simulate portfolio state for restart-safe local iteration
+- a deterministic rule engine with universe enforcement, regime-aware cash allocation, hard data-quality vetoes, freeze handling, and gradual reduction/full-exit rules
+- drawdown-aware risk states that reduce aggressiveness before catastrophe conditions
 
 ## Quick Start
 
