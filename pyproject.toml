@@ -13,6 +13,7 @@ authors = [
   { name = "Rain Zhang" }
 ]
 dependencies = [
+  "httpx>=0.28,<0.29",
   "pydantic>=2.11,<3.0",
   "python-dotenv>=1.1,<2.0",
   "python-json-logger>=2.0.7,<4.0",

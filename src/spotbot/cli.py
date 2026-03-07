@@ -126,3 +126,12 @@ def data_source() -> None:
     config = load_config()
     service = DataService(config)
     typer.echo(json.dumps(service.source_summary(), indent=2, sort_keys=True))
+
+
+@data_app.command("sync")
+def data_sync(assets: list[str] | None = ASSETS_OPTION) -> None:
+    """Extend canonical candles using public exchange APIs."""
+    config = load_config()
+    service = DataService(config)
+    summary = service.sync_canonical(assets=tuple(assets) if assets else None)
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
