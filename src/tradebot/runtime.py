@@ -19,9 +19,11 @@ class RuntimeSnapshot:
     status: str
     timestamp: int | None = None
     regime_state: str | None = None
+    risk_state: str | None = None
     equity_usd: float | None = None
     cash_usd: float | None = None
     fill_count: int = 0
+    freeze_reason: str | None = None
 
 
 class RuntimeService:
@@ -81,9 +83,11 @@ class RuntimeService:
                 status=summary.status,
                 timestamp=summary.timestamp,
                 regime_state=summary.regime_state,
+                risk_state=summary.risk_state,
                 equity_usd=summary.equity_usd,
                 cash_usd=summary.cash_usd,
                 fill_count=summary.fill_count,
+                freeze_reason=summary.freeze_reason,
             )
 
         return RuntimeSnapshot(mode=mode, cycle=cycle, status="pending_live_engine")

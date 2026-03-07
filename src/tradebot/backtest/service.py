@@ -33,6 +33,7 @@ from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
 from tradebot.research.service import ResearchService
+from tradebot.strategy.service import StrategyEngine
 
 
 class BacktestService:
@@ -43,6 +44,7 @@ class BacktestService:
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
         self.research_service = ResearchService(config)
+        self.strategy_engine = StrategyEngine(config)
 
     def run_backtest(
         self,
@@ -76,21 +78,34 @@ class BacktestService:
             if execution_timestamp is None:
                 continue
             rows_for_timestamp = rows_by_timestamp[timestamp]
+            signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
-            if len(execution_bars) != len(selected_assets):
+            if len(execution_bars) != len(selected_assets) or len(signal_bars) != len(selected_assets):
                 continue
 
-            regime_state, exposure_fraction, target_weights, scores = build_target_weights(
+            strategy_decision = self.strategy_engine.evaluate(
                 timestamp=timestamp,
                 rows_by_asset=rows_for_timestamp,
-                config=self.config,
+                portfolio=portfolio,
+                prices_by_asset={asset: bar.close for asset, bar in signal_bars.items()},
             )
             decision = DecisionSnapshot(
                 timestamp=execution_timestamp,
-                regime_state=regime_state,
-                exposure_fraction=exposure_fraction,
-                target_weights=target_weights,
-                scores=scores,
+                regime_state=strategy_decision.regime_state,
+                risk_state=strategy_decision.risk_state,
+                exposure_fraction=strategy_decision.exposure_fraction,
+                target_weights=strategy_decision.target_weights,
+                scores=strategy_decision.scores,
+                is_frozen=strategy_decision.is_frozen,
+                freeze_reason=strategy_decision.freeze_reason,
+                asset_actions={
+                    asset: asset_decision.action
+                    for asset, asset_decision in strategy_decision.asset_decisions.items()
+                },
+                asset_reasons={
+                    asset: asset_decision.reason
+                    for asset, asset_decision in strategy_decision.asset_decisions.items()
+                },
             )
             portfolio, intents, cycle_fills, end_equity, gross_exposure = apply_decision(
                 portfolio=portfolio,
@@ -99,8 +114,7 @@ class BacktestService:
                 mark_bars=execution_bars,
                 settings=self.config.backtest,
             )
-            if intents or cycle_fills:
-                decisions.append(decision)
+            decisions.append(decision)
             fills.extend(cycle_fills)
             equity_curve.append(
                 EquityPoint(
@@ -142,9 +156,14 @@ class BacktestService:
             fieldnames=[
                 "timestamp",
                 "regime_state",
+                "risk_state",
                 "exposure_fraction",
+                "is_frozen",
+                "freeze_reason",
                 "target_weights_json",
                 "scores_json",
+                "asset_actions_json",
+                "asset_reasons_json",
             ],
             rows=decision_rows,
         )
@@ -207,6 +226,7 @@ class BacktestService:
                 timestamp=None,
                 status="waiting_for_data",
                 regime_state=None,
+                risk_state=None,
                 equity_usd=portfolio.cash_usd,
                 cash_usd=portfolio.cash_usd,
                 fill_count=0,
@@ -221,6 +241,7 @@ class BacktestService:
                 timestamp=None,
                 status="waiting_for_signals",
                 regime_state=None,
+                risk_state=None,
                 equity_usd=portfolio.cash_usd,
                 cash_usd=portfolio.cash_usd,
                 fill_count=0,
@@ -244,6 +265,7 @@ class BacktestService:
                 timestamp=latest_timestamp,
                 status="waiting_for_data",
                 regime_state=None,
+                risk_state=None,
                 equity_usd=portfolio.cash_usd,
                 cash_usd=portfolio.cash_usd,
                 fill_count=0,
@@ -251,17 +273,29 @@ class BacktestService:
                 state_file=str(state_path),
             )
 
-        regime_state, exposure_fraction, target_weights, scores = build_target_weights(
+        strategy_decision = self.strategy_engine.evaluate(
             timestamp=latest_timestamp,
             rows_by_asset=rows_for_timestamp,
-            config=self.config,
+            portfolio=portfolio,
+            prices_by_asset={asset: bar.close for asset, bar in mark_bars.items()},
         )
         decision = DecisionSnapshot(
             timestamp=latest_timestamp,
-            regime_state=regime_state,
-            exposure_fraction=exposure_fraction,
-            target_weights=target_weights,
-            scores=scores,
+            regime_state=strategy_decision.regime_state,
+            risk_state=strategy_decision.risk_state,
+            exposure_fraction=strategy_decision.exposure_fraction,
+            target_weights=strategy_decision.target_weights,
+            scores=strategy_decision.scores,
+            is_frozen=strategy_decision.is_frozen,
+            freeze_reason=strategy_decision.freeze_reason,
+            asset_actions={
+                asset: asset_decision.action
+                for asset, asset_decision in strategy_decision.asset_decisions.items()
+            },
+            asset_reasons={
+                asset: asset_decision.reason
+                for asset, asset_decision in strategy_decision.asset_decisions.items()
+            },
         )
         portfolio, _, fills, end_equity, _ = apply_decision(
             portfolio=portfolio,
@@ -274,13 +308,15 @@ class BacktestService:
         return SimulationCycleSummary(
             dataset_id=feature_store.dataset_id,
             timestamp=latest_timestamp,
-            status="ok",
-            regime_state=regime_state,
+            status="frozen" if strategy_decision.is_frozen else "ok",
+            regime_state=strategy_decision.regime_state,
+            risk_state=strategy_decision.risk_state,
             equity_usd=end_equity,
             cash_usd=portfolio.cash_usd,
             fill_count=len(fills),
             fills=fills,
             state_file=str(state_path),
+            freeze_reason=strategy_decision.freeze_reason,
         )
 
     def _load_daily_bars(self, assets: tuple[str, ...]) -> dict[str, dict[int, Candle]]:
@@ -344,9 +380,14 @@ class BacktestService:
         return {
             "timestamp": decision.timestamp,
             "regime_state": decision.regime_state,
+            "risk_state": decision.risk_state,
             "exposure_fraction": decision.exposure_fraction,
+            "is_frozen": decision.is_frozen,
+            "freeze_reason": decision.freeze_reason,
             "target_weights_json": json.dumps(decision.target_weights, sort_keys=True),
             "scores_json": json.dumps(decision.scores, sort_keys=True),
+            "asset_actions_json": json.dumps(decision.asset_actions, sort_keys=True),
+            "asset_reasons_json": json.dumps(decision.asset_reasons, sort_keys=True),
         }
 
     def _load_simulation_state(self, path: Path) -> PortfolioState:
@@ -362,8 +403,11 @@ class BacktestService:
             positions=positions,
             realized_pnl_usd=float(payload.get("realized_pnl_usd", 0.0)),
             fees_paid_usd=float(payload.get("fees_paid_usd", 0.0)),
+            peak_equity_usd=payload.get("peak_equity_usd"),
             last_timestamp=payload.get("last_timestamp"),
             last_regime=payload.get("last_regime"),
+            last_risk_state=payload.get("last_risk_state"),
+            freeze_reason=payload.get("freeze_reason"),
         )
 
     def _write_simulation_state(self, path: Path, portfolio: PortfolioState) -> None:

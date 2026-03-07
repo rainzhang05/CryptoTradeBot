@@ -93,5 +93,6 @@ def test_simulate_latest_cycle_persists_state_when_data_exists(tmp_path: Path) -
     summary = BacktestService(config).simulate_latest_cycle(assets=("BTC", "ETH"))
 
     assert summary.status == "ok"
+    assert summary.risk_state is not None
     assert Path(summary.state_file).exists()
     assert summary.dataset_id is not None

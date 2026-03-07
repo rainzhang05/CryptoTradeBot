@@ -32,9 +32,32 @@ def apply_decision(
         portfolio,
         last_timestamp=decision.timestamp,
         last_regime=decision.regime_state,
+        last_risk_state=decision.risk_state,
+        freeze_reason=decision.freeze_reason,
     )
     reference_prices = {asset: bar.open for asset, bar in execution_bars.items()}
     start_equity = _portfolio_equity(portfolio, reference_prices)
+    peak_equity = max(
+        portfolio.peak_equity_usd or settings.initial_cash_usd,
+        start_equity,
+        settings.initial_cash_usd,
+    )
+
+    if decision.is_frozen:
+        end_equity = _portfolio_equity(
+            portfolio,
+            {asset: bar.close for asset, bar in mark_bars.items()},
+        )
+        gross_exposure = sum(
+            position.quantity * mark_bars[asset].close
+            for asset, position in portfolio.positions.items()
+            if asset in mark_bars
+        )
+        frozen_portfolio = replace(
+            portfolio,
+            peak_equity_usd=max(peak_equity, end_equity),
+        )
+        return frozen_portfolio, [], [], end_equity, gross_exposure
 
     intents = _build_order_intents(
         portfolio=portfolio,
@@ -63,6 +86,7 @@ def apply_decision(
         for asset, position in portfolio.positions.items()
         if asset in mark_bars
     )
+    portfolio = replace(portfolio, peak_equity_usd=max(peak_equity, end_equity))
     return portfolio, intents, fills, end_equity, gross_exposure
 
 
@@ -155,8 +179,11 @@ def _apply_sell(
         positions=new_positions,
         realized_pnl_usd=portfolio.realized_pnl_usd + realized_pnl,
         fees_paid_usd=portfolio.fees_paid_usd + fee_paid,
+        peak_equity_usd=portfolio.peak_equity_usd,
         last_timestamp=portfolio.last_timestamp,
         last_regime=portfolio.last_regime,
+        last_risk_state=portfolio.last_risk_state,
+        freeze_reason=portfolio.freeze_reason,
     )
     fill = FillEvent(
         timestamp=intent.timestamp,
@@ -221,8 +248,11 @@ def _apply_buy(
         positions=new_positions,
         realized_pnl_usd=portfolio.realized_pnl_usd,
         fees_paid_usd=portfolio.fees_paid_usd + fee_paid,
+        peak_equity_usd=portfolio.peak_equity_usd,
         last_timestamp=portfolio.last_timestamp,
         last_regime=portfolio.last_regime,
+        last_risk_state=portfolio.last_risk_state,
+        freeze_reason=portfolio.freeze_reason,
     )
     fill = FillEvent(
         timestamp=intent.timestamp,
