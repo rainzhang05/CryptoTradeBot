@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -434,6 +435,22 @@ class DataService:
         }
 
         native_refresh_ranges = self._non_kraken_ranges(merged, interval, target_end=target_end)
+        missing_ranges = self._missing_ranges(merged, interval, target_end=target_end)
+        total_ranges_planned = len(native_refresh_ranges) + len(missing_ranges)
+        completed_ranges = 0
+        started_at = monotonic()
+
+        self.logger.info(
+            "completion interval workload",
+            extra={
+                "asset": asset,
+                "interval": interval,
+                "native_refresh_ranges": len(native_refresh_ranges),
+                "missing_ranges": len(missing_ranges),
+                "total_ranges_planned": total_ranges_planned,
+            },
+        )
+
         for start_ts, end_ts in native_refresh_ranges:
             refreshed_rows = self._fetch_kraken_range(
                 asset=asset,
@@ -444,8 +461,16 @@ class DataService:
             )
             merged, _, replaced = self._merge_candles_with_stats(merged, refreshed_rows)
             source_counts["kraken_native_replaced"] += replaced
+            completed_ranges += 1
+            self._log_completion_progress(
+                asset=asset,
+                interval=interval,
+                completed_ranges=completed_ranges,
+                total_ranges_planned=total_ranges_planned,
+                started_at=started_at,
+                phase="native_refresh",
+            )
 
-        missing_ranges = self._missing_ranges(merged, interval, target_end=target_end)
         for start_ts, end_ts in missing_ranges:
             if start_ts > end_ts:
                 continue
@@ -496,13 +521,76 @@ class DataService:
                 )
                 source_counts["synthetic_added"] += added
 
+            completed_ranges += 1
+            self._log_completion_progress(
+                asset=asset,
+                interval=interval,
+                completed_ranges=completed_ranges,
+                total_ranges_planned=total_ranges_planned,
+                started_at=started_at,
+                phase="gap_fill",
+            )
+
         remaining_ranges = self._missing_ranges(merged, interval, target_end=target_end)
         return merged, {
             **source_counts,
+            "total_ranges_planned": total_ranges_planned,
+            "total_ranges_completed": completed_ranges,
             "remaining_gap_ranges": len(remaining_ranges),
             "target_end_timestamp": target_end,
             "target_end_iso": datetime.fromtimestamp(target_end, tz=UTC).isoformat(),
+            "elapsed_seconds": round(monotonic() - started_at, 2),
+            "eta_seconds": 0.0,
         }
+
+    def _log_completion_progress(
+        self,
+        *,
+        asset: str,
+        interval: Interval,
+        completed_ranges: int,
+        total_ranges_planned: int,
+        started_at: float,
+        phase: str,
+    ) -> None:
+        if total_ranges_planned == 0:
+            return
+        if completed_ranges not in {1, total_ranges_planned} and completed_ranges % 100 != 0:
+            return
+
+        elapsed_seconds = monotonic() - started_at
+        eta_seconds = self._estimate_eta_seconds(
+            elapsed_seconds=elapsed_seconds,
+            completed_ranges=completed_ranges,
+            total_ranges_planned=total_ranges_planned,
+        )
+        self.logger.info(
+            "completion interval progress",
+            extra={
+                "asset": asset,
+                "interval": interval,
+                "phase": phase,
+                "completed_ranges": completed_ranges,
+                "total_ranges_planned": total_ranges_planned,
+                "remaining_ranges": total_ranges_planned - completed_ranges,
+                "elapsed_seconds": round(elapsed_seconds, 2),
+                "eta_seconds": None if eta_seconds is None else round(eta_seconds, 2),
+            },
+        )
+
+    @staticmethod
+    def _estimate_eta_seconds(
+        *,
+        elapsed_seconds: float,
+        completed_ranges: int,
+        total_ranges_planned: int,
+    ) -> float | None:
+        if completed_ranges <= 0 or total_ranges_planned <= completed_ranges:
+            return 0.0 if total_ranges_planned == completed_ranges else None
+
+        seconds_per_range = elapsed_seconds / completed_ranges
+        remaining_ranges = total_ranges_planned - completed_ranges
+        return seconds_per_range * remaining_ranges
 
     def _fetch_fallback(
         self,

@@ -83,6 +83,7 @@ This command must:
 - fetch missing Kraken candles first for each unresolved interval window
 - use Binance and Coinbase only as documented fallback sources when Kraken cannot close a gap
 - optionally apply an explicit synthetic carry-forward candle only as a last resort so the canonical series becomes continuous to the latest closed interval
+- emit progress logs with completed range count, remaining range count, and ETA based on observed per-range throughput
 - write a machine-readable completion summary under `artifacts/reports/data/latest_completion_summary.json`
 
 ### `bot backtest run`

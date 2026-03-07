@@ -538,3 +538,83 @@ paths: {}
     assert "binance_fallback" not in completed
     assert "coinbase_fallback" not in completed
     assert completed.count("kraken_api") == 2
+
+
+def test_complete_canonical_reports_range_progress_in_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "settings.yaml"
+    config_path.write_text(
+        """
+app: {}
+runtime: {}
+exchange: {}
+data:
+  raw_kraken_dir: data/kraken_data
+  canonical_dir: data/canonical
+  reports_dir: artifacts/reports/data
+  intervals: [1h]
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+    candle_path = tmp_path / "data" / "canonical" / "kraken" / "BTC" / "candles_1h.csv"
+    write_candles(
+        candle_path,
+        [
+            Candle(1704067200, 100, 101, 99, 100, 10, 5, "kraken_raw"),
+            Candle(1704074400, 102, 103, 101, 102, 12, 6, "kraken_raw"),
+        ],
+    )
+
+    class FakeKrakenClient:
+        def fetch_ohlc_range(
+            self,
+            pair: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            return [Candle(1704070800, 101, 102, 100, 101, 11, 4, "kraken_api")]
+
+    class EmptyFallbackClient:
+        def fetch_klines(
+            self,
+            symbol: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            return []
+
+        def fetch_candles(
+            self,
+            product_id: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            return []
+
+    service = DataService(
+        config,
+        kraken_client=FakeKrakenClient(),
+        binance_client=EmptyFallbackClient(),
+        coinbase_client=EmptyFallbackClient(),
+    )
+    monkeypatch.setattr(service, "_latest_closed_timestamp", lambda interval: 1704074400)
+
+    summary = service.complete_canonical(assets=("BTC",), allow_synthetic=False)
+    interval_summary = summary["assets"][0]["intervals"][0]
+
+    assert interval_summary["total_ranges_planned"] == 1
+    assert interval_summary["total_ranges_completed"] == 1
+    assert interval_summary["eta_seconds"] == 0.0
+    assert interval_summary["elapsed_seconds"] >= 0.0
