@@ -163,3 +163,39 @@ paths: {}
 
     assert summary["assets"][0]["intervals"][0]["fallback_source"] == "binance"
     assert len(lines) == len(original_lines) + 2
+
+
+def test_prune_raw_kraken_keeps_only_fixed_universe_files(tmp_path: Path) -> None:
+        raw_dir = tmp_path / "data" / "kraken_data"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        (raw_dir / "XBTUSD.csv").write_text("1704067200,1,1\n", encoding="utf-8")
+        (raw_dir / "ETHUSD.csv").write_text("1704067200,1,1\n", encoding="utf-8")
+        (raw_dir / "ALGOUSD.csv").write_text("1704067200,1,1\n", encoding="utf-8")
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "settings.yaml"
+        config_path.write_text(
+                """
+app: {}
+runtime: {}
+exchange: {}
+data:
+    raw_kraken_dir: data/kraken_data
+    canonical_dir: data/canonical
+    reports_dir: artifacts/reports/data
+    intervals: [1h, 1d]
+strategy:
+    fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+                encoding="utf-8",
+        )
+        config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+        summary = DataService(config).prune_raw_kraken()
+
+        assert summary["deleted_count"] == 1
+        assert not (raw_dir / "ALGOUSD.csv").exists()
+        assert (raw_dir / "XBTUSD.csv").exists()

@@ -123,6 +123,23 @@ class DataService:
 
         return {"assets": [state.to_dict() for state in states]}
 
+    def prune_raw_kraken(self) -> dict[str, object]:
+        """Remove raw Kraken files that are not part of the fixed V1 universe."""
+        keep_files = {symbol.kraken_raw_file for symbol in ASSET_SYMBOLS.values()}
+        deleted: list[str] = []
+
+        for path in sorted(self.data_settings.raw_kraken_dir.glob("*.csv")):
+            if path.name not in keep_files:
+                path.unlink()
+                deleted.append(str(path))
+
+        return {
+            "deleted_count": len(deleted),
+            "kept_files": sorted(keep_files),
+            "deleted_files": deleted[:50],
+            "deleted_files_truncated": len(deleted) > 50,
+        }
+
     def sync_canonical(self, assets: tuple[str, ...] | None = None) -> dict[str, object]:
         """Extend canonical candles using Kraken and fallback public sources."""
         selected_assets = assets or tuple(ASSET_SYMBOLS)

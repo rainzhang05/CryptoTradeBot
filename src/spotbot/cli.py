@@ -135,3 +135,12 @@ def data_sync(assets: list[str] | None = ASSETS_OPTION) -> None:
     service = DataService(config)
     summary = service.sync_canonical(assets=tuple(assets) if assets else None)
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@data_app.command("prune-raw")
+def data_prune_raw() -> None:
+    """Delete raw Kraken files that are outside the fixed V1 universe."""
+    config = load_config()
+    service = DataService(config)
+    summary = service.prune_raw_kraken()
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
