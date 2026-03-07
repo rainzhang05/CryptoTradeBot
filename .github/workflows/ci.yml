@@ -61,3 +61,17 @@ jobs:
             -v "$PWD/.ci-smoke/data:/app/data" \
             -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
             crypto-spot-trading-bot:ci features build --assets BTC --assets ETH
+          if [ -f data/canonical/kraken/BTC/candles_1d.csv ] && [ -f data/canonical/kraken/ETH/candles_1d.csv ]; then
+            mkdir -p .ci-smoke/runtime
+            docker run --rm \
+              -v "$PWD/data:/app/data" \
+              -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
+              -v "$PWD/.ci-smoke/runtime:/app/runtime" \
+              crypto-spot-trading-bot:ci backtest run --assets BTC --assets ETH
+            docker run --rm \
+              -v "$PWD/data:/app/data" \
+              -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
+              crypto-spot-trading-bot:ci backtest report
+          else
+            echo "Skipping backtest Docker smoke test because canonical BTC/ETH daily candles are unavailable in the checkout."
+          fi

@@ -25,6 +25,7 @@
 - uses no real money
 - produces runtime logs, reports, and monitoring output
 - should mimic live behavior closely except for real exchange execution
+- should resume from the last persisted simulated portfolio state when that state exists
 
 ### Live
 
@@ -110,6 +111,8 @@ After restart, the system must be able to:
 - resync balances and open orders from Kraken
 - detect mismatches between expected and actual account state
 - resume safely only after consistency checks pass
+
+For simulate mode, the minimum persisted state includes the last simulated cash balance, open simulated positions, and the most recent decision timestamp.
 
 ## Runbook Requirements
 

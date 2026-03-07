@@ -4,7 +4,7 @@ Systematic crypto spot trading bot for Kraken spot markets with a CLI-first oper
 
 ## Status
 
-The repository is in Phase 3 of the roadmap.
+The repository is in Phase 4 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -21,6 +21,10 @@ The current implementation provides:
 - BTC-led regime features, breadth metrics, liquidity features, and source-confidence features
 - label generation for forward return, downside risk, and sell-risk modeling
 - cached experiment-ready datasets with manifests and experiment directory conventions
+- a deterministic daily backtest engine with conservative fee and slippage assumptions
+- backtest artifacts including report, fills, equity curve, and decision logs
+- a simulate-mode runtime path that reuses the backtest decision and execution flow
+- persisted simulate portfolio state for restart-safe local iteration
 
 ## Quick Start
 
@@ -41,6 +45,12 @@ Useful Phase 2 data commands:
 Useful Phase 3 research command:
 
 - `uv run bot features build`
+
+Useful Phase 4 backtest and simulation commands:
+
+- `uv run bot backtest run`
+- `uv run bot backtest report`
+- `uv run bot run --mode simulate --max-cycles 1`
 
 ## Docker
 

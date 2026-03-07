@@ -116,6 +116,14 @@ Responsibilities:
 - generate trades, equity curves, and reports
 - compare baselines and candidate models
 
+Phase 4 implements this as a deterministic daily bar engine that:
+
+- consumes Phase 3 feature-store rows derived from canonical Kraken daily candles
+- generates target weights from the shared strategy path
+- executes fills on the next aligned daily bar with configured fee and slippage assumptions
+- writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`
+- maintains `artifacts/reports/backtests/latest_backtest_report.json` as the operator-friendly latest pointer
+
 ### 9. Runtime orchestration subsystem
 
 Responsibilities:
@@ -168,6 +176,8 @@ These models must be reused across backtest, simulate, and live pathways wheneve
 - replaces real exchange execution with simulated fills
 - records the same observability artifacts as live wherever practical
 
+The current implementation reuses the backtest decision and simulated execution services for the latest available feature timestamp and persists portfolio state under `runtime/state/simulate_state.json`.
+
 ### Live mode
 
 - uses the same strategy decision engine as simulate
@@ -189,6 +199,8 @@ The system must persist enough state to resume safely after restart.
 - latest strategy decisions
 - latest predictions
 - runtime health and freeze state
+
+Phase 4 also persists simulate-mode portfolio state so repeated local runs can resume from the last simulated holdings and cash balance.
 
 ## Storage Layout Expectations
 

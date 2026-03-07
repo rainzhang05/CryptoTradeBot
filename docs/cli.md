@@ -73,6 +73,33 @@ This command must:
 - `bot backtest report`: view or export backtest results.
 - `bot run --mode simulate`: start continuous simulation mode.
 
+### `bot backtest run`
+
+This command must:
+
+- build or reuse the deterministic feature dataset for the selected assets
+- run a Kraken-only daily bar backtest using canonical `1d` candles
+- generate order intents, simulated fills, and portfolio accounting from shared backtest models
+- write run artifacts under `artifacts/backtests/<run_id>/`
+- update `artifacts/reports/backtests/latest_backtest_report.json`
+
+### `bot backtest report`
+
+This command must:
+
+- print the latest backtest report by default
+- support loading a specific `run_id` when provided
+- return a non-zero exit path if the requested report does not exist
+
+### `bot run --mode simulate`
+
+This command must:
+
+- reuse the same target-weight and simulated execution path as the backtest service wherever practical
+- load the latest persisted simulated portfolio state from `runtime/state/simulate_state.json`
+- update that state after each completed simulation cycle
+- return a clear waiting state when canonical data or deterministic signals are not yet available
+
 ### Live trading and monitoring
 
 - `bot run --mode live`: start continuous live trading and terminal monitoring.
@@ -97,6 +124,7 @@ It must:
 - initialize data access
 - initialize strategy and model artifacts
 - initialize runtime state
+- bootstrap the configured data, artifact, log, and state directories
 - start either simulate or live mode
 - display monitoring information continuously
 - emit alerts on critical events
