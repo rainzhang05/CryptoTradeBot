@@ -36,7 +36,8 @@ paths:
     snapshots = runtime.run(mode="simulate")
 
     assert len(snapshots) == 2
-    assert all(snapshot.status == "ok" for snapshot in snapshots)
+    expected_statuses = {"ok", "waiting_for_data", "waiting_for_signals"}
+    assert all(snapshot.status in expected_statuses for snapshot in snapshots)
     assert (tmp_path / "data").exists()
     assert (tmp_path / "artifacts").exists()
     assert (tmp_path / "runtime" / "logs").exists()

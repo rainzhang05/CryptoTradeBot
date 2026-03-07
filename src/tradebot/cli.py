@@ -6,6 +6,7 @@ from typing import Any, cast
 import typer
 
 from tradebot import __version__
+from tradebot.backtest.service import BacktestService
 from tradebot.config import load_config
 from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
@@ -16,11 +17,13 @@ app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
+backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
 ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
+app.add_typer(backtest_app, name="backtest")
 
 
 @app.command("version")
@@ -164,3 +167,35 @@ def features_build(
     service = ResearchService(config)
     summary = service.build_feature_store(assets=tuple(assets) if assets else None, force=force)
     typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@backtest_app.command("run")
+def backtest_run(
+    assets: list[str] | None = ASSETS_OPTION,
+    force_features: bool = typer.Option(
+        default=False,
+        help="Rebuild the feature dataset before running the backtest.",
+    ),
+) -> None:
+    """Execute a reproducible Kraken-only backtest on canonical daily data."""
+    config = load_config()
+    service = BacktestService(config)
+    summary = service.run_backtest(
+        assets=tuple(assets) if assets else None,
+        force_features=force_features,
+    )
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@backtest_app.command("report")
+def backtest_report(
+    run_id: str | None = typer.Option(
+        default=None,
+        help="Optional run identifier. Defaults to the latest backtest report.",
+    ),
+) -> None:
+    """Print a stored backtest report."""
+    config = load_config()
+    service = BacktestService(config)
+    report = service.load_backtest_report(run_id=run_id)
+    typer.echo(json.dumps(report, indent=2, sort_keys=True))
