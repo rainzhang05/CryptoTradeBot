@@ -95,6 +95,32 @@ class ResearchSettings(BaseModel):
         return tuple(value)
 
 
+class BacktestSettings(BaseModel):
+    """Execution assumptions and portfolio constraints for backtest and simulate mode."""
+
+    initial_cash_usd: float = Field(default=100_000.0, gt=0)
+    fee_rate_bps: float = Field(default=26.0, ge=0)
+    slippage_bps: float = Field(default=10.0, ge=0)
+    max_positions: int = Field(default=5, ge=1, le=len(FIXED_UNIVERSE))
+    max_asset_weight: float = Field(default=0.35, gt=0, le=0.35)
+    min_order_notional_usd: float = Field(default=25.0, gt=0)
+    rebalance_threshold: float = Field(default=0.02, ge=0, lt=1)
+    quantity_precision: int = Field(default=8, ge=0, le=12)
+    constructive_exposure: float = Field(default=1.0, ge=0, le=1)
+    neutral_exposure: float = Field(default=0.5, ge=0, le=1)
+    defensive_exposure: float = Field(default=0.25, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_exposure_order(self) -> BacktestSettings:
+        if not (
+            self.constructive_exposure >= self.neutral_exposure >= self.defensive_exposure
+        ):
+            raise ValueError(
+                "backtest exposure scaling must satisfy constructive >= neutral >= defensive"
+            )
+        return self
+
+
 class AlertSettings(BaseModel):
     """Alert routing settings."""
 
@@ -134,6 +160,7 @@ class AppConfig(BaseModel):
     data: DataSettings = Field(default_factory=DataSettings)
     strategy: StrategySettings
     research: ResearchSettings = Field(default_factory=ResearchSettings)
+    backtest: BacktestSettings = Field(default_factory=BacktestSettings)
     alerts: AlertSettings
     paths: PathsSettings
     secrets: SecretSettings

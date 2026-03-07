@@ -52,6 +52,19 @@ research:
   sell_drawdown_threshold: 0.12
   sell_return_threshold: -0.02
 
+backtest:
+  initial_cash_usd: 100000.0
+  fee_rate_bps: 26.0
+  slippage_bps: 10.0
+  max_positions: 5
+  max_asset_weight: 0.35
+  min_order_notional_usd: 25.0
+  rebalance_threshold: 0.02
+  quantity_precision: 8
+  constructive_exposure: 1.0
+  neutral_exposure: 0.5
+  defensive_exposure: 0.25
+
 alerts:
   email_recipient: null
 
