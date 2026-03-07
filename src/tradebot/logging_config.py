@@ -30,6 +30,10 @@ def configure_logging(config: AppConfig, stream: TextIO | None = None) -> None:
     root_logger.setLevel(config.app.log_level)
     root_logger.addHandler(handler)
 
+    # Keep terminal progress logs focused on application state rather than raw HTTP chatter.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 def get_logger(name: str) -> logging.Logger:
     """Return a named logger."""

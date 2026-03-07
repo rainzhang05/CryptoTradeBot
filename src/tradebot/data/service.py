@@ -6,9 +6,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from tradebot.config import AppConfig
 from tradebot.data.aggregation import CandleAccumulator
-from tradebot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
+from tradebot.data.clients import (
+    BinancePublicClient,
+    CoinbasePublicClient,
+    DataClientError,
+    KrakenPublicClient,
+)
 from tradebot.data.integrity import check_candles, read_candles
 from tradebot.data.models import (
     INTERVAL_SECONDS,
@@ -28,6 +35,7 @@ from tradebot.data.storage import (
     write_json,
 )
 from tradebot.data.symbols import ASSET_SYMBOLS, AssetSymbolMap
+from tradebot.logging_config import get_logger
 
 
 class DataService:
@@ -45,6 +53,7 @@ class DataService:
         self.kraken_client = kraken_client or KrakenPublicClient()
         self.binance_client = binance_client or BinancePublicClient()
         self.coinbase_client = coinbase_client or CoinbasePublicClient()
+        self.logger = get_logger("tradebot.data.service")
 
     def import_kraken_raw(self, assets: tuple[str, ...] | None = None) -> ImportSummary:
         """Import raw Kraken trades for the selected assets into canonical candles."""
@@ -161,8 +170,16 @@ class DataService:
         """Repair historical gaps and extend canonical candles to the latest closed interval."""
         selected_assets = assets or tuple(ASSET_SYMBOLS)
         completion_assets: list[dict[str, object]] = []
+        self.logger.info(
+            "starting canonical completion",
+            extra={
+                "asset_count": len(selected_assets),
+                "allow_synthetic": allow_synthetic,
+            },
+        )
 
         for asset in selected_assets:
+            self.logger.info("processing completion asset", extra={"asset": asset})
             if any(
                 not canonical_candle_file(
                     self.data_settings.canonical_dir,
@@ -180,6 +197,10 @@ class DataService:
                     asset,
                     interval,
                 )
+                self.logger.info(
+                    "processing completion interval",
+                    extra={"asset": asset, "interval": interval, "path": str(candle_path)},
+                )
                 if not candle_path.exists():
                     interval_results.append({"interval": interval, "status": "missing_canonical"})
                     continue
@@ -191,6 +212,16 @@ class DataService:
 
                 before = check_candles(asset=asset, interval=interval, path=candle_path)
                 target_end = self._latest_closed_timestamp(interval)
+                self.logger.info(
+                    "completion interval state",
+                    extra={
+                        "asset": asset,
+                        "interval": interval,
+                        "missing_before": before.missing_intervals,
+                        "last_timestamp": before.last_timestamp,
+                        "target_end": target_end,
+                    },
+                )
                 completed, stats = self._complete_interval(
                     asset=asset,
                     interval=interval,
@@ -200,6 +231,19 @@ class DataService:
                 )
                 write_candles(candle_path, completed)
                 after = check_candles(asset=asset, interval=interval, path=candle_path)
+                self.logger.info(
+                    "completion interval finished",
+                    extra={
+                        "asset": asset,
+                        "interval": interval,
+                        "missing_after": after.missing_intervals,
+                        "remaining_gap_ranges": stats["remaining_gap_ranges"],
+                        "kraken_api_added": stats["kraken_api_added"],
+                        "binance_added": stats["binance_added"],
+                        "coinbase_added": stats["coinbase_added"],
+                        "synthetic_added": stats["synthetic_added"],
+                    },
+                )
                 interval_results.append(
                     {
                         "interval": interval,
@@ -219,6 +263,7 @@ class DataService:
         report_path = self.data_settings.reports_dir / "latest_completion_summary.json"
         payload = {"assets": completion_assets, "allow_synthetic": allow_synthetic}
         write_json(report_path, payload)
+        self.logger.info("canonical completion finished", extra={"report_file": str(report_path)})
         return {"assets": completion_assets, "report_file": str(report_path)}
 
     def _import_single_asset(self, asset: str, raw_path: Path) -> AssetImportResult:
@@ -331,7 +376,8 @@ class DataService:
                 intervals.append({"interval": interval, "status": "up_to_date", "appended": 0})
                 continue
 
-            kraken_rows = self.kraken_client.fetch_ohlc_range(
+            kraken_rows = self._fetch_kraken_range(
+                asset=asset,
                 pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
                 interval=interval,
                 start_ts=start_timestamp,
@@ -391,7 +437,8 @@ class DataService:
                 continue
 
             before_count = len(merged)
-            kraken_rows = self.kraken_client.fetch_ohlc_range(
+            kraken_rows = self._fetch_kraken_range(
+                asset=asset,
                 pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
                 interval=interval,
                 start_ts=start_ts,
@@ -403,7 +450,7 @@ class DataService:
             unresolved = self._missing_ranges_in_window(merged, interval, start_ts, end_ts)
             for unresolved_start, unresolved_end in unresolved:
                 before_count = len(merged)
-                binance_rows = self._fetch_binance(
+                binance_rows = self._safe_fetch_binance(
                     symbol_map,
                     interval,
                     unresolved_start,
@@ -420,7 +467,7 @@ class DataService:
                 )
                 for coinbase_start, coinbase_end in coinbase_gaps:
                     before_count = len(merged)
-                    coinbase_rows = self._fetch_coinbase(
+                    coinbase_rows = self._safe_fetch_coinbase(
                         symbol_map,
                         interval,
                         coinbase_start,
@@ -457,11 +504,51 @@ class DataService:
             return [], None
 
         try:
-            rows = self._fetch_binance(symbol_map, interval, start_timestamp, end_timestamp)
+            rows = self._safe_fetch_binance(symbol_map, interval, start_timestamp, end_timestamp)
             return rows, "binance"
-        except Exception:
-            rows = self._fetch_coinbase(symbol_map, interval, start_timestamp, end_timestamp)
-            return rows, "coinbase"
+        except Exception as exc:
+            self.logger.warning(
+                "binance fallback failed",
+                extra={
+                    "asset": symbol_map.asset,
+                    "interval": interval,
+                    "start_timestamp": start_timestamp,
+                    "end_timestamp": end_timestamp,
+                    "error": str(exc),
+                },
+            )
+            rows = self._safe_fetch_coinbase(symbol_map, interval, start_timestamp, end_timestamp)
+            return rows, "coinbase" if rows else None
+
+    def _fetch_kraken_range(
+        self,
+        *,
+        asset: str,
+        pair: str,
+        interval: Interval,
+        start_ts: int,
+        end_ts: int,
+    ) -> list[Candle]:
+        try:
+            return self.kraken_client.fetch_ohlc_range(
+                pair=pair,
+                interval=interval,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+        except (DataClientError, httpx.HTTPError) as exc:
+            self.logger.warning(
+                "kraken fetch failed, falling back",
+                extra={
+                    "asset": asset,
+                    "pair": pair,
+                    "interval": interval,
+                    "start_timestamp": start_ts,
+                    "end_timestamp": end_ts,
+                    "error": str(exc),
+                },
+            )
+            return []
 
     def _fetch_binance(
         self,
@@ -473,12 +560,43 @@ class DataService:
         if start_timestamp > end_timestamp:
             return []
         asset_symbols = ASSET_SYMBOLS[symbol_map.asset]
+        self.logger.info(
+            "requesting binance fallback",
+            extra={
+                "asset": symbol_map.asset,
+                "interval": interval,
+                "start_timestamp": start_timestamp,
+                "end_timestamp": end_timestamp,
+            },
+        )
         return self.binance_client.fetch_klines(
             symbol=asset_symbols.binance_symbol,
             interval=interval,
             start_ts=start_timestamp,
             end_ts=end_timestamp,
         )
+
+    def _safe_fetch_binance(
+        self,
+        symbol_map: AssetSymbolMap,
+        interval: Interval,
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> list[Candle]:
+        try:
+            return self._fetch_binance(symbol_map, interval, start_timestamp, end_timestamp)
+        except Exception as exc:
+            self.logger.warning(
+                "binance fallback failed",
+                extra={
+                    "asset": symbol_map.asset,
+                    "interval": interval,
+                    "start_timestamp": start_timestamp,
+                    "end_timestamp": end_timestamp,
+                    "error": str(exc),
+                },
+            )
+            return []
 
     def _fetch_coinbase(
         self,
@@ -490,12 +608,43 @@ class DataService:
         if start_timestamp > end_timestamp:
             return []
         asset_symbols = ASSET_SYMBOLS[symbol_map.asset]
+        self.logger.info(
+            "requesting coinbase fallback",
+            extra={
+                "asset": symbol_map.asset,
+                "interval": interval,
+                "start_timestamp": start_timestamp,
+                "end_timestamp": end_timestamp,
+            },
+        )
         return self.coinbase_client.fetch_candles(
             product_id=asset_symbols.coinbase_product,
             interval=interval,
             start_ts=start_timestamp,
             end_ts=end_timestamp,
         )
+
+    def _safe_fetch_coinbase(
+        self,
+        symbol_map: AssetSymbolMap,
+        interval: Interval,
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> list[Candle]:
+        try:
+            return self._fetch_coinbase(symbol_map, interval, start_timestamp, end_timestamp)
+        except Exception as exc:
+            self.logger.warning(
+                "coinbase fallback failed",
+                extra={
+                    "asset": symbol_map.asset,
+                    "interval": interval,
+                    "start_timestamp": start_timestamp,
+                    "end_timestamp": end_timestamp,
+                    "error": str(exc),
+                },
+            )
+            return []
 
     @staticmethod
     def _merge_candles(existing: list[Candle], incoming: list[Candle]) -> list[Candle]:

@@ -158,6 +158,7 @@ def data_complete(
 ) -> None:
     """Fill canonical gaps and extend all selected series to the latest closed interval."""
     config = load_config()
+    configure_logging(config)
     service = DataService(config)
     summary = service.complete_canonical(
         assets=tuple(assets) if assets else None,

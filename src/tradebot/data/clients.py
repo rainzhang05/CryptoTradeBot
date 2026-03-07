@@ -7,6 +7,11 @@ from datetime import UTC, datetime
 import httpx
 
 from tradebot.data.models import Candle, Interval
+from tradebot.logging_config import get_logger
+
+
+class DataClientError(RuntimeError):
+    """Raised when an upstream market-data response is malformed or unusable."""
 
 
 class KrakenPublicClient:
@@ -14,6 +19,7 @@ class KrakenPublicClient:
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client or httpx.Client(base_url="https://api.kraken.com", timeout=30.0)
+        self._logger = get_logger("tradebot.data.kraken")
 
     def fetch_ohlc(self, pair: str, interval: Interval, since: int) -> list[Candle]:
         """Fetch committed OHLC candles from Kraken."""
@@ -23,6 +29,16 @@ class KrakenPublicClient:
         )
         response.raise_for_status()
         payload = response.json()
+        errors = payload.get("error") if isinstance(payload, dict) else None
+        if errors:
+            error_message = ", ".join(str(error) for error in errors)
+            raise DataClientError(
+                f"Kraken OHLC request failed for {pair} {interval}: {error_message}"
+            )
+        if not isinstance(payload, dict) or "result" not in payload:
+            raise DataClientError(
+                f"Kraken OHLC response missing result for {pair} {interval}: {payload!r}"
+            )
         result = payload["result"]
         pair_key = next(key for key in result if key != "last")
         rows = result[pair_key]
@@ -57,6 +73,15 @@ class KrakenPublicClient:
         step = interval_seconds(interval)
         cursor = start_ts
         while cursor <= end_ts:
+            self._logger.debug(
+                "requesting kraken ohlc page",
+                extra={
+                    "pair": pair,
+                    "interval": interval,
+                    "cursor": cursor,
+                    "end_ts": end_ts,
+                },
+            )
             page = self.fetch_ohlc(pair=pair, interval=interval, since=max(cursor - step, 0))
             page = [candle for candle in page if start_ts <= candle.timestamp <= end_ts]
             if not page:

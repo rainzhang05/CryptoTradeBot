@@ -2,7 +2,12 @@
 
 import httpx
 
-from tradebot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
+from tradebot.data.clients import (
+    BinancePublicClient,
+    CoinbasePublicClient,
+    DataClientError,
+    KrakenPublicClient,
+)
 
 
 def test_kraken_public_client_drops_uncommitted_last_row() -> None:
@@ -49,6 +54,20 @@ def test_binance_public_client_parses_kline_rows() -> None:
     assert len(rows) == 1
     assert rows[0].timestamp == 1704067200
     assert rows[0].trade_count == 7
+
+
+def test_kraken_public_client_raises_on_error_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"error": ["EGeneral:Temporary lockout"]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.kraken.com")
+
+    try:
+        KrakenPublicClient(client=client).fetch_ohlc(pair="XBTUSD", interval="1h", since=1704067200)
+    except DataClientError as exc:
+        assert "Temporary lockout" in str(exc)
+    else:
+        raise AssertionError("expected DataClientError for Kraken error payload")
 
 
 def test_coinbase_public_client_parses_candles() -> None:
