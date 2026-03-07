@@ -9,6 +9,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir "uv>=0.8,<0.9"
 
 COPY pyproject.toml uv.lock README.md .python-version ./
+COPY LICENSE ./
 COPY config ./config
 COPY src ./src
 
