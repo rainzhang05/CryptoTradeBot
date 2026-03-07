@@ -42,6 +42,8 @@ alerts:
 paths:
   data_dir: data
   artifacts_dir: artifacts
+  features_dir: artifacts/features
+  experiments_dir: artifacts/experiments
   logs_dir: runtime/logs
   state_dir: runtime/state
 """,
@@ -58,6 +60,7 @@ paths:
     assert config.secrets.kraken_api_key == "demo-key"
     assert config.secrets.smtp_port == 2525
     assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
+    assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
 
 
 def test_load_config_rejects_wrong_universe(tmp_path: Path) -> None:

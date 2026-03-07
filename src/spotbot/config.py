@@ -63,6 +63,38 @@ class StrategySettings(BaseModel):
         return value
 
 
+class ResearchSettings(BaseModel):
+    """Research and feature-generation settings for deterministic datasets."""
+
+    primary_interval: Literal["1d"] = "1d"
+    momentum_windows_days: tuple[int, ...] = (7, 30, 90)
+    trend_windows_days: tuple[int, ...] = (50, 200)
+    volatility_windows_days: tuple[int, ...] = (20, 60)
+    relative_strength_window_days: int = Field(default=30, ge=2)
+    breadth_window_days: int = Field(default=30, ge=2)
+    dollar_volume_window_days: int = Field(default=20, ge=2)
+    source_window_days: int = Field(default=30, ge=2)
+    forward_return_days: int = Field(default=5, ge=1)
+    downside_lookahead_days: int = Field(default=10, ge=1)
+    downside_threshold: float = Field(default=0.08, gt=0)
+    sell_lookahead_days: int = Field(default=20, ge=1)
+    sell_drawdown_threshold: float = Field(default=0.12, gt=0)
+    sell_return_threshold: float = Field(default=-0.02, lt=1)
+
+    @field_validator(
+        "momentum_windows_days",
+        "trend_windows_days",
+        "volatility_windows_days",
+    )
+    @classmethod
+    def validate_windows(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if not value:
+            raise ValueError("research window tuples must not be empty")
+        if any(window < 2 for window in value):
+            raise ValueError("research windows must be at least two days")
+        return tuple(value)
+
+
 class AlertSettings(BaseModel):
     """Alert routing settings."""
 
@@ -74,6 +106,8 @@ class PathsSettings(BaseModel):
 
     data_dir: Path = Path("data")
     artifacts_dir: Path = Path("artifacts")
+    features_dir: Path = Path("artifacts/features")
+    experiments_dir: Path = Path("artifacts/experiments")
     logs_dir: Path = Path("runtime/logs")
     state_dir: Path = Path("runtime/state")
 
@@ -99,6 +133,7 @@ class AppConfig(BaseModel):
     exchange: ExchangeSettings
     data: DataSettings = Field(default_factory=DataSettings)
     strategy: StrategySettings
+    research: ResearchSettings = Field(default_factory=ResearchSettings)
     alerts: AlertSettings
     paths: PathsSettings
     secrets: SecretSettings
@@ -120,6 +155,8 @@ class AppConfig(BaseModel):
         return PathsSettings(
             data_dir=(self.project_root / self.paths.data_dir).resolve(),
             artifacts_dir=(self.project_root / self.paths.artifacts_dir).resolve(),
+            features_dir=(self.project_root / self.paths.features_dir).resolve(),
+            experiments_dir=(self.project_root / self.paths.experiments_dir).resolve(),
             logs_dir=(self.project_root / self.paths.logs_dir).resolve(),
             state_dir=(self.project_root / self.paths.state_dir).resolve(),
         )

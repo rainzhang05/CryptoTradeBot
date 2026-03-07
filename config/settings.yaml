@@ -36,11 +36,29 @@ strategy:
     - AVAX
     - LINK
 
+research:
+  primary_interval: 1d
+  momentum_windows_days: [7, 30, 90]
+  trend_windows_days: [50, 200]
+  volatility_windows_days: [20, 60]
+  relative_strength_window_days: 30
+  breadth_window_days: 30
+  dollar_volume_window_days: 20
+  source_window_days: 30
+  forward_return_days: 5
+  downside_lookahead_days: 10
+  downside_threshold: 0.08
+  sell_lookahead_days: 20
+  sell_drawdown_threshold: 0.12
+  sell_return_threshold: -0.02
+
 alerts:
   email_recipient: null
 
 paths:
   data_dir: data
   artifacts_dir: artifacts
+  features_dir: artifacts/features
+  experiments_dir: artifacts/experiments
   logs_dir: runtime/logs
   state_dir: runtime/state
