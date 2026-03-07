@@ -9,15 +9,18 @@ from spotbot import __version__
 from spotbot.config import load_config
 from spotbot.data.service import DataService
 from spotbot.logging_config import configure_logging
+from spotbot.research.service import ResearchService
 from spotbot.runtime import RuntimeService
 
 app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
+features_app = typer.Typer(help="Build deterministic research datasets.")
 ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
+app.add_typer(features_app, name="features")
 
 
 @app.command("version")
@@ -49,6 +52,8 @@ def doctor() -> None:
         "paths": {
             "data_dir": str(paths.data_dir),
             "artifacts_dir": str(paths.artifacts_dir),
+            "features_dir": str(paths.features_dir),
+            "experiments_dir": str(paths.experiments_dir),
             "logs_dir": str(paths.logs_dir),
             "state_dir": str(paths.state_dir),
         },
@@ -144,3 +149,18 @@ def data_prune_raw() -> None:
     service = DataService(config)
     summary = service.prune_raw_kraken()
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@features_app.command("build")
+def features_build(
+    assets: list[str] | None = ASSETS_OPTION,
+    force: bool = typer.Option(
+        default=False,
+        help="Rebuild the dataset even if the deterministic cache already exists.",
+    ),
+) -> None:
+    """Build a deterministic feature and label dataset from canonical daily candles."""
+    config = load_config()
+    service = ResearchService(config)
+    summary = service.build_feature_store(assets=tuple(assets) if assets else None, force=force)
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))

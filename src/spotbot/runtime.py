@@ -31,6 +31,8 @@ class RuntimeService:
         for directory in (
             paths.data_dir,
             paths.artifacts_dir,
+            paths.features_dir,
+            paths.experiments_dir,
             paths.logs_dir,
             paths.state_dir,
         ):
