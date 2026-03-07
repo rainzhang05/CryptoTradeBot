@@ -1,0 +1,11 @@
+services:
+  bot:
+    build:
+      context: .
+    image: crypto-spot-trading-bot:local
+    command: ["doctor"]
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./runtime:/app/runtime
