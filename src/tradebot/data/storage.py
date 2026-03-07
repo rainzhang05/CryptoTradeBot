@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import tempfile
 from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
@@ -31,24 +32,42 @@ def write_candles(path: Path, candles: Iterable[Candle]) -> int:
     """Write canonical candles to CSV and return the row count."""
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=[
-                "timestamp",
-                "open",
-                "high",
-                "low",
-                "close",
-                "volume",
-                "trade_count",
-                "source",
-            ],
-        )
-        writer.writeheader()
-        for candle in candles:
-            writer.writerow(candle.to_row())
-            count += 1
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "trade_count",
+                    "source",
+                ],
+            )
+            writer.writeheader()
+            for candle in candles:
+                writer.writerow(candle.to_row())
+                count += 1
+
+        if temp_path is None:
+            raise RuntimeError(f"failed to create temporary candle file for {path}")
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
     return count
 
 

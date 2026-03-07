@@ -113,6 +113,8 @@ If Kraken data has a gap or anomaly:
 
 When the operator explicitly runs a completeness repair workflow, the implementation may materialize a last-resort synthetic carry-forward candle only after Kraken, Binance, and Coinbase all fail to provide the missing interval. Any such candle must be traceable in metadata through its explicit source value and must not be mistaken for Kraken-native market data.
 
+When the operator reruns the completeness repair workflow, the implementation should re-check previously non-Kraken candles and upgrade them to Kraken-native candles when Kraken later provides the same timestamps.
+
 Any fallback filled segment must be traceable in metadata.
 
 ## Cross-Exchange Policy

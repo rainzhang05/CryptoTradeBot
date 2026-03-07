@@ -79,6 +79,7 @@ This command must:
 This command must:
 
 - inspect the selected canonical candle files for historical gaps and stale tails
+- revisit previously fallback-filled or synthetic candles and replace them with Kraken-native candles when Kraken later serves that interval
 - fetch missing Kraken candles first for each unresolved interval window
 - use Binance and Coinbase only as documented fallback sources when Kraken cannot close a gap
 - optionally apply an explicit synthetic carry-forward candle only as a last resort so the canonical series becomes continuous to the latest closed interval

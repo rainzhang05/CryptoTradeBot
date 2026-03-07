@@ -239,6 +239,7 @@ class DataService:
                         "missing_after": after.missing_intervals,
                         "remaining_gap_ranges": stats["remaining_gap_ranges"],
                         "kraken_api_added": stats["kraken_api_added"],
+                        "kraken_native_replaced": stats["kraken_native_replaced"],
                         "binance_added": stats["binance_added"],
                         "coinbase_added": stats["coinbase_added"],
                         "synthetic_added": stats["synthetic_added"],
@@ -426,17 +427,29 @@ class DataService:
         merged = candles
         source_counts = {
             "kraken_api_added": 0,
+            "kraken_native_replaced": 0,
             "binance_added": 0,
             "coinbase_added": 0,
             "synthetic_added": 0,
         }
+
+        native_refresh_ranges = self._non_kraken_ranges(merged, interval, target_end=target_end)
+        for start_ts, end_ts in native_refresh_ranges:
+            refreshed_rows = self._fetch_kraken_range(
+                asset=asset,
+                pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
+                interval=interval,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+            merged, _, replaced = self._merge_candles_with_stats(merged, refreshed_rows)
+            source_counts["kraken_native_replaced"] += replaced
 
         missing_ranges = self._missing_ranges(merged, interval, target_end=target_end)
         for start_ts, end_ts in missing_ranges:
             if start_ts > end_ts:
                 continue
 
-            before_count = len(merged)
             kraken_rows = self._fetch_kraken_range(
                 asset=asset,
                 pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
@@ -444,20 +457,20 @@ class DataService:
                 start_ts=start_ts,
                 end_ts=end_ts,
             )
-            merged = self._merge_candles(merged, kraken_rows)
-            source_counts["kraken_api_added"] += max(len(merged) - before_count, 0)
+            merged, added, replaced = self._merge_candles_with_stats(merged, kraken_rows)
+            source_counts["kraken_api_added"] += added
+            source_counts["kraken_native_replaced"] += replaced
 
             unresolved = self._missing_ranges_in_window(merged, interval, start_ts, end_ts)
             for unresolved_start, unresolved_end in unresolved:
-                before_count = len(merged)
                 binance_rows = self._safe_fetch_binance(
                     symbol_map,
                     interval,
                     unresolved_start,
                     unresolved_end,
                 )
-                merged = self._merge_candles(merged, binance_rows)
-                source_counts["binance_added"] += max(len(merged) - before_count, 0)
+                merged, added, _ = self._merge_candles_with_stats(merged, binance_rows)
+                source_counts["binance_added"] += added
 
                 coinbase_gaps = self._missing_ranges_in_window(
                     merged,
@@ -466,24 +479,22 @@ class DataService:
                     unresolved_end,
                 )
                 for coinbase_start, coinbase_end in coinbase_gaps:
-                    before_count = len(merged)
                     coinbase_rows = self._safe_fetch_coinbase(
                         symbol_map,
                         interval,
                         coinbase_start,
                         coinbase_end,
                     )
-                    merged = self._merge_candles(merged, coinbase_rows)
-                    source_counts["coinbase_added"] += max(len(merged) - before_count, 0)
+                    merged, added, _ = self._merge_candles_with_stats(merged, coinbase_rows)
+                    source_counts["coinbase_added"] += added
 
             if allow_synthetic:
                 synthetic_gaps = self._missing_ranges_in_window(merged, interval, start_ts, end_ts)
-                before_count = len(merged)
-                merged = self._merge_candles(
+                merged, added, _ = self._merge_candles_with_stats(
                     merged,
                     self._synthesize_gap_fill(merged, interval, synthetic_gaps),
                 )
-                source_counts["synthetic_added"] += max(len(merged) - before_count, 0)
+                source_counts["synthetic_added"] += added
 
         remaining_ranges = self._missing_ranges(merged, interval, target_end=target_end)
         return merged, {
@@ -648,14 +659,29 @@ class DataService:
 
     @staticmethod
     def _merge_candles(existing: list[Candle], incoming: list[Candle]) -> list[Candle]:
+        merged, _, _ = DataService._merge_candles_with_stats(existing, incoming)
+        return merged
+
+    @staticmethod
+    def _merge_candles_with_stats(
+        existing: list[Candle], incoming: list[Candle]
+    ) -> tuple[list[Candle], int, int]:
         merged: dict[int, Candle] = {candle.timestamp: candle for candle in existing}
+        added = 0
+        replaced = 0
         for candle in incoming:
             current = merged.get(candle.timestamp)
-            if current is None or DataService._source_priority(
-                candle.source,
-            ) > DataService._source_priority(current.source):
+            if current is None:
                 merged[candle.timestamp] = candle
-        return [merged[timestamp] for timestamp in sorted(merged)]
+                added += 1
+                continue
+
+            if DataService._source_priority(candle.source) > DataService._source_priority(
+                current.source,
+            ):
+                merged[candle.timestamp] = candle
+                replaced += 1
+        return [merged[timestamp] for timestamp in sorted(merged)], added, replaced
 
     @staticmethod
     def _source_priority(source: str) -> int:
@@ -689,6 +715,38 @@ class DataService:
 
         if target_end is not None and previous_timestamp < target_end:
             ranges.append((previous_timestamp + step, target_end))
+        return ranges
+
+    @staticmethod
+    def _non_kraken_ranges(
+        candles: list[Candle],
+        interval: Interval,
+        *,
+        target_end: int | None = None,
+    ) -> list[tuple[int, int]]:
+        step = INTERVAL_SECONDS[interval]
+        kraken_sources = {"kraken_raw", "kraken_api"}
+        candidate_timestamps = sorted(
+            candle.timestamp
+            for candle in candles
+            if candle.source not in kraken_sources
+            and (target_end is None or candle.timestamp <= target_end)
+        )
+        if not candidate_timestamps:
+            return []
+
+        ranges: list[tuple[int, int]] = []
+        start_ts = candidate_timestamps[0]
+        previous_ts = candidate_timestamps[0]
+        for timestamp in candidate_timestamps[1:]:
+            if timestamp == previous_ts + step:
+                previous_ts = timestamp
+                continue
+            ranges.append((start_ts, previous_ts))
+            start_ts = timestamp
+            previous_ts = timestamp
+
+        ranges.append((start_ts, previous_ts))
         return ranges
 
     @staticmethod

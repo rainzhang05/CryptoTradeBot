@@ -450,3 +450,91 @@ paths: {}
     assert summary["assets"][0]["intervals"][0]["kraken_api_added"] == 0
     assert summary["assets"][0]["intervals"][0]["binance_added"] == 2
     assert summary["assets"][0]["intervals"][0]["missing_intervals_after"] == 0
+
+
+def test_complete_canonical_replaces_fallback_with_kraken_when_available(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "settings.yaml"
+    config_path.write_text(
+        """
+app: {}
+runtime: {}
+exchange: {}
+data:
+  raw_kraken_dir: data/kraken_data
+  canonical_dir: data/canonical
+  reports_dir: artifacts/reports/data
+  intervals: [1h]
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+    candle_path = tmp_path / "data" / "canonical" / "kraken" / "BTC" / "candles_1h.csv"
+    write_candles(
+        candle_path,
+        [
+            Candle(1704067200, 100, 101, 99, 100, 10, 5, "kraken_raw"),
+            Candle(1704070800, 101, 102, 100, 101, 11, 4, "binance_fallback"),
+            Candle(1704074400, 102, 103, 101, 102, 12, 6, "coinbase_fallback"),
+            Candle(1704078000, 103, 104, 102, 103, 13, 7, "kraken_raw"),
+        ],
+    )
+
+    class RefreshingKrakenClient:
+        def fetch_ohlc_range(
+            self,
+            pair: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            rows = {
+                1704070800: Candle(1704070800, 101.5, 102.5, 100.5, 101.7, 15, 8, "kraken_api"),
+                1704074400: Candle(1704074400, 102.5, 103.5, 101.5, 102.7, 16, 9, "kraken_api"),
+            }
+            return [candle for ts, candle in rows.items() if start_ts <= ts <= end_ts]
+
+    class EmptyFallbackClient:
+        def fetch_klines(
+            self,
+            symbol: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            return []
+
+        def fetch_candles(
+            self,
+            product_id: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            return []
+
+    service = DataService(
+        config,
+        kraken_client=RefreshingKrakenClient(),
+        binance_client=EmptyFallbackClient(),
+        coinbase_client=EmptyFallbackClient(),
+    )
+    monkeypatch.setattr(service, "_latest_closed_timestamp", lambda interval: 1704078000)
+
+    summary = service.complete_canonical(assets=("BTC",), allow_synthetic=False)
+    completed = candle_path.read_text(encoding="utf-8")
+
+    assert summary["assets"][0]["intervals"][0]["missing_intervals_before"] == 0
+    assert summary["assets"][0]["intervals"][0]["kraken_native_replaced"] == 2
+    assert summary["assets"][0]["intervals"][0]["missing_intervals_after"] == 0
+    assert "binance_fallback" not in completed
+    assert "coinbase_fallback" not in completed
+    assert completed.count("kraken_api") == 2
