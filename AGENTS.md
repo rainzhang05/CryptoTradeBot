@@ -49,6 +49,7 @@ Purpose: defines logging, monitoring, alerting, freeze handling, and runbook exp
 ## Commit Rules
 
 - Commit changes locally in small, logical increments.
+- Prefer more small commits over fewer larger commits when scope allows.
 - Do not batch an entire phase or a whole work session into one commit.
 - Each commit should represent one coherent step such as a module, a spec update, a test addition, a workflow change, or a focused refactor.
 - When practical, include implementation, tests, and docs for that logical step in the same commit.

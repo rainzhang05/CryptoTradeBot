@@ -96,6 +96,32 @@ The deterministic feature layer must include, at minimum:
 These features must be computed entirely from the canonical Kraken dataset for strategy decisions.
 Supplementary exchange data must not replace Kraken values in the primary signal set.
 
+## Phase 3 Research Defaults
+
+The Phase 3 implementation uses these deterministic daily research defaults:
+
+- primary feature interval: 1 day
+- momentum windows: 7, 30, and 90 trading days
+- trend-gap windows: 50 and 200 trading days
+- realized-volatility windows: 20 and 60 trading days
+- relative-strength window: 30 trading days versus the fixed universe average
+- breadth windows: 30 trading days for positive-momentum breadth and above-trend breadth
+- liquidity window: 20 trading days using average dollar volume and trade count
+- source-confidence window: 30 trading days using Kraken-versus-fallback source ratios
+
+The initial Phase 3 labels are:
+
+- forward-return label: 5-day close-to-close return
+- downside label: minimum forward low over 10 days, plus a downside-risk flag at -8%
+- sell-risk label: minimum forward low over 20 days combined with a 20-day return filter, flagged when drawdown is at least -12% and the 20-day return is at most -2%
+
+The initial BTC-led regime classification is:
+
+- `frozen` when recent BTC source confidence is below 80% or required BTC regime inputs are incomplete
+- `constructive` when BTC momentum and BTC trend gap are positive and fixed-universe breadth is at least 60%
+- `defensive` when BTC momentum is below -5%, BTC trend gap is below -3%, or fixed-universe breadth is at most 35%
+- `neutral` otherwise
+
 ## ML Feature Policy
 
 The ML layer may use:

@@ -135,6 +135,14 @@ The project may store large data artifacts outside version control while keeping
 - Derived features and labels are cacheable.
 - Backtest and simulation outputs are stored as reproducible artifacts.
 
+Phase 3 derived-dataset layout is:
+
+- `artifacts/features/<dataset_id>/dataset.csv`: experiment-ready labeled rows
+- `artifacts/features/<dataset_id>/manifest.json`: deterministic input, settings, and column metadata
+- `artifacts/experiments/<dataset_id>/`: reserved experiment root for later training and validation artifacts tied to that dataset
+
+`dataset_id` must be deterministic from the selected assets, research settings, and canonical daily inputs so cached datasets can be reused safely.
+
 ## Symbol Mapping Policy
 
 Kraken symbol naming can differ from common ticker conventions.

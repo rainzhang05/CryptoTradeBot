@@ -68,6 +68,8 @@ Responsibilities:
 - cache reusable derived datasets
 - ensure point-in-time correctness
 
+Phase 3 stores derived datasets under `artifacts/features/<dataset_id>/` and reserves `artifacts/experiments/<dataset_id>/` for experiments that consume that dataset.
+
 ### 4. ML subsystem
 
 Responsibilities:
@@ -197,6 +199,7 @@ The implementation should separate:
 - raw data
 - canonical data
 - derived features
+- experiment manifests and outputs
 - model artifacts
 - backtest results
 - runtime logs

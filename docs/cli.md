@@ -57,6 +57,16 @@ This preserves the concise style the project wants while keeping commands readab
 - `bot model validate`: run validation for a model candidate.
 - `bot model promote`: promote a model artifact after validation gates pass.
 
+### `bot features build`
+
+This command must:
+
+- read canonical Kraken daily candles for the selected assets
+- generate deterministic features and labels without future leakage in feature columns
+- reuse cached datasets when the deterministic `dataset_id` already exists unless a force rebuild is requested
+- write the dataset and manifest under `artifacts/features/<dataset_id>/`
+- prepare a matching experiment root under `artifacts/experiments/<dataset_id>/`
+
 ### Backtesting and simulation
 
 - `bot backtest run`: execute a backtest.

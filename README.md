@@ -4,7 +4,7 @@ Systematic crypto spot trading bot for Kraken spot markets with a CLI-first oper
 
 ## Status
 
-The repository is in Phase 2 of the roadmap.
+The repository is in Phase 3 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -17,6 +17,10 @@ The current implementation provides:
 - canonical data integrity reports
 - source coverage reporting
 - incremental Kraken sync with Binance and Coinbase fallback support when needed
+- deterministic daily feature generation from canonical Kraken data
+- BTC-led regime features, breadth metrics, liquidity features, and source-confidence features
+- label generation for forward return, downside risk, and sell-risk modeling
+- cached experiment-ready datasets with manifests and experiment directory conventions
 
 ## Quick Start
 
@@ -33,6 +37,10 @@ Useful Phase 2 data commands:
 - `uv run bot data check`
 - `uv run bot data sync`
 - `uv run bot data prune-raw`
+
+Useful Phase 3 research command:
+
+- `uv run bot features build`
 
 ## Docker
 

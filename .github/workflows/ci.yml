@@ -49,3 +49,7 @@ jobs:
         run: |
           docker run --rm crypto-spot-trading-bot:ci doctor
           docker run --rm crypto-spot-trading-bot:ci run --mode simulate --max-cycles 1
+          docker run --rm \
+            -v "$PWD/data:/app/data" \
+            -v "$PWD/artifacts:/app/artifacts" \
+            crypto-spot-trading-bot:ci features build --assets BTC --assets ETH
