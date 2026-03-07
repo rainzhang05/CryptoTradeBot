@@ -1,0 +1,237 @@
+# Implementation Roadmap
+
+This roadmap defines the complete implementation path from an empty repository to a production-grade Kraken spot trading bot.
+Each phase has a fixed objective, explicit scope, and a required deliverable.
+Work is complete only when the phase deliverable exists and satisfies the acceptance criteria described in the supporting specification documents.
+
+## Phase 0: Authoritative Planning Baseline
+
+### Objective
+
+Create the project source of truth before application code begins.
+
+### Includes
+
+- Create the documentation set in `docs/`.
+- Define project goals, non-goals, and constraints.
+- Freeze the V1 trading universe, exchange scope, operating currency, and runtime modes.
+- Define the hybrid strategy direction at a high level.
+- Define testing, CI, operations, and release-quality expectations.
+- Create root-level agent instructions for future coding sessions.
+
+### Deliverable
+
+- A complete `docs/` folder that fully specifies the project plan.
+- A root `AGENTS.md` that instructs coding agents how to work in this repository.
+
+## Phase 1: Project Skeleton and Tooling Foundation
+
+### Objective
+
+Establish the repository structure and the minimum engineering foundation required for safe development.
+
+### Includes
+
+- Define the implementation language and package layout.
+- Create the Python project structure for application code, tests, scripts, and Docker assets.
+- Add dependency management and lockfile strategy.
+- Add baseline configuration loading with `.env` and non-secret YAML settings.
+- Add structured logging foundation.
+- Add the initial Docker image and local container workflow.
+- Add baseline GitHub Actions CI for install, test, lint, type-check, and coverage.
+
+### Deliverable
+
+- A buildable project skeleton with repeatable local setup and working CI.
+
+## Phase 2: Historical Data Platform
+
+### Objective
+
+Build the canonical data pipeline that powers research, backtesting, simulation, and live trading.
+
+### Includes
+
+- Ingest full historical Kraken market data dumps provided by the user.
+- Add incremental Kraken API ingestion for dates not present in local historical dumps.
+- Build a canonical schema for OHLCV, trades if available, and metadata.
+- Add symbol mapping for the fixed 10-asset universe.
+- Add integrity checks for missing candles, duplicate timestamps, and malformed rows.
+- Add Binance and Coinbase collectors for gap detection and cross-checking only.
+- Implement gap report generation and source-confidence rules.
+- Add local storage layout and metadata manifests.
+
+### Deliverable
+
+- A reproducible local historical market dataset in the canonical project format, with integrity reports and gap diagnostics.
+
+## Phase 3: Research and Feature Engineering Framework
+
+### Objective
+
+Provide a research layer that can generate deterministic features and labels for the hybrid strategy.
+
+### Includes
+
+- Implement feature generation from Kraken canonical data.
+- Implement rule-based indicators and regime variables.
+- Implement supplementary cross-check features from Binance and Coinbase only where permitted by the data policy.
+- Define ML label generation for forward return, downside risk, and sell-risk modeling.
+- Add feature stores or cached derived datasets for repeatable experiments.
+- Add experiment tracking conventions and artifact layout.
+
+### Deliverable
+
+- A deterministic research pipeline that turns raw canonical market data into reproducible features, labels, and experiment-ready datasets.
+
+## Phase 4: Backtesting Engine and Simulation Core
+
+### Objective
+
+Build an execution-aware backtesting engine that evaluates the strategy on Kraken conditions only.
+
+### Includes
+
+- Event-driven or bar-driven backtest engine aligned with the project specification.
+- Portfolio accounting in USD.
+- Kraken-specific fees, lot sizes, and execution constraints where historical metadata permits.
+- Slippage and liquidity modeling with conservative assumptions.
+- Trade journal, fills ledger, equity curve, and performance report generation.
+- Simulation mode runtime that reuses the same strategy code path as live trading wherever practical.
+- Regression fixtures to keep simulate and live behavior aligned.
+
+### Deliverable
+
+- A complete backtesting engine and a simulation runtime that produces reproducible strategy results on Kraken data.
+
+## Phase 5: Rule-Based Strategy Core
+
+### Objective
+
+Implement the deterministic strategy shell that defines admissible trades and hard risk constraints.
+
+### Includes
+
+- Universe membership enforcement for the fixed ten-asset set.
+- Trend, momentum, volatility, breadth, and regime calculations.
+- Rule-based candidate filtering and portfolio constraints.
+- Cash allocation behavior for risk-off periods.
+- Hard invalidation rules that override ML preference when risk conditions are unacceptable.
+- Initial sell discipline and downside-handling rules.
+
+### Deliverable
+
+- A deterministic rule engine that can independently generate positions, exits, and risk states from historical or live inputs.
+
+## Phase 6: ML Prediction Layer
+
+### Objective
+
+Add an ML layer that improves ranking quality and downside decision quality without replacing the rule-based safety shell.
+
+### Includes
+
+- Train a predictive model on Kraken-based canonical features.
+- Use supplementary exchange data only for validation and gap-confidence, not as blended primary labels.
+- Produce forward-looking signals such as expected return, downside risk probability, and sell-risk confidence.
+- Integrate the ML outputs into the strategy as ranking refinement and downside-aware sell moderation.
+- Add walk-forward validation, leakage controls, and model artifact versioning.
+- Define model retraining cadence and promotion rules.
+
+### Deliverable
+
+- A versioned ML subsystem whose outputs are consumed by the strategy engine in a controlled, auditable way.
+
+## Phase 7: Execution and Live Trading Engine
+
+### Objective
+
+Connect the strategy to Kraken execution safely and continuously.
+
+### Includes
+
+- Kraken authentication and account-state sync.
+- USD cash management and balance reconciliation.
+- Order creation, replace, cancel, and fill reconciliation.
+- Live portfolio state management.
+- Freeze-on-failure safeguards for data gaps, API failures, and execution anomalies.
+- Shared order-intent path between simulate and live modes.
+- Terminal monitoring output integrated into live runtime.
+
+### Deliverable
+
+- A continuous live trading engine for Kraken that can place and reconcile real orders in USD.
+
+## Phase 8: CLI Product Surface
+
+### Objective
+
+Deliver the operator-facing interface for research, simulation, live trading, monitoring, and maintenance.
+
+### Includes
+
+- Implement the full CLI command tree defined in `cli.md`.
+- Add setup and configuration validation commands.
+- Add data ingestion and integrity-report commands.
+- Add backtest and simulation commands.
+- Add live trading and terminal monitoring commands.
+- Add email recipient management commands.
+- Add report export and artifact inspection commands.
+
+### Deliverable
+
+- A consistent CLI that can operate the full project without any GUI.
+
+## Phase 9: Reliability, Observability, and Runbooks
+
+### Objective
+
+Raise the project from functional software to production-operable software.
+
+### Includes
+
+- Comprehensive structured logs across all major components.
+- Real-time terminal monitoring view during live mode.
+- Email alert integration for all specified event classes.
+- Runbooks for setup, routine operation, incident handling, freeze recovery, and release validation.
+- Docker-based deployment flow for local execution and future cloud transition.
+- Persistence and recovery logic for restart-safe operation.
+
+### Deliverable
+
+- A production-operations package consisting of observability, alerts, deployment assets, and runbooks.
+
+## Phase 10: Final Production Readiness
+
+### Objective
+
+Ship the final production-grade project with measurable quality gates.
+
+### Includes
+
+- End-to-end validation across data, strategy, simulation, and live pathways.
+- CI gates for tests, build, Docker, and coverage.
+- Minimum test coverage of 80%.
+- Release checklist completion.
+- Final documentation review to ensure docs remain authoritative.
+- Final reproducibility validation from clean checkout to working system.
+
+### Deliverable
+
+- A production-grade Kraken spot trading bot repository that can be installed, validated, simulated, and run live through the CLI with complete supporting documentation.
+
+## Final Deliverable Definition
+
+The final deliverable for this project is not just a trading algorithm.
+It is a complete, documented, test-covered, Dockerized software system that includes:
+
+- Canonical historical data ingestion and validation.
+- A reproducible research and feature pipeline.
+- A full backtesting engine.
+- A simulation mode and a live trading mode.
+- A hybrid strategy with rule-based safety rails and ML-assisted decision improvement.
+- Kraken-only live execution in USD.
+- CLI-based operation.
+- Comprehensive logs and email alerts.
+- CI enforcement with at least 80% test coverage.
+- Operator runbooks and project documentation sufficient for a new developer to understand and continue the work.
