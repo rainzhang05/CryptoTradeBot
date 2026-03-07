@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from tradebot.config import AppConfig
 from tradebot.data.aggregation import CandleAccumulator
 from tradebot.data.clients import BinancePublicClient, CoinbasePublicClient, KrakenPublicClient
 from tradebot.data.integrity import check_candles, read_candles
 from tradebot.data.models import (
+    INTERVAL_SECONDS,
     AssetImportResult,
     Candle,
     ImportSummary,
@@ -151,6 +153,74 @@ class DataService:
         write_json(report_path, {"assets": synced_assets})
         return {"assets": synced_assets, "report_file": str(report_path)}
 
+    def complete_canonical(
+        self,
+        assets: tuple[str, ...] | None = None,
+        allow_synthetic: bool = True,
+    ) -> dict[str, object]:
+        """Repair historical gaps and extend canonical candles to the latest closed interval."""
+        selected_assets = assets or tuple(ASSET_SYMBOLS)
+        completion_assets: list[dict[str, object]] = []
+
+        for asset in selected_assets:
+            if any(
+                not canonical_candle_file(
+                    self.data_settings.canonical_dir,
+                    asset,
+                    interval,
+                ).exists()
+                for interval in self.data_settings.intervals
+            ):
+                self.import_kraken_raw(assets=(asset,))
+
+            interval_results: list[dict[str, object]] = []
+            for interval in self.data_settings.intervals:
+                candle_path = canonical_candle_file(
+                    self.data_settings.canonical_dir,
+                    asset,
+                    interval,
+                )
+                if not candle_path.exists():
+                    interval_results.append({"interval": interval, "status": "missing_canonical"})
+                    continue
+
+                existing = read_candles(candle_path)
+                if not existing:
+                    interval_results.append({"interval": interval, "status": "empty_canonical"})
+                    continue
+
+                before = check_candles(asset=asset, interval=interval, path=candle_path)
+                target_end = self._latest_closed_timestamp(interval)
+                completed, stats = self._complete_interval(
+                    asset=asset,
+                    interval=interval,
+                    candles=existing,
+                    target_end=target_end,
+                    allow_synthetic=allow_synthetic,
+                )
+                write_candles(candle_path, completed)
+                after = check_candles(asset=asset, interval=interval, path=candle_path)
+                interval_results.append(
+                    {
+                        "interval": interval,
+                        "status": "continuous" if after.missing_intervals == 0 else "incomplete",
+                        "previous_last_timestamp": before.last_timestamp,
+                        "current_last_timestamp": after.last_timestamp,
+                        "missing_intervals_before": before.missing_intervals,
+                        "missing_intervals_after": after.missing_intervals,
+                        "candles_before": before.candle_count,
+                        "candles_after": after.candle_count,
+                        **stats,
+                    }
+                )
+
+            completion_assets.append({"asset": asset, "intervals": interval_results})
+
+        report_path = self.data_settings.reports_dir / "latest_completion_summary.json"
+        payload = {"assets": completion_assets, "allow_synthetic": allow_synthetic}
+        write_json(report_path, payload)
+        return {"assets": completion_assets, "report_file": str(report_path)}
+
     def _import_single_asset(self, asset: str, raw_path: Path) -> AssetImportResult:
         symbol_map = ASSET_SYMBOLS[asset]
         aggregators = {
@@ -255,18 +325,18 @@ class DataService:
 
             step = 3600 if interval == "1h" else 86400
             last_timestamp = existing[-1].timestamp
-            target_end = (int(datetime.now(tz=UTC).timestamp()) // step) * step - step
+            target_end = self._latest_closed_timestamp(interval)
             start_timestamp = last_timestamp + step
             if start_timestamp > target_end:
                 intervals.append({"interval": interval, "status": "up_to_date", "appended": 0})
                 continue
 
-            kraken_rows = self.kraken_client.fetch_ohlc(
+            kraken_rows = self.kraken_client.fetch_ohlc_range(
                 pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
                 interval=interval,
-                since=last_timestamp,
+                start_ts=start_timestamp,
+                end_ts=target_end,
             )
-            kraken_rows = [candle for candle in kraken_rows if candle.timestamp >= start_timestamp]
 
             merged_new: list[Candle] = []
             fallback_source = None
@@ -297,6 +367,85 @@ class DataService:
 
         return {"asset": asset, "intervals": intervals}
 
+    def _complete_interval(
+        self,
+        *,
+        asset: str,
+        interval: Interval,
+        candles: list[Candle],
+        target_end: int,
+        allow_synthetic: bool,
+    ) -> tuple[list[Candle], dict[str, Any]]:
+        symbol_map = ASSET_SYMBOLS[asset]
+        merged = candles
+        source_counts = {
+            "kraken_api_added": 0,
+            "binance_added": 0,
+            "coinbase_added": 0,
+            "synthetic_added": 0,
+        }
+
+        missing_ranges = self._missing_ranges(merged, interval, target_end=target_end)
+        for start_ts, end_ts in missing_ranges:
+            if start_ts > end_ts:
+                continue
+
+            before_count = len(merged)
+            kraken_rows = self.kraken_client.fetch_ohlc_range(
+                pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
+                interval=interval,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+            merged = self._merge_candles(merged, kraken_rows)
+            source_counts["kraken_api_added"] += max(len(merged) - before_count, 0)
+
+            unresolved = self._missing_ranges_in_window(merged, interval, start_ts, end_ts)
+            for unresolved_start, unresolved_end in unresolved:
+                before_count = len(merged)
+                binance_rows = self._fetch_binance(
+                    symbol_map,
+                    interval,
+                    unresolved_start,
+                    unresolved_end,
+                )
+                merged = self._merge_candles(merged, binance_rows)
+                source_counts["binance_added"] += max(len(merged) - before_count, 0)
+
+                coinbase_gaps = self._missing_ranges_in_window(
+                    merged,
+                    interval,
+                    unresolved_start,
+                    unresolved_end,
+                )
+                for coinbase_start, coinbase_end in coinbase_gaps:
+                    before_count = len(merged)
+                    coinbase_rows = self._fetch_coinbase(
+                        symbol_map,
+                        interval,
+                        coinbase_start,
+                        coinbase_end,
+                    )
+                    merged = self._merge_candles(merged, coinbase_rows)
+                    source_counts["coinbase_added"] += max(len(merged) - before_count, 0)
+
+            if allow_synthetic:
+                synthetic_gaps = self._missing_ranges_in_window(merged, interval, start_ts, end_ts)
+                before_count = len(merged)
+                merged = self._merge_candles(
+                    merged,
+                    self._synthesize_gap_fill(merged, interval, synthetic_gaps),
+                )
+                source_counts["synthetic_added"] += max(len(merged) - before_count, 0)
+
+        remaining_ranges = self._missing_ranges(merged, interval, target_end=target_end)
+        return merged, {
+            **source_counts,
+            "remaining_gap_ranges": len(remaining_ranges),
+            "target_end_timestamp": target_end,
+            "target_end_iso": datetime.fromtimestamp(target_end, tz=UTC).isoformat(),
+        }
+
     def _fetch_fallback(
         self,
         symbol_map: AssetSymbolMap,
@@ -307,32 +456,155 @@ class DataService:
         if start_timestamp > end_timestamp:
             return [], None
 
-        asset_symbols = ASSET_SYMBOLS[symbol_map.asset]
         try:
-            rows = self.binance_client.fetch_klines(
-                symbol=asset_symbols.binance_symbol,
-                interval=interval,
-                start_ts=start_timestamp,
-                end_ts=end_timestamp,
-            )
+            rows = self._fetch_binance(symbol_map, interval, start_timestamp, end_timestamp)
             return rows, "binance"
         except Exception:
-            rows = self.coinbase_client.fetch_candles(
-                product_id=asset_symbols.coinbase_product,
-                interval=interval,
-                start_ts=start_timestamp,
-                end_ts=end_timestamp,
-            )
+            rows = self._fetch_coinbase(symbol_map, interval, start_timestamp, end_timestamp)
             return rows, "coinbase"
+
+    def _fetch_binance(
+        self,
+        symbol_map: AssetSymbolMap,
+        interval: Interval,
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> list[Candle]:
+        if start_timestamp > end_timestamp:
+            return []
+        asset_symbols = ASSET_SYMBOLS[symbol_map.asset]
+        return self.binance_client.fetch_klines(
+            symbol=asset_symbols.binance_symbol,
+            interval=interval,
+            start_ts=start_timestamp,
+            end_ts=end_timestamp,
+        )
+
+    def _fetch_coinbase(
+        self,
+        symbol_map: AssetSymbolMap,
+        interval: Interval,
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> list[Candle]:
+        if start_timestamp > end_timestamp:
+            return []
+        asset_symbols = ASSET_SYMBOLS[symbol_map.asset]
+        return self.coinbase_client.fetch_candles(
+            product_id=asset_symbols.coinbase_product,
+            interval=interval,
+            start_ts=start_timestamp,
+            end_ts=end_timestamp,
+        )
 
     @staticmethod
     def _merge_candles(existing: list[Candle], incoming: list[Candle]) -> list[Candle]:
         merged: dict[int, Candle] = {candle.timestamp: candle for candle in existing}
         for candle in incoming:
             current = merged.get(candle.timestamp)
-            if current is None or current.source != "kraken_api":
+            if current is None or DataService._source_priority(
+                candle.source,
+            ) > DataService._source_priority(current.source):
                 merged[candle.timestamp] = candle
         return [merged[timestamp] for timestamp in sorted(merged)]
+
+    @staticmethod
+    def _source_priority(source: str) -> int:
+        priorities = {
+            "synthetic_gap_fill": 0,
+            "coinbase_fallback": 1,
+            "binance_fallback": 2,
+            "kraken_api": 3,
+            "kraken_raw": 4,
+        }
+        return priorities.get(source, 0)
+
+    @staticmethod
+    def _missing_ranges(
+        candles: list[Candle],
+        interval: Interval,
+        *,
+        target_end: int | None = None,
+    ) -> list[tuple[int, int]]:
+        if not candles:
+            return []
+
+        step = INTERVAL_SECONDS[interval]
+        ranges: list[tuple[int, int]] = []
+        ordered = sorted(candles, key=lambda candle: candle.timestamp)
+        previous_timestamp = ordered[0].timestamp
+        for candle in ordered[1:]:
+            if candle.timestamp > previous_timestamp + step:
+                ranges.append((previous_timestamp + step, candle.timestamp - step))
+            previous_timestamp = candle.timestamp
+
+        if target_end is not None and previous_timestamp < target_end:
+            ranges.append((previous_timestamp + step, target_end))
+        return ranges
+
+    @staticmethod
+    def _missing_ranges_in_window(
+        candles: list[Candle],
+        interval: Interval,
+        start_ts: int,
+        end_ts: int,
+    ) -> list[tuple[int, int]]:
+        if start_ts > end_ts:
+            return []
+
+        step = INTERVAL_SECONDS[interval]
+        timestamps = sorted(
+            candle.timestamp for candle in candles if start_ts <= candle.timestamp <= end_ts
+        )
+        ranges: list[tuple[int, int]] = []
+        expected = start_ts
+
+        for timestamp in timestamps:
+            if timestamp > expected:
+                ranges.append((expected, timestamp - step))
+            expected = timestamp + step
+
+        if expected <= end_ts:
+            ranges.append((expected, end_ts))
+        return ranges
+
+    @staticmethod
+    def _synthesize_gap_fill(
+        candles: list[Candle],
+        interval: Interval,
+        gap_ranges: list[tuple[int, int]],
+    ) -> list[Candle]:
+        if not gap_ranges:
+            return []
+
+        step = INTERVAL_SECONDS[interval]
+        by_timestamp = {candle.timestamp: candle for candle in candles}
+        synthetic: list[Candle] = []
+        for start_ts, end_ts in gap_ranges:
+            previous = by_timestamp.get(start_ts - step)
+            if previous is None:
+                continue
+            timestamp = start_ts
+            while timestamp <= end_ts:
+                synthetic_candle = Candle(
+                    timestamp=timestamp,
+                    open=previous.close,
+                    high=previous.close,
+                    low=previous.close,
+                    close=previous.close,
+                    volume=0.0,
+                    trade_count=1,
+                    source="synthetic_gap_fill",
+                )
+                synthetic.append(synthetic_candle)
+                previous = synthetic_candle
+                timestamp += step
+        return synthetic
+
+    @staticmethod
+    def _latest_closed_timestamp(interval: Interval) -> int:
+        step = INTERVAL_SECONDS[interval]
+        return (int(datetime.now(tz=UTC).timestamp()) // step) * step - step
 
     @staticmethod
     def _parse_trade_line(line: str) -> RawTrade:

@@ -145,6 +145,27 @@ def data_sync(assets: list[str] | None = ASSETS_OPTION) -> None:
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
+@data_app.command("complete")
+def data_complete(
+    assets: list[str] | None = ASSETS_OPTION,
+    allow_synthetic: bool = typer.Option(
+        default=True,
+        help=(
+            "Use explicit synthetic carry-forward candles only when Kraken, "
+            "Binance, and Coinbase still cannot close a gap."
+        ),
+    ),
+) -> None:
+    """Fill canonical gaps and extend all selected series to the latest closed interval."""
+    config = load_config()
+    service = DataService(config)
+    summary = service.complete_canonical(
+        assets=tuple(assets) if assets else None,
+        allow_synthetic=allow_synthetic,
+    )
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
 @data_app.command("prune-raw")
 def data_prune_raw() -> None:
     """Delete raw Kraken files that are outside the fixed V1 universe."""

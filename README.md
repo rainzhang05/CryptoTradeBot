@@ -40,6 +40,7 @@ Useful Phase 2 data commands:
 - `uv run bot data import`
 - `uv run bot data check`
 - `uv run bot data sync`
+- `uv run bot data complete`
 - `uv run bot data prune-raw`
 
 Useful Phase 3 research command:

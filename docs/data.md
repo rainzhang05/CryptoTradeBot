@@ -111,6 +111,8 @@ If Kraken data has a gap or anomaly:
 - prefer repairing from Kraken if a trusted alternative Kraken source exists
 - use supplementary data only under a documented fallback rule
 
+When the operator explicitly runs a completeness repair workflow, the implementation may materialize a last-resort synthetic carry-forward candle only after Kraken, Binance, and Coinbase all fail to provide the missing interval. Any such candle must be traceable in metadata through its explicit source value and must not be mistaken for Kraken-native market data.
+
 Any fallback filled segment must be traceable in metadata.
 
 ## Cross-Exchange Policy
@@ -168,3 +170,4 @@ The implementation must provide a stable asset mapping layer so the project can 
 - Gap and anomaly diagnostics.
 - Supplementary exchange cross-check capability.
 - Reproducible feature inputs for research, backtest, simulate, and live modes.
+- A repair workflow that can close historical gaps and extend canonical data to the latest closed interval with traceable source metadata.

@@ -74,3 +74,62 @@ paths: {}
 
     assert result.exit_code == 0
     assert '"asset": "BTC"' in result.stdout
+
+
+def test_data_complete_command(tmp_path: Path, monkeypatch) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "settings.yaml"
+    config_path.write_text(
+        """
+app: {}
+runtime: {}
+exchange: {}
+data:
+  raw_kraken_dir: data/kraken_data
+  canonical_dir: data/canonical
+  reports_dir: artifacts/reports/data
+  intervals: [1h]
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+
+    from tradebot import cli as cli_module
+
+    class FakeDataService:
+      def __init__(self, config: object) -> None:
+        self.config = config
+
+      def complete_canonical(
+        self,
+        assets: tuple[str, ...] | None = None,
+        allow_synthetic: bool = True,
+      ) -> dict[str, object]:
+        return {
+          "assets": [
+            {
+              "asset": "BTC",
+              "intervals": [{"interval": "1h", "status": "continuous"}],
+            }
+          ],
+          "report_file": str(
+            tmp_path
+            / "artifacts"
+            / "reports"
+            / "data"
+            / "latest_completion_summary.json"
+          ),
+          "allow_synthetic": allow_synthetic,
+        }
+
+    monkeypatch.setattr(cli_module, "DataService", FakeDataService)
+
+    result = runner.invoke(app, ["data", "complete", "--assets", "BTC"])
+
+    assert result.exit_code == 0
+    assert '"status": "continuous"' in result.stdout

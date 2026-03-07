@@ -42,6 +42,36 @@ class KrakenPublicClient:
             for row in rows
         ]
 
+    def fetch_ohlc_range(
+        self,
+        pair: str,
+        interval: Interval,
+        start_ts: int,
+        end_ts: int,
+    ) -> list[Candle]:
+        """Fetch Kraken OHLC candles for a bounded range, paging until exhausted."""
+        if start_ts > end_ts:
+            return []
+
+        results: dict[int, Candle] = {}
+        step = interval_seconds(interval)
+        cursor = start_ts
+        while cursor <= end_ts:
+            page = self.fetch_ohlc(pair=pair, interval=interval, since=max(cursor - step, 0))
+            page = [candle for candle in page if start_ts <= candle.timestamp <= end_ts]
+            if not page:
+                break
+
+            for candle in page:
+                results[candle.timestamp] = candle
+
+            next_cursor = max(candle.timestamp for candle in page) + step
+            if next_cursor <= cursor:
+                break
+            cursor = next_cursor
+
+        return [results[timestamp] for timestamp in sorted(results)]
+
 
 class BinancePublicClient:
     """Public Binance spot client for kline fallback retrieval."""

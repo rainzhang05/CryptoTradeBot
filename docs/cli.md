@@ -48,6 +48,7 @@ This preserves the concise style the project wants while keeping commands readab
 - `bot data import`: import local Kraken historical data packages.
 - `bot data sync`: fetch missing or newer market data.
 - `bot data check`: run integrity checks and gap reports.
+- `bot data complete`: repair historical gaps and extend canonical data to the latest closed interval.
 - `bot data source`: show source coverage and fallback usage.
 
 ### Research and models
@@ -72,6 +73,16 @@ This command must:
 - `bot backtest run`: execute a backtest.
 - `bot backtest report`: view or export backtest results.
 - `bot run --mode simulate`: start continuous simulation mode.
+
+### `bot data complete`
+
+This command must:
+
+- inspect the selected canonical candle files for historical gaps and stale tails
+- fetch missing Kraken candles first for each unresolved interval window
+- use Binance and Coinbase only as documented fallback sources when Kraken cannot close a gap
+- optionally apply an explicit synthetic carry-forward candle only as a last resort so the canonical series becomes continuous to the latest closed interval
+- write a machine-readable completion summary under `artifacts/reports/data/latest_completion_summary.json`
 
 ### `bot backtest run`
 
