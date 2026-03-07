@@ -35,6 +35,24 @@ strategy:
     - TRX
     - AVAX
     - LINK
+  min_source_confidence: 0.8
+  entry_momentum_floor: 0.0
+  entry_trend_gap_floor: 0.0
+  hold_momentum_floor: -0.03
+  hold_trend_gap_floor: -0.03
+  max_realized_volatility: 0.25
+  reduction_volatility_threshold: 0.12
+  severe_momentum_floor: -0.08
+  severe_trend_gap_floor: -0.05
+  weak_relative_strength_floor: -0.03
+  reduction_target_fraction: 0.5
+  held_asset_score_bonus: 0.02
+  drawdown_caution_threshold: 0.10
+  drawdown_reduced_threshold: 0.20
+  drawdown_catastrophe_threshold: 0.30
+  elevated_caution_exposure_multiplier: 0.8
+  reduced_aggressiveness_exposure_multiplier: 0.6
+  catastrophe_exposure_multiplier: 0.3
 
 research:
   primary_interval: 1d

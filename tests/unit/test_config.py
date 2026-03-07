@@ -84,3 +84,24 @@ paths: {}
 def test_load_config_rejects_missing_file(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         load_config(config_path=tmp_path / "config" / "settings.yaml", env_path=tmp_path / ".env")
+
+
+def test_load_config_rejects_invalid_strategy_drawdown_order(tmp_path: Path) -> None:
+  config_path = write_config(
+    tmp_path,
+    """
+app: {}
+runtime: {}
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+  drawdown_caution_threshold: 0.2
+  drawdown_reduced_threshold: 0.1
+  drawdown_catastrophe_threshold: 0.3
+alerts: {}
+paths: {}
+""",
+  )
+
+  with pytest.raises(ConfigError):
+    load_config(config_path=config_path, env_path=tmp_path / ".env")

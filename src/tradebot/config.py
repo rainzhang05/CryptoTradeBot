@@ -54,6 +54,24 @@ class StrategySettings(BaseModel):
     """Strategy-level settings that are fixed in V1."""
 
     fixed_universe: tuple[str, ...] = FIXED_UNIVERSE
+    min_source_confidence: float = Field(default=0.8, ge=0, le=1)
+    entry_momentum_floor: float = Field(default=0.0, ge=-1, le=1)
+    entry_trend_gap_floor: float = Field(default=0.0, ge=-1, le=1)
+    hold_momentum_floor: float = Field(default=-0.03, ge=-1, le=1)
+    hold_trend_gap_floor: float = Field(default=-0.03, ge=-1, le=1)
+    max_realized_volatility: float = Field(default=0.25, gt=0, le=5)
+    reduction_volatility_threshold: float = Field(default=0.12, gt=0, le=5)
+    severe_momentum_floor: float = Field(default=-0.08, ge=-1, le=1)
+    severe_trend_gap_floor: float = Field(default=-0.05, ge=-1, le=1)
+    weak_relative_strength_floor: float = Field(default=-0.03, ge=-1, le=1)
+    reduction_target_fraction: float = Field(default=0.5, gt=0, lt=1)
+    held_asset_score_bonus: float = Field(default=0.02, ge=0, le=1)
+    drawdown_caution_threshold: float = Field(default=0.10, gt=0, lt=1)
+    drawdown_reduced_threshold: float = Field(default=0.20, gt=0, lt=1)
+    drawdown_catastrophe_threshold: float = Field(default=0.30, gt=0, lt=1)
+    elevated_caution_exposure_multiplier: float = Field(default=0.8, gt=0, le=1)
+    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.6, gt=0, le=1)
+    catastrophe_exposure_multiplier: float = Field(default=0.3, gt=0, le=1)
 
     @field_validator("fixed_universe")
     @classmethod
@@ -61,6 +79,26 @@ class StrategySettings(BaseModel):
         if tuple(value) != FIXED_UNIVERSE:
             raise ValueError("fixed_universe must match the documented V1 asset universe")
         return value
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> StrategySettings:
+        if not (
+            self.drawdown_caution_threshold
+            < self.drawdown_reduced_threshold
+            < self.drawdown_catastrophe_threshold
+        ):
+            raise ValueError(
+                "strategy drawdown thresholds must satisfy caution < reduced < catastrophe"
+            )
+        if not (
+            self.elevated_caution_exposure_multiplier
+            >= self.reduced_aggressiveness_exposure_multiplier
+            >= self.catastrophe_exposure_multiplier
+        ):
+            raise ValueError(
+                "strategy exposure multipliers must satisfy elevated >= reduced >= catastrophe"
+            )
+        return self
 
 
 class ResearchSettings(BaseModel):

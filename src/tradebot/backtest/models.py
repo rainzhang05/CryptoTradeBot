@@ -24,8 +24,11 @@ class PortfolioState:
     positions: dict[str, PositionState] = field(default_factory=dict)
     realized_pnl_usd: float = 0.0
     fees_paid_usd: float = 0.0
+    peak_equity_usd: float | None = None
     last_timestamp: int | None = None
     last_regime: str | None = None
+    last_risk_state: str | None = None
+    freeze_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,8 +36,11 @@ class PortfolioState:
             "positions": {asset: position.to_dict() for asset, position in self.positions.items()},
             "realized_pnl_usd": self.realized_pnl_usd,
             "fees_paid_usd": self.fees_paid_usd,
+            "peak_equity_usd": self.peak_equity_usd,
             "last_timestamp": self.last_timestamp,
             "last_regime": self.last_regime,
+            "last_risk_state": self.last_risk_state,
+            "freeze_reason": self.freeze_reason,
         }
 
 
@@ -73,6 +79,11 @@ class DecisionSnapshot:
     exposure_fraction: float
     target_weights: dict[str, float]
     scores: dict[str, float]
+    risk_state: str = "normal"
+    is_frozen: bool = False
+    freeze_reason: str | None = None
+    asset_actions: dict[str, str] = field(default_factory=dict)
+    asset_reasons: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -114,11 +125,13 @@ class SimulationCycleSummary:
     timestamp: int | None
     status: str
     regime_state: str | None
+    risk_state: str | None
     equity_usd: float
     cash_usd: float
     fill_count: int
     fills: list[FillEvent]
     state_file: str
+    freeze_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -126,9 +139,11 @@ class SimulationCycleSummary:
             "timestamp": self.timestamp,
             "status": self.status,
             "regime_state": self.regime_state,
+            "risk_state": self.risk_state,
             "equity_usd": self.equity_usd,
             "cash_usd": self.cash_usd,
             "fill_count": self.fill_count,
             "fills": [fill.to_dict() for fill in self.fills],
             "state_file": self.state_file,
+            "freeze_reason": self.freeze_reason,
         }
