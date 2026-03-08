@@ -7,7 +7,7 @@ from pathlib import Path
 from tradebot.backtest.models import SimulationCycleSummary
 from tradebot.config import load_config
 from tradebot.execution.models import LiveCycleSummary
-from tradebot.runtime import RuntimeService
+from tradebot.runtime import RuntimeService, runtime_process_file
 
 
 def test_runtime_bootstrap_and_run(tmp_path: Path) -> None:
@@ -67,6 +67,7 @@ paths:
     assert (tmp_path / "artifacts" / "reports" / "runtime").exists()
     assert (tmp_path / "runtime" / "logs").exists()
     assert (tmp_path / "runtime" / "state").exists()
+    assert not runtime_process_file(tmp_path / "runtime" / "state").exists()
 
 
 def test_runtime_runs_live_cycles_with_live_service(tmp_path: Path) -> None:
@@ -131,3 +132,4 @@ KRAKEN_API_SECRET=dGVzdA==
     assert snapshot.connectivity_state == "online"
     assert snapshot.holdings == {"BTC": 0.5}
     assert snapshot.model_id == "model-1"
+    assert not runtime_process_file(tmp_path / "runtime" / "state").exists()

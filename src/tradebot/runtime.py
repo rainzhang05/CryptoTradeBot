@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 from time import sleep as default_sleep
 
 from tradebot.backtest.service import BacktestService
 from tradebot.config import AppConfig
 from tradebot.constants import SUPPORTED_MODES
+from tradebot.data.storage import write_json
 from tradebot.execution.service import LiveExecutionService
 from tradebot.logging_config import get_logger
 
@@ -38,6 +43,37 @@ class RuntimeSnapshot:
     def to_dict(self) -> dict[str, object]:
         """Return a machine-friendly runtime snapshot payload."""
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class RuntimeProcessState:
+    """Persisted metadata for one managed runtime process."""
+
+    pid: int
+    mode: str
+    started_at: str
+    config_path: str
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def runtime_process_file(root: Path) -> Path:
+    """Return the tracked runtime-process metadata path."""
+    return root / "runtime_process.json"
+
+
+def pid_is_running(pid: int) -> bool:
+    """Return whether the given process id is currently active."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 class RuntimeService:
@@ -91,28 +127,36 @@ class RuntimeService:
             not self.config.secrets.kraken_api_key or not self.config.secrets.kraken_api_secret
         ):
             raise ValueError("Live mode requires Kraken API key and secret in the environment")
+        process_path = runtime_process_file(self.config.resolved_paths().state_dir)
+        self._register_process(process_path, mode)
         self.logger.info("runtime started", extra={"mode": mode, "cycle_limit": cycle_limit})
 
-        snapshots: list[RuntimeSnapshot] = []
-        for cycle in range(1, cycle_limit + 1):
-            snapshot = self._run_cycle(mode=mode, cycle=cycle)
-            self.logger.info(
-                "runtime cycle completed",
-                extra={
-                    "mode": mode,
-                    "cycle": cycle,
-                    "status": snapshot.status,
-                    "fill_count": snapshot.fill_count,
-                },
-            )
-            if on_cycle is not None:
-                on_cycle(snapshot)
-            snapshots.append(snapshot)
-            if cycle < cycle_limit:
-                self.sleep_fn(self.config.runtime.cycle_interval_seconds)
+        try:
+            snapshots: list[RuntimeSnapshot] = []
+            for cycle in range(1, cycle_limit + 1):
+                snapshot = self._run_cycle(mode=mode, cycle=cycle)
+                self.logger.info(
+                    "runtime cycle completed",
+                    extra={
+                        "mode": mode,
+                        "cycle": cycle,
+                        "status": snapshot.status,
+                        "fill_count": snapshot.fill_count,
+                    },
+                )
+                if on_cycle is not None:
+                    on_cycle(snapshot)
+                snapshots.append(snapshot)
+                if cycle < cycle_limit:
+                    self.sleep_fn(self.config.runtime.cycle_interval_seconds)
 
-        self.logger.info("runtime finished", extra={"mode": mode, "completed_cycles": cycle_limit})
-        return snapshots
+            self.logger.info(
+                "runtime finished",
+                extra={"mode": mode, "completed_cycles": cycle_limit},
+            )
+            return snapshots
+        finally:
+            self._clear_process(process_path)
 
     def _run_cycle(self, mode: str, cycle: int) -> RuntimeSnapshot:
         if mode == "live":
@@ -155,4 +199,39 @@ class RuntimeService:
             decision_executed=(
                 simulate_summary.fill_count > 0 or simulate_summary.timestamp is not None
             ),
+        )
+
+    def _register_process(self, path: Path, mode: str) -> None:
+        existing = self._read_process_state(path)
+        if existing is not None and existing.pid != os.getpid() and pid_is_running(existing.pid):
+            raise ValueError(
+                f"Another runtime process is already active: pid {existing.pid} ({existing.mode})"
+            )
+        if existing is not None and not pid_is_running(existing.pid):
+            path.unlink(missing_ok=True)
+
+        state = RuntimeProcessState(
+            pid=os.getpid(),
+            mode=mode,
+            started_at=datetime.now(tz=UTC).isoformat(),
+            config_path=str(self.config.config_path),
+        )
+        write_json(path, state.to_dict())
+
+    @staticmethod
+    def _clear_process(path: Path) -> None:
+        existing = RuntimeService._read_process_state(path)
+        if existing is not None and existing.pid == os.getpid():
+            path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _read_process_state(path: Path) -> RuntimeProcessState | None:
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return RuntimeProcessState(
+            pid=int(payload["pid"]),
+            mode=str(payload["mode"]),
+            started_at=str(payload["started_at"]),
+            config_path=str(payload["config_path"]),
         )

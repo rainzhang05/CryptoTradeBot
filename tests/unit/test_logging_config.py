@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from tradebot.config import load_config
-from tradebot.logging_config import configure_logging, get_logger
+from tradebot.logging_config import configure_logging, get_logger, log_file
 
 
 def test_configure_logging_emits_json(tmp_path: Path) -> None:
@@ -39,4 +39,7 @@ paths: {}
     output = buffer.getvalue()
     assert '"message": "hello"' in output
     assert '"name": "tradebot.test"' in output
+    durable_log = log_file(config.resolved_paths().logs_dir)
+    assert durable_log.exists()
+    assert '"message": "hello"' in durable_log.read_text(encoding="utf-8")
     logging.getLogger().handlers.clear()
