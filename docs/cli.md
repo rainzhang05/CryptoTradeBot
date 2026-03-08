@@ -19,6 +19,7 @@ Phase 11 extends the product from direct one-shot commands into a hybrid CLI:
 - `tradebot <documented command> ...` remains supported for automation and scripts.
 - `tradebot --help` remains a normal one-shot help command.
 - `tradebot` with no args in a non-interactive context must print help and exit instead of opening a blocking shell.
+- when `BOT_CONFIG_PATH` is not set and the default app home does not exist yet, the first real command use must auto-create the default `~/.tradebot/` starter layout
 
 Commands should follow a short noun-plus-action style such as:
 
@@ -81,6 +82,9 @@ This command must:
 - create `config/settings.yaml`, `.env`, `data/`, `artifacts/`, and `runtime/` beneath the application home
 - avoid overwriting existing files unless a force option is provided
 - print the resolved home, config, and env paths
+
+`tradebot init` is an explicit bootstrap/reset command, not a required first step for published installs.
+Published installs must also work when the operator simply runs `tradebot` or another config-backed command first.
 
 ### `tradebot doctor`
 

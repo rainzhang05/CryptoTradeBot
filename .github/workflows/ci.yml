@@ -51,8 +51,9 @@ jobs:
           python -m venv .ci-install-venv
           .ci-install-venv/bin/python -m pip install dist/*.whl
           TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot --help
-          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot init
           TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot config validate
+          test -f .ci-install-home/config/settings.yaml
+          test -f .ci-install-home/.env
           TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot > .ci-install-help.txt < /dev/null
           grep -q "Usage: tradebot" .ci-install-help.txt
 

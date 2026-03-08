@@ -30,6 +30,7 @@ Phase 11 extends the release gate with global-install and interactive-shell vali
 - The compose-based local deployment path remains valid.
 - Distribution build artifacts are produced successfully as wheel and sdist bundles.
 - A fresh isolated environment can install the package and invoke `tradebot` without cloning the repository.
+- PyPI has the project registered and the GitHub Actions trusted publisher configured for tagged releases.
 
 ## Reproducibility
 
@@ -49,4 +50,5 @@ Phase 11 extends the release gate with global-install and interactive-shell vali
 - `tradebot` opens the interactive shell on an interactive TTY with no subcommand.
 - `tradebot` prints help and exits in non-interactive no-arg contexts.
 - `tradebot shell` explicitly launches the shell.
+- The first config-backed command auto-creates the default `~/.tradebot/` home when `BOT_CONFIG_PATH` is not set.
 - Guided parameter collection and command suggestions function for the documented shell command surface.

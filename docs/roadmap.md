@@ -230,8 +230,9 @@ Layer a globally installed, interactive terminal shell on top of the production 
 
 - Add a full-screen terminal shell launched by bare `tradebot` on interactive TTYs.
 - Keep `tradebot <command> ...` stable for CI, scripts, Docker, and direct operator usage.
-- Add `tradebot shell` as an explicit shell entrypoint and `tradebot init` for first-run bootstrap.
+- Add `tradebot shell` as an explicit shell entrypoint and keep `tradebot init` as an explicit bootstrap/reset command.
 - Move the default installed workspace to a single application home under `~/.tradebot/`, with `TRADEBOT_HOME` override support.
+- Auto-create the default application home on first use when no explicit `BOT_CONFIG_PATH` override is present.
 - Introduce a shared command registry and structured execution-event layer reused by both direct commands and the shell.
 - Add guided parameter selection, command suggestions, readable transcript rendering, and cooperative cancellation in the shell.
 - Add distribution build and publish automation for global installation through PyPI and `pipx`.

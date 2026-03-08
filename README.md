@@ -51,7 +51,12 @@ The current implementation provides:
 1. Install `pipx`.
 2. Run `pipx install crypto-spot-trading-bot`.
 3. Launch the shell: `tradebot`
-4. Complete the first-run bootstrap or run `tradebot init`.
+
+Notes:
+
+- The published install command works only after a release has been published to PyPI.
+- On first use, `tradebot` automatically creates the default application home under `~/.tradebot/`.
+- `tradebot init` remains available if you want to precreate or reset starter files manually.
 
 ### Repository development
 

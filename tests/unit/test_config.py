@@ -10,6 +10,7 @@ from tradebot.config import (
     ConfigError,
     default_config_path,
     default_tradebot_home,
+    ensure_app_home_initialized,
     initialize_app_home,
     load_config,
 )
@@ -167,3 +168,19 @@ def test_initialize_app_home_creates_starter_layout(tmp_path: Path) -> None:
     assert Path(str(summary["data_dir"])).exists()
     assert Path(str(summary["artifacts_dir"])).exists()
     assert Path(str(summary["runtime_dir"])).exists()
+
+
+def test_ensure_app_home_initialized_creates_default_home_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "tradebot-home"
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+
+    first_summary = ensure_app_home_initialized()
+    second_summary = ensure_app_home_initialized()
+
+    assert first_summary is not None
+    assert Path(str(first_summary["config_path"])).exists()
+    assert second_summary is None

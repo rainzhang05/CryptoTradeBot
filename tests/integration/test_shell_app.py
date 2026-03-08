@@ -20,7 +20,7 @@ def _transcript_text(app: TradebotShellApp) -> str:
 
 
 @pytest.mark.anyio
-async def test_shell_first_run_prompt_bootstraps_home(
+async def test_shell_first_run_auto_bootstraps_home(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31,12 +31,8 @@ async def test_shell_first_run_prompt_bootstraps_home(
     app = TradebotShellApp()
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert app.screen.query_one("#init-confirm", Button)
-        await pilot.click("#init-confirm")
-        await pilot.pause()
-
         assert (home / "config" / "settings.yaml").exists()
-        assert "Tradebot home is ready" in _transcript_text(app)
+        assert "Created default Tradebot home" in _transcript_text(app)
 
 
 @pytest.mark.anyio

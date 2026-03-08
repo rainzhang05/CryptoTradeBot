@@ -58,6 +58,22 @@ def test_init_command_bootstraps_application_home(tmp_path: Path) -> None:
     assert (home / "runtime").exists()
 
 
+def test_config_validate_auto_bootstraps_default_application_home(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    home = tmp_path / "tradebot-home"
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+
+    result = runner.invoke(app, ["config", "validate"])
+
+    assert result.exit_code == 0
+    assert "Configuration valid" in result.stdout
+    assert (home / "config" / "settings.yaml").exists()
+    assert (home / ".env").exists()
+
+
 def test_config_validate_command(tmp_path: Path, monkeypatch) -> None:
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True, exist_ok=True)

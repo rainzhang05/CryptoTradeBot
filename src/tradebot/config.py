@@ -408,6 +408,16 @@ def initialize_app_home(
     }
 
 
+def ensure_app_home_initialized() -> dict[str, object] | None:
+    """Create the default application home on first use when no explicit config override exists."""
+    if os.getenv(BOT_CONFIG_PATH_ENV):
+        return None
+    layout = app_home_layout()
+    if layout.config_path.exists():
+        return None
+    return initialize_app_home(home=layout.home, force=False)
+
+
 def load_config(config_path: Path | None = None, env_path: Path | None = None) -> AppConfig:
     """Load configuration from YAML and environment variables."""
     resolved_config_path = (config_path or default_config_path()).expanduser().resolve()

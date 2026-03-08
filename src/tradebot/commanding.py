@@ -18,6 +18,7 @@ from tradebot.config import (
     app_home_layout,
     default_config_path,
     default_tradebot_home,
+    ensure_app_home_initialized,
     initialize_app_home,
     load_config,
     sanitized_config_payload,
@@ -166,6 +167,7 @@ def _list_report_sources() -> list[str]:
 
 
 def _load_app_config() -> AppConfig:
+    ensure_app_home_initialized()
     config = load_config()
     configure_logging(config)
     return config

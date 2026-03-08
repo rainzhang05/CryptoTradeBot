@@ -31,13 +31,12 @@ from tradebot.commanding import (
     RuntimeRunResult,
     all_command_specs,
     command_choices,
-    command_spec_by_id,
     default_form_values,
     execute_command,
     parse_shell_command,
     safe_config_summary,
 )
-from tradebot.config import default_config_path
+from tradebot.config import default_config_path, ensure_app_home_initialized
 
 ASCII_ROBOT = r"""
    [ ] [ ]
@@ -61,49 +60,6 @@ class CommandSubmission:
     spec: CommandSpec
     params: dict[str, object]
     text: str
-
-
-class InitPromptScreen(ModalScreen[str]):
-    """First-run bootstrap prompt for the default app home."""
-
-    CSS = """
-    InitPromptScreen {
-        align: center middle;
-    }
-
-    #init-dialog {
-        width: 72;
-        border: round $accent;
-        padding: 1 2;
-        background: $surface;
-    }
-
-    #init-actions {
-        height: auto;
-        content-align: center middle;
-    }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="init-dialog"):
-            yield Static("Tradebot first-run setup", classes="title")
-            yield Static(
-                f"No configuration was found at:\n{default_config_path()}",
-                id="init-message",
-            )
-            yield Static(
-                "Initialize the default Tradebot home now or exit and configure it manually.",
-                id="init-help",
-            )
-            with Horizontal(id="init-actions"):
-                yield Button("Initialize", id="init-confirm", variant="success")
-                yield Button("Exit", id="init-exit", variant="error")
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "init-confirm":
-            self.dismiss("initialize")
-            return
-        self.dismiss("exit")
 
 
 class CommandFormScreen(ModalScreen[dict[str, object] | None]):
@@ -387,12 +343,16 @@ class TradebotShellApp(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        bootstrap_summary = ensure_app_home_initialized()
         self._write_line("Tradebot shell ready.")
+        if bootstrap_summary is not None:
+            self._write_line(
+                "Created default Tradebot home at "
+                f"{bootstrap_summary['home']} with starter config and env files."
+            )
         self._update_sidebar()
         self._refresh_command_suggestions("")
         self._main_screen().query_one("#command-input", Input).focus()
-        if not default_config_path().exists():
-            self.push_screen(InitPromptScreen(), self._handle_init_prompt)
 
     def action_cancel(self) -> None:
         if self.active_token is None:
@@ -427,19 +387,6 @@ class TradebotShellApp(App[None]):
             event.option.prompt
         )
         self._main_screen().query_one("#command-input", Input).focus()
-
-    def _handle_init_prompt(self, action: str | None) -> None:
-        if action == "exit":
-            self.exit()
-            return
-        spec = command_spec_by_id("init")
-        self._submit_command(
-            CommandSubmission(
-                spec=spec,
-                params=default_form_values(spec),
-                text="init",
-            )
-        )
 
     def _handle_shell_input(self, text: str) -> None:
         normalized = text.strip()
