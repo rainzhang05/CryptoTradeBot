@@ -133,6 +133,38 @@ class ResearchSettings(BaseModel):
         return tuple(value)
 
 
+class ModelSettings(BaseModel):
+    """ML training, validation, and promotion settings."""
+
+    enabled: bool = True
+    initial_train_timestamps: int = Field(default=120, ge=2)
+    minimum_validation_rows: int = Field(default=60, ge=1)
+    minimum_walk_forward_splits: int = Field(default=20, ge=1)
+    retrain_cadence_days: int = Field(default=30, ge=1)
+    expected_return_weight: float = Field(default=0.30, ge=0, le=1)
+    downside_penalty_weight: float = Field(default=0.20, ge=0, le=1)
+    sell_risk_penalty_weight: float = Field(default=0.15, ge=0, le=1)
+    entry_downside_threshold: float = Field(default=0.55, ge=0, le=1)
+    reduce_sell_risk_threshold: float = Field(default=0.55, ge=0, le=1)
+    exit_sell_risk_threshold: float = Field(default=0.70, ge=0, le=1)
+    exit_downside_threshold: float = Field(default=0.75, ge=0, le=1)
+    promotion_min_expected_return_correlation: float = Field(default=0.0, ge=-1, le=1)
+    promotion_max_downside_brier: float = Field(default=0.25, ge=0, le=1)
+    promotion_max_sell_brier: float = Field(default=0.30, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> ModelSettings:
+        if self.reduce_sell_risk_threshold >= self.exit_sell_risk_threshold:
+            raise ValueError(
+                "model sell-risk thresholds must satisfy reduce < exit"
+            )
+        if self.entry_downside_threshold >= self.exit_downside_threshold:
+            raise ValueError(
+                "model downside thresholds must satisfy entry < exit"
+            )
+        return self
+
+
 class BacktestSettings(BaseModel):
     """Execution assumptions and portfolio constraints for backtest and simulate mode."""
 
@@ -172,6 +204,8 @@ class PathsSettings(BaseModel):
     artifacts_dir: Path = Path("artifacts")
     features_dir: Path = Path("artifacts/features")
     experiments_dir: Path = Path("artifacts/experiments")
+    models_dir: Path = Path("artifacts/models")
+    model_reports_dir: Path = Path("artifacts/reports/models")
     logs_dir: Path = Path("runtime/logs")
     state_dir: Path = Path("runtime/state")
 
@@ -198,6 +232,7 @@ class AppConfig(BaseModel):
     data: DataSettings = Field(default_factory=DataSettings)
     strategy: StrategySettings
     research: ResearchSettings = Field(default_factory=ResearchSettings)
+    model: ModelSettings = Field(default_factory=ModelSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
     alerts: AlertSettings
     paths: PathsSettings
@@ -222,6 +257,8 @@ class AppConfig(BaseModel):
             artifacts_dir=(self.project_root / self.paths.artifacts_dir).resolve(),
             features_dir=(self.project_root / self.paths.features_dir).resolve(),
             experiments_dir=(self.project_root / self.paths.experiments_dir).resolve(),
+            models_dir=(self.project_root / self.paths.models_dir).resolve(),
+            model_reports_dir=(self.project_root / self.paths.model_reports_dir).resolve(),
             logs_dir=(self.project_root / self.paths.logs_dir).resolve(),
             state_dir=(self.project_root / self.paths.state_dir).resolve(),
         )

@@ -10,6 +10,7 @@ from tradebot.backtest.service import BacktestService
 from tradebot.config import load_config
 from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
+from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.runtime import RuntimeService
 
@@ -17,12 +18,14 @@ app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
+model_app = typer.Typer(help="Train, validate, and promote ML model artifacts.")
 backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
 ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
+app.add_typer(model_app, name="model")
 app.add_typer(backtest_app, name="backtest")
 
 
@@ -57,6 +60,8 @@ def doctor() -> None:
             "artifacts_dir": str(paths.artifacts_dir),
             "features_dir": str(paths.features_dir),
             "experiments_dir": str(paths.experiments_dir),
+            "models_dir": str(paths.models_dir),
+            "model_reports_dir": str(paths.model_reports_dir),
             "logs_dir": str(paths.logs_dir),
             "state_dir": str(paths.state_dir),
         },
@@ -188,6 +193,52 @@ def features_build(
     config = load_config()
     service = ResearchService(config)
     summary = service.build_feature_store(assets=tuple(assets) if assets else None, force=force)
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@model_app.command("train")
+def model_train(
+    assets: list[str] | None = ASSETS_OPTION,
+    force_features: bool = typer.Option(
+        default=False,
+        help="Rebuild the feature dataset before training the model.",
+    ),
+) -> None:
+    """Train the Phase 6 ML artifact with walk-forward validation."""
+    config = load_config()
+    service = ModelService(config)
+    summary = service.train_model(
+        assets=tuple(assets) if assets else None,
+        force_features=force_features,
+    )
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@model_app.command("validate")
+def model_validate(
+    model_id: str | None = typer.Option(
+        default=None,
+        help="Optional model identifier. Defaults to the latest trained model.",
+    ),
+) -> None:
+    """Validate one trained model artifact against the promotion rules."""
+    config = load_config()
+    service = ModelService(config)
+    summary = service.validate_model(model_id=model_id)
+    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+
+
+@model_app.command("promote")
+def model_promote(
+    model_id: str | None = typer.Option(
+        default=None,
+        help="Optional model identifier. Defaults to the latest trained model.",
+    ),
+) -> None:
+    """Promote one validated model artifact to the active strategy pointer."""
+    config = load_config()
+    service = ModelService(config)
+    summary = service.promote_model(model_id=model_id)
     typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
 
 

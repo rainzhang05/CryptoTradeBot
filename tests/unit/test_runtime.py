@@ -40,5 +40,7 @@ paths:
     assert all(snapshot.status in expected_statuses for snapshot in snapshots)
     assert (tmp_path / "data").exists()
     assert (tmp_path / "artifacts").exists()
+    assert (tmp_path / "artifacts" / "models").exists()
+    assert (tmp_path / "artifacts" / "reports" / "models").exists()
     assert (tmp_path / "runtime" / "logs").exists()
     assert (tmp_path / "runtime" / "state").exists()

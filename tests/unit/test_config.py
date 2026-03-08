@@ -61,6 +61,7 @@ paths:
     assert config.secrets.smtp_port == 2525
     assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
     assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
+    assert config.resolved_paths().models_dir == (tmp_path / "artifacts" / "models").resolve()
 
 
 def test_load_config_rejects_wrong_universe(tmp_path: Path) -> None:
@@ -105,3 +106,24 @@ paths: {}
 
   with pytest.raises(ConfigError):
     load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+
+def test_load_config_rejects_invalid_model_threshold_order(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app: {}
+runtime: {}
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+model:
+  reduce_sell_risk_threshold: 0.7
+  exit_sell_risk_threshold: 0.6
+alerts: {}
+paths: {}
+""",
+    )
+
+    with pytest.raises(ConfigError):
+        load_config(config_path=config_path, env_path=tmp_path / ".env")

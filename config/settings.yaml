@@ -70,6 +70,23 @@ research:
   sell_drawdown_threshold: 0.12
   sell_return_threshold: -0.02
 
+model:
+  enabled: true
+  initial_train_timestamps: 120
+  minimum_validation_rows: 60
+  minimum_walk_forward_splits: 20
+  retrain_cadence_days: 30
+  expected_return_weight: 0.30
+  downside_penalty_weight: 0.20
+  sell_risk_penalty_weight: 0.15
+  entry_downside_threshold: 0.55
+  reduce_sell_risk_threshold: 0.55
+  exit_sell_risk_threshold: 0.70
+  exit_downside_threshold: 0.75
+  promotion_min_expected_return_correlation: 0.0
+  promotion_max_downside_brier: 0.25
+  promotion_max_sell_brier: 0.30
+
 backtest:
   initial_cash_usd: 100000.0
   fee_rate_bps: 26.0
@@ -91,5 +108,7 @@ paths:
   artifacts_dir: artifacts
   features_dir: artifacts/features
   experiments_dir: artifacts/experiments
+  models_dir: artifacts/models
+  model_reports_dir: artifacts/reports/models
   logs_dir: runtime/logs
   state_dir: runtime/state

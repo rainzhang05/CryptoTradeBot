@@ -42,6 +42,8 @@ class RuntimeService:
             paths.artifacts_dir,
             paths.features_dir,
             paths.experiments_dir,
+            paths.models_dir,
+            paths.model_reports_dir,
             paths.logs_dir,
             paths.state_dir,
         ):
