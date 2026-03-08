@@ -42,10 +42,19 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+      - name: Validate release-readiness workflow
+        run: uv run --python 3.12 pytest --no-cov tests/integration/test_release_readiness.py
+
+      - name: Validate live runtime safety workflow
+        run: uv run --python 3.12 pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config
+
       - name: Build Docker image
         run: docker build -t crypto-spot-trading-bot:ci .
 
-      - name: Docker smoke test
+      - name: Validate Docker CLI and data pipeline smoke workflow
         run: |
           rm -rf .ci-smoke
           mkdir -p .ci-smoke/data/kraken_data .ci-smoke/artifacts
@@ -64,11 +73,11 @@ jobs:
           test -f .ci-smoke/data/canonical/kraken/BTC/candles_1d.csv
           test -f .ci-smoke/data/canonical/kraken/ETH/candles_1d.csv
 
-      - name: Phase 4-6 CLI smoke test
+      - name: Validate research, model, backtest, and simulation workflow
         run: |
-          rm -rf .ci-phase6
-          mkdir -p .ci-phase6/config
-          cat > .ci-phase6/config/settings.yaml <<'YAML'
+          rm -rf .ci-release
+          mkdir -p .ci-release/config
+          cat > .ci-release/config/settings.yaml <<'YAML'
           app:
             environment: ci
             log_format: console
@@ -112,12 +121,12 @@ jobs:
           alerts: {}
           paths: {}
           YAML
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 python - <<'PY'
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 python - <<'PY'
           from pathlib import Path
           from tradebot.data.models import Candle
           from tradebot.data.storage import write_candles
 
-          root = Path(".ci-phase6")
+          root = Path(".ci-release")
           start_timestamp = 1_704_067_200
           series = {
               "BTC": ([100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
@@ -143,22 +152,19 @@ jobs:
               ]
               write_candles(path, candles)
           PY
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot model train --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot model validate
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot model promote
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot backtest run --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot backtest report
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot run --mode simulate --max-cycles 1
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot model train --assets BTC --assets ETH
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot model validate
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot model promote
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot backtest run --assets BTC --assets ETH
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot backtest report
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot run --mode simulate --max-cycles 1
 
-      - name: Phase 7 live-runtime smoke test
-        run: uv run --python 3.12 pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live
-
-      - name: Phase 8 CLI smoke test
+      - name: Validate operator CLI workflow
         run: |
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot status
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot report list
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot report export artifacts/reports/models/latest_training_summary.json .ci-phase6/exports/latest_training_summary.json
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot email set trader@example.com
-          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot logs tail --lines 1
-          test -f .ci-phase6/exports/latest_training_summary.json
-          grep -q "trader@example.com" .ci-phase6/config/settings.yaml
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot status
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot report list
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot report export artifacts/reports/models/latest_training_summary.json .ci-release/exports/latest_training_summary.json
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot email set trader@example.com
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot logs tail --lines 1
+          test -f .ci-release/exports/latest_training_summary.json
+          grep -q "trader@example.com" .ci-release/config/settings.yaml
