@@ -38,6 +38,22 @@ from tradebot.commanding import (
 )
 from tradebot.config import default_config_path, ensure_app_home_initialized
 
+VIOLET_BORDER = "#8b5cf6"
+VIOLET_BORDER_FOCUS = "#a78bfa"
+VIOLET_BORDER_SUBTLE = "#6d28d9"
+
+QUICK_ACTIONS: tuple[tuple[str, str, str], ...] = (
+    ("quick-action-status", "Status", "status"),
+    ("quick-action-doctor", "Doctor", "doctor"),
+    ("quick-action-config-validate", "Config Validate", "config validate"),
+    ("quick-action-data-source", "Data Source", "data source"),
+    ("quick-action-report-list", "Report List", "report list"),
+)
+
+QUICK_ACTIONS_BY_ID = {
+    action_id: command_text for action_id, _label, command_text in QUICK_ACTIONS
+}
+
 ASCII_ROBOT = r"""
    [ ] [ ]
     |   |
@@ -73,9 +89,27 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     #command-form {
         width: 96;
         height: 80%;
-        border: round $accent;
+        border: round #8b5cf6;
         background: $surface;
         padding: 1 2;
+    }
+
+    Input {
+        border: round #6d28d9;
+    }
+
+    Input:focus {
+        border: round #a78bfa;
+    }
+
+    OptionList,
+    SelectionList {
+        border: round #6d28d9;
+    }
+
+    OptionList:focus,
+    SelectionList:focus {
+        border: round #a78bfa;
     }
 
     .field-block {
@@ -260,7 +294,7 @@ class TradebotShellApp(App[None]):
     #brand {
         height: auto;
         content-align: center middle;
-        border: round $accent;
+        border: round #8b5cf6;
         padding: 1;
         margin: 1 1 0 1;
     }
@@ -272,13 +306,20 @@ class TradebotShellApp(App[None]):
 
     #transcript {
         width: 1fr;
-        border: round $accent-darken-1;
+        border: round #6d28d9;
     }
 
     #sidebar {
         width: 34;
-        border: round $accent-darken-1;
+        border: round #6d28d9;
         padding: 0 1;
+    }
+
+    #sidebar-actions {
+        height: auto;
+        border: round #6d28d9;
+        padding: 1;
+        margin-bottom: 1;
     }
 
     .sidebar-block {
@@ -297,10 +338,30 @@ class TradebotShellApp(App[None]):
 
     #command-suggestions {
         height: 8;
+        border: round #6d28d9;
+    }
+
+    #command-suggestions:focus {
+        border: round #a78bfa;
     }
 
     #command-input {
         dock: bottom;
+        border: round #6d28d9;
+    }
+
+    #command-input:focus {
+        border: round #a78bfa;
+    }
+
+    .quick-action-button {
+        width: 100%;
+        margin-bottom: 1;
+        border: round #6d28d9;
+    }
+
+    .quick-action-button:focus {
+        border: round #a78bfa;
     }
     """
 
@@ -329,8 +390,17 @@ class TradebotShellApp(App[None]):
                 yield Static("", id="sidebar-config", classes="sidebar-block")
                 yield Static("", id="sidebar-runtime", classes="sidebar-block")
                 yield Static("", id="sidebar-context", classes="sidebar-block")
+                with Vertical(id="sidebar-actions", classes="sidebar-block"):
+                    yield Static("[Quick actions]")
+                    for action_id, label, _command in QUICK_ACTIONS:
+                        yield Button(label, id=action_id, classes="quick-action-button")
                 yield Static(
-                    "[Shortcuts]\nhelp\nclear\nexit\nctrl+c cancel active command",
+                    "[Shortcuts]\n"
+                    "help\n"
+                    "clear\n"
+                    "exit\n"
+                    "click a quick action or suggestion to run it\n"
+                    "ctrl+c cancel active command",
                     id="sidebar-shortcuts",
                     classes="sidebar-block",
                 )
@@ -383,10 +453,21 @@ class TradebotShellApp(App[None]):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id != "command-suggestions":
             return
-        self._main_screen().query_one("#command-input", Input).value = _stringify_prompt(
-            event.option.prompt
-        )
-        self._main_screen().query_one("#command-input", Input).focus()
+        if self.active_task is not None:
+            self._write_line("Another command is already running.")
+            return
+        text = _stringify_prompt(event.option.prompt)
+        self._main_screen().query_one("#command-input", Input).value = ""
+        self._handle_shell_input(text)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        if button_id not in QUICK_ACTIONS_BY_ID:
+            return
+        if self.active_task is not None:
+            self._write_line("Another command is already running.")
+            return
+        self._handle_shell_input(QUICK_ACTIONS_BY_ID[button_id])
 
     def _handle_shell_input(self, text: str) -> None:
         normalized = text.strip()
@@ -503,6 +584,8 @@ class TradebotShellApp(App[None]):
         suggestions = self._main_screen().query_one("#command-suggestions", OptionList)
         input_widget.disabled = busy
         suggestions.disabled = busy
+        for button in self._main_screen().query(".quick-action-button"):
+            button.disabled = busy
         if not busy:
             input_widget.focus()
 

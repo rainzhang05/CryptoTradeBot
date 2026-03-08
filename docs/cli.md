@@ -270,6 +270,8 @@ The interactive shell must:
 - accept direct command phrases such as `model train`, `data source`, and `run`
 - open guided parameter selection when a command requires or benefits from option inputs
 - show dropdown-style suggestions for matching commands and known-choice fields
+- execute a clicked suggested command immediately, opening guided parameter selection when required
+- expose clickable quick-action commands for common operator flows directly in the shell layout
 - disable new command entry while one command is executing
 - use `Ctrl-C` to cancel the active command and return the shell to idle instead of exiting the whole application
 - render structured execution updates in readable transcript form rather than raw JSON logs

@@ -133,3 +133,41 @@ async def test_shell_ctrl_c_cancels_active_command(
 
         assert input_widget.disabled is False
         assert "Cancellation requested" in _transcript_text(app)
+
+
+@pytest.mark.anyio
+async def test_shell_quick_action_click_runs_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "tradebot-home"
+    initialize_app_home(home=home)
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+
+    observed_commands: list[str] = []
+
+    def fake_execute_command(
+        command_id: str,
+        params=None,
+        *,
+        emitter=None,
+        cancellation_token=None,
+    ):
+        del params, emitter, cancellation_token
+        observed_commands.append(command_id)
+        if command_id == "status":
+            return {"active_model": None}
+        return {"ok": True}
+
+    monkeypatch.setattr(shell_module, "execute_command", fake_execute_command)
+
+    app = TradebotShellApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        doctor_button = app.screen.query_one("#quick-action-doctor", Button)
+        app.on_button_pressed(Button.Pressed(doctor_button))
+        await pilot.pause()
+
+        assert "doctor" in observed_commands
+        assert "> doctor" in _transcript_text(app)
