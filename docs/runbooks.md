@@ -152,3 +152,4 @@ The release candidate is valid only when:
 - Docker builds successfully
 - the documented CLI flows still work
 - the operational reports and runbooks remain consistent with the implementation
+- the checklist in `docs/release-checklist.md` is fully satisfied

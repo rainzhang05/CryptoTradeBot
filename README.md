@@ -1,10 +1,10 @@
 # Crypto Trading Bot for Spot Market
 
-Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 9 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, and operator runbooks.
+Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 10 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, operator runbooks, and final release validation.
 
 ## Status
 
-The repository is in Phase 9 of the roadmap.
+The repository is in Phase 10 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -39,6 +39,8 @@ The current implementation provides:
 - SMTP-backed email alerts with per-condition deduplication and terminal alert rendering during runtime
 - persisted runtime context and alert history for restart-safe diagnostics
 - operator runbooks for setup, data workflows, simulate mode, live mode, freeze recovery, incident handling, and release validation
+- an end-to-end release-readiness validation workflow from fixture data through simulate mode and operator inspection
+- a final release checklist covering validation, Docker, reproducibility, and live preflight gates
 
 ## Quick Start
 
@@ -77,7 +79,7 @@ Useful Phase 7 live-runtime command:
 
 - `uv run bot run --mode live --max-cycles 1`
 
-Useful Phase 9 operator commands:
+Useful final operator commands:
 
 - `uv run bot doctor`
 - `uv run bot status`

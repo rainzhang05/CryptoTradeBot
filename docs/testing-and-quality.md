@@ -111,3 +111,5 @@ Before the final production release, the project must be able to demonstrate:
 - passing CI
 - passing Docker flow
 - 80% or higher coverage
+
+The explicit final release gate is maintained in `docs/release-checklist.md`.
