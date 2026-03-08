@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import tradebot.commanding as commanding_module
 from tradebot.cli import app
 
 runner = CliRunner()
@@ -99,8 +100,6 @@ paths: {}
     )
     monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
 
-    from tradebot import cli as cli_module
-
     class FakeDataService:
       def __init__(self, config: object) -> None:
         self.config = config
@@ -109,7 +108,10 @@ paths: {}
         self,
         assets: tuple[str, ...] | None = None,
         allow_synthetic: bool = True,
+        cancellation_token=None,
+        progress_callback=None,
       ) -> dict[str, object]:
+        del assets, cancellation_token, progress_callback
         return {
           "assets": [
             {
@@ -127,7 +129,7 @@ paths: {}
           "allow_synthetic": allow_synthetic,
         }
 
-    monkeypatch.setattr(cli_module, "DataService", FakeDataService)
+    monkeypatch.setattr(commanding_module, "DataService", FakeDataService)
 
     result = runner.invoke(app, ["data", "complete", "--assets", "BTC"])
 

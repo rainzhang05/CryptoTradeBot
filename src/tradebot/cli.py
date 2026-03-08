@@ -1,20 +1,21 @@
 """CLI entrypoints for the trading bot."""
 
-import json
-from pathlib import Path
+from __future__ import annotations
+
+import sys
 from typing import Any
 
 import typer
 
-from tradebot import __version__
-from tradebot.backtest.service import BacktestService
-from tradebot.config import load_config, sanitized_config_payload
-from tradebot.data.service import DataService
-from tradebot.logging_config import configure_logging
-from tradebot.model.service import ModelService
-from tradebot.operations import OperationsService
-from tradebot.research.service import ResearchService
-from tradebot.runtime import RuntimeService
+from tradebot.commanding import (
+    RuntimeRunResult,
+    execute_command,
+    render_alert_event,
+    render_direct_output,
+    render_runtime_snapshot,
+)
+from tradebot.config import ConfigError
+from tradebot.runtime import RuntimeSnapshot
 
 app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
@@ -37,42 +38,110 @@ app.add_typer(report_app, name="report")
 app.add_typer(logs_app, name="logs")
 
 
+def _invoke_direct(
+    command_id: str,
+    params: dict[str, object] | None = None,
+    *,
+    emitter: Any | None = None,
+) -> object:
+    try:
+        return execute_command(command_id, params=params, emitter=emitter)
+    except (ConfigError, FileNotFoundError, ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _runtime_emitter(event: Any) -> None:
+    if event.kind == "runtime_snapshot":
+        payload = event.payload
+        snapshot = RuntimeSnapshot(**payload)
+        typer.echo(render_runtime_snapshot(snapshot))
+        return
+    if event.kind == "alert":
+        payload = event.payload
+        alert = type("ShellAlert", (), payload)
+        typer.echo(render_alert_event(alert))
+
+
+def launch_shell() -> None:
+    """Launch the interactive Tradebot shell."""
+    from tradebot.shell import TradebotShellApp
+
+    TradebotShellApp().run()
+
+
+def _is_interactive_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Route the console entrypoint between shell mode and direct CLI mode."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args:
+        if _is_interactive_terminal():
+            launch_shell()
+            return
+        app(prog_name="tradebot", args=["--help"])
+        return
+    app(prog_name="tradebot", args=args)
+
+
 @app.command("version")
 def version() -> None:
     """Print the current application version."""
-    typer.echo(__version__)
+    typer.echo(render_direct_output("version", _invoke_direct("version")))
 
 
 @app.command("config-path")
 def config_path() -> None:
     """Print the resolved configuration path."""
-    config = load_config()
-    typer.echo(str(config.config_path))
+    typer.echo(render_direct_output("config_path", _invoke_direct("config_path")))
+
+
+@app.command("init")
+def init(
+    home: str | None = typer.Option(
+        default=None,
+        help="Optional application-home override.",
+    ),
+    force: bool = typer.Option(
+        default=False,
+        help="Rewrite starter config and env files when they already exist.",
+    ),
+) -> None:
+    """Bootstrap the default application home and starter files."""
+    payload = _invoke_direct("init", {"home": home, "force": force})
+    typer.echo(render_direct_output("init", payload))
+
+
+@app.command("shell")
+def shell_command() -> None:
+    """Launch the interactive operator shell explicitly."""
+    launch_shell()
 
 
 @app.command("doctor")
 def doctor() -> None:
     """Validate config, local environment, and exchange connectivity."""
-    config = load_config()
-    summary = OperationsService(config).doctor_summary()
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
-    if not bool(summary["ok"]):
+    payload = _invoke_direct("doctor")
+    typer.echo(render_direct_output("doctor", payload))
+    if isinstance(payload, dict) and not bool(payload["ok"]):
         raise typer.Exit(code=1)
 
 
 @config_app.command("show")
 def config_show() -> None:
     """Print the active non-secret configuration."""
-    config = load_config()
-    payload = sanitized_config_payload(config)
-    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    typer.echo(render_direct_output("config_show", _invoke_direct("config_show")))
 
 
 @config_app.command("validate")
 def config_validate() -> None:
     """Validate the active configuration and print a short success message."""
-    config = load_config()
-    typer.echo(f"Configuration valid: {config.config_path}")
+    typer.echo(render_direct_output("config_validate", _invoke_direct("config_validate")))
 
 
 @app.command("run")
@@ -88,145 +157,37 @@ def run(
     ),
 ) -> None:
     """Start the shared simulate or live runtime loop."""
-    config = load_config()
-    configure_logging(config)
-    runtime = RuntimeService(config)
-    effective_mode = mode or config.runtime.default_mode
-    try:
-        snapshots = runtime.run(
-            mode=effective_mode,
-            max_cycles=max_cycles,
-            on_cycle=lambda snapshot: typer.echo(render_runtime_snapshot(snapshot)),
-            on_alert=lambda alert: typer.echo(render_alert_event(alert)),
-        )
-    except Exception as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(f"Completed {len(snapshots)} cycle(s) in {effective_mode} mode.")
+    payload = _invoke_direct(
+        "run",
+        {"mode": mode, "max_cycles": max_cycles},
+        emitter=_runtime_emitter,
+    )
+    if not isinstance(payload, RuntimeRunResult):
+        raise typer.Exit(code=1)
+    typer.echo(render_direct_output("run", payload))
 
 
 @app.command("stop")
 def stop() -> None:
     """Stop a managed runtime process when one is active."""
-    config = load_config()
-    service = OperationsService(config)
-    try:
-        summary = service.stop_runtime()
-    except (FileNotFoundError, ValueError, OSError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(render_direct_output("stop", _invoke_direct("stop")))
 
 
 @app.command("status")
 def status() -> None:
     """Show the latest known runtime status, positions, balances, and health."""
-    config = load_config()
-    summary = OperationsService(config).runtime_status()
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
-
-def render_runtime_snapshot(snapshot: Any) -> str:
-    """Render one runtime-cycle summary for terminal monitoring output."""
-    timestamp = "n/a" if snapshot.timestamp is None else str(snapshot.timestamp)
-    equity = "n/a" if snapshot.equity_usd is None else f"{snapshot.equity_usd:.2f}"
-    cash = "n/a" if snapshot.cash_usd is None else f"{snapshot.cash_usd:.2f}"
-    holdings = ", ".join(
-        f"{asset}:{quantity:.8f}"
-        for asset, quantity in sorted(snapshot.holdings.items())
-    )
-    incidents = ", ".join(snapshot.incidents)
-    drawdown = (
-        "n/a"
-        if snapshot.portfolio_drawdown is None
-        else f"{snapshot.portfolio_drawdown:.2%}"
-    )
-    return " | ".join(
-        [
-            f"mode={snapshot.mode}",
-            f"cycle={snapshot.cycle}",
-            f"status={snapshot.status}",
-            f"system={snapshot.system_status}",
-            f"connectivity={snapshot.connectivity_state}",
-            f"timestamp={timestamp}",
-            f"regime={snapshot.regime_state or 'n/a'}",
-            f"risk={snapshot.risk_state or 'n/a'}",
-            f"drawdown={drawdown}",
-            f"equity_usd={equity}",
-            f"cash_usd={cash}",
-            f"holdings={holdings or 'none'}",
-            f"fills={snapshot.fill_count}",
-            f"recent_fills={_render_fill_summary(snapshot)}",
-            f"open_orders={snapshot.open_order_count}",
-            f"model={snapshot.model_id or 'n/a'}",
-            f"model_summary={_render_model_summary(snapshot)}",
-            f"decision_executed={'yes' if snapshot.decision_executed else 'no'}",
-            f"freeze={snapshot.freeze_reason or 'none'}",
-            f"incidents={incidents or 'none'}",
-        ]
-    )
-
-
-def render_alert_event(alert: Any) -> str:
-    """Render one alert event for terminal display."""
-    return " | ".join(
-        [
-            "ALERT",
-            f"severity={alert.severity}",
-            f"class={alert.event_class}",
-            f"mode={alert.mode}",
-            f"message={alert.message}",
-            f"email={'sent' if alert.email_sent else alert.email_error or 'not_sent'}",
-        ]
-    )
-
-
-def _render_fill_summary(snapshot: Any) -> str:
-    fills = getattr(snapshot, "fills", [])
-    if not fills:
-        return "none"
-    rendered = []
-    for fill in fills[:3]:
-        asset = fill.get("asset", "?")
-        side = fill.get("side", "?")
-        quantity = float(fill.get("quantity", 0.0))
-        rendered.append(f"{asset}:{side}:{quantity:.6f}")
-    return ",".join(rendered)
-
-
-def _render_model_summary(snapshot: Any) -> str:
-    predictions = getattr(snapshot, "predictions", {})
-    if not predictions:
-        return "n/a"
-    ranked = sorted(
-        predictions.items(),
-        key=lambda item: float(item[1].get("expected_return_score", 0.0)),
-        reverse=True,
-    )
-    top_asset, top_scores = ranked[0]
-    high_downside = sum(
-        1
-        for scores in predictions.values()
-        if float(scores.get("downside_risk_score", 0.0)) >= 0.55
-    )
-    high_sell_risk = sum(
-        1 for scores in predictions.values() if float(scores.get("sell_risk_score", 0.0)) >= 0.55
-    )
-    return (
-        f"top={top_asset}:{float(top_scores.get('expected_return_score', 0.0)):.3f},"
-        f"downside_flags={high_downside},sell_flags={high_sell_risk}"
-    )
+    typer.echo(render_direct_output("status", _invoke_direct("status")))
 
 
 @email_app.command("set")
 def email_set(recipient: str = typer.Argument(..., help="Alert email recipient.")) -> None:
     """Set or update the configured alert email recipient."""
-    config = load_config()
-    try:
-        summary = OperationsService(config).set_email_recipient(recipient)
-    except ValueError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "email_set",
+            _invoke_direct("email_set", {"recipient": recipient}),
+        )
+    )
 
 
 @email_app.command("test")
@@ -237,21 +198,18 @@ def email_test(
     ),
 ) -> None:
     """Send a test email using the configured SMTP settings."""
-    config = load_config()
-    try:
-        summary = OperationsService(config).send_test_email(recipient=recipient)
-    except (ValueError, OSError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "email_test",
+            _invoke_direct("email_test", {"recipient": recipient}),
+        )
+    )
 
 
 @report_app.command("list")
 def report_list() -> None:
     """List stored reports and artifacts under the project artifacts directory."""
-    config = load_config()
-    entries = OperationsService(config).list_reports()
-    typer.echo(json.dumps(entries, indent=2, sort_keys=True))
+    typer.echo(render_direct_output("report_list", _invoke_direct("report_list")))
 
 
 @report_app.command("export")
@@ -260,13 +218,15 @@ def report_export(
     destination: str = typer.Argument(..., help="Destination file path."),
 ) -> None:
     """Export one stored report or artifact to a chosen destination."""
-    config = load_config()
-    try:
-        summary = OperationsService(config).export_report(source, Path(destination))
-    except FileNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "report_export",
+            _invoke_direct(
+                "report_export",
+                {"source": source, "destination": destination},
+            ),
+        )
+    )
 
 
 @logs_app.command("tail")
@@ -278,49 +238,39 @@ def logs_tail(
     ),
 ) -> None:
     """Tail recent durable logs in a readable format."""
-    config = load_config()
-    try:
-        rendered_lines = OperationsService(config).tail_logs(lines=lines)
-    except FileNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    for line in rendered_lines:
-        typer.echo(line)
+    typer.echo(
+        render_direct_output("logs_tail", _invoke_direct("logs_tail", {"lines": lines}))
+    )
 
 
 @data_app.command("import")
 def data_import(assets: list[str] | None = ASSETS_OPTION) -> None:
     """Import raw Kraken trade files into canonical candles."""
-    config = load_config()
-    service = DataService(config)
-    summary = service.import_kraken_raw(assets=tuple(assets) if assets else None)
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output("data_import", _invoke_direct("data_import", {"assets": assets}))
+    )
 
 
 @data_app.command("check")
 def data_check(assets: list[str] | None = ASSETS_OPTION) -> None:
     """Validate canonical Kraken candles and emit an integrity report."""
-    config = load_config()
-    service = DataService(config)
-    summary = service.check_canonical(assets=tuple(assets) if assets else None)
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output("data_check", _invoke_direct("data_check", {"assets": assets}))
+    )
 
 
 @data_app.command("source")
 def data_source() -> None:
     """Show raw and canonical source coverage for the fixed-universe assets."""
-    config = load_config()
-    service = DataService(config)
-    typer.echo(json.dumps(service.source_summary(), indent=2, sort_keys=True))
+    typer.echo(render_direct_output("data_source", _invoke_direct("data_source")))
 
 
 @data_app.command("sync")
 def data_sync(assets: list[str] | None = ASSETS_OPTION) -> None:
     """Extend canonical candles using public exchange APIs."""
-    config = load_config()
-    service = DataService(config)
-    summary = service.sync_canonical(assets=tuple(assets) if assets else None)
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output("data_sync", _invoke_direct("data_sync", {"assets": assets}))
+    )
 
 
 @data_app.command("complete")
@@ -335,23 +285,21 @@ def data_complete(
     ),
 ) -> None:
     """Fill canonical gaps and extend all selected series to the latest closed interval."""
-    config = load_config()
-    configure_logging(config)
-    service = DataService(config)
-    summary = service.complete_canonical(
-        assets=tuple(assets) if assets else None,
-        allow_synthetic=allow_synthetic,
+    typer.echo(
+        render_direct_output(
+            "data_complete",
+            _invoke_direct(
+                "data_complete",
+                {"assets": assets, "allow_synthetic": allow_synthetic},
+            ),
+        )
     )
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 @data_app.command("prune-raw")
 def data_prune_raw() -> None:
     """Delete raw Kraken files that are outside the fixed V1 universe."""
-    config = load_config()
-    service = DataService(config)
-    summary = service.prune_raw_kraken()
-    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(render_direct_output("data_prune_raw", _invoke_direct("data_prune_raw")))
 
 
 @features_app.command("build")
@@ -363,10 +311,12 @@ def features_build(
     ),
 ) -> None:
     """Build a deterministic feature and label dataset from canonical daily candles."""
-    config = load_config()
-    service = ResearchService(config)
-    summary = service.build_feature_store(assets=tuple(assets) if assets else None, force=force)
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "features_build",
+            _invoke_direct("features_build", {"assets": assets, "force": force}),
+        )
+    )
 
 
 @model_app.command("train")
@@ -378,17 +328,15 @@ def model_train(
     ),
 ) -> None:
     """Train the Phase 6 ML artifact with walk-forward validation."""
-    config = load_config()
-    service = ModelService(config)
-    try:
-        summary = service.train_model(
-            assets=tuple(assets) if assets else None,
-            force_features=force_features,
+    typer.echo(
+        render_direct_output(
+            "model_train",
+            _invoke_direct(
+                "model_train",
+                {"assets": assets, "force_features": force_features},
+            ),
         )
-    except (FileNotFoundError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    )
 
 
 @model_app.command("validate")
@@ -399,14 +347,12 @@ def model_validate(
     ),
 ) -> None:
     """Validate one trained model artifact against the promotion rules."""
-    config = load_config()
-    service = ModelService(config)
-    try:
-        summary = service.validate_model(model_id=model_id)
-    except (FileNotFoundError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "model_validate",
+            _invoke_direct("model_validate", {"model_id": model_id}),
+        )
+    )
 
 
 @model_app.command("promote")
@@ -417,14 +363,12 @@ def model_promote(
     ),
 ) -> None:
     """Promote one validated model artifact to the active strategy pointer."""
-    config = load_config()
-    service = ModelService(config)
-    try:
-        summary = service.promote_model(model_id=model_id)
-    except (FileNotFoundError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "model_promote",
+            _invoke_direct("model_promote", {"model_id": model_id}),
+        )
+    )
 
 
 @backtest_app.command("run")
@@ -436,13 +380,15 @@ def backtest_run(
     ),
 ) -> None:
     """Execute a reproducible Kraken-only backtest on canonical daily data."""
-    config = load_config()
-    service = BacktestService(config)
-    summary = service.run_backtest(
-        assets=tuple(assets) if assets else None,
-        force_features=force_features,
+    typer.echo(
+        render_direct_output(
+            "backtest_run",
+            _invoke_direct(
+                "backtest_run",
+                {"assets": assets, "force_features": force_features},
+            ),
+        )
     )
-    typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
 
 
 @backtest_app.command("report")
@@ -453,7 +399,9 @@ def backtest_report(
     ),
 ) -> None:
     """Print a stored backtest report."""
-    config = load_config()
-    service = BacktestService(config)
-    report = service.load_backtest_report(run_id=run_id)
-    typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    typer.echo(
+        render_direct_output(
+            "backtest_report",
+            _invoke_direct("backtest_report", {"run_id": run_id}),
+        )
+    )

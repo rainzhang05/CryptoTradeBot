@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from tradebot.config import ConfigError, load_config
+from tradebot.config import (
+    ConfigError,
+    default_config_path,
+    default_tradebot_home,
+    initialize_app_home,
+    load_config,
+)
 
 
 def write_config(root: Path, content: str) -> Path:
@@ -51,6 +57,8 @@ paths:
     env_path = tmp_path / ".env"
     env_path.write_text("KRAKEN_API_KEY=demo-key\nSMTP_PORT=2525\n", encoding="utf-8")
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("KRAKEN_API_KEY", raising=False)
+    monkeypatch.delenv("SMTP_PORT", raising=False)
 
     config = load_config(config_path=config_path, env_path=env_path)
 
@@ -127,3 +135,35 @@ paths: {}
 
     with pytest.raises(ConfigError):
         load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+
+def test_default_paths_prefer_tradebot_home_when_bot_config_path_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TRADEBOT_HOME", str(tmp_path / "tradebot-home"))
+
+    assert default_tradebot_home() == (tmp_path / "tradebot-home").resolve()
+    assert default_config_path() == (
+        tmp_path / "tradebot-home" / "config" / "settings.yaml"
+    ).resolve()
+
+
+def test_default_config_path_prefers_explicit_bot_config_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    explicit_path = tmp_path / "repo" / "config" / "settings.yaml"
+    monkeypatch.setenv("TRADEBOT_HOME", str(tmp_path / "tradebot-home"))
+    monkeypatch.setenv("BOT_CONFIG_PATH", str(explicit_path))
+
+    assert default_config_path() == explicit_path.resolve()
+
+
+def test_initialize_app_home_creates_starter_layout(tmp_path: Path) -> None:
+    summary = initialize_app_home(home=tmp_path / "tradebot-home")
+
+    assert Path(str(summary["config_path"])).exists()
+    assert Path(str(summary["env_path"])).exists()
+    assert Path(str(summary["data_dir"])).exists()
+    assert Path(str(summary["artifacts_dir"])).exists()
+    assert Path(str(summary["runtime_dir"])).exists()

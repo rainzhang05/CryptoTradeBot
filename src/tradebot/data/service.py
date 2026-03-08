@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
@@ -9,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from tradebot.cancellation import CancellationToken
 from tradebot.config import AppConfig
 from tradebot.data.aggregation import CandleAccumulator
 from tradebot.data.clients import (
@@ -167,6 +169,8 @@ class DataService:
         self,
         assets: tuple[str, ...] | None = None,
         allow_synthetic: bool = True,
+        cancellation_token: CancellationToken | None = None,
+        progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         """Repair historical gaps and extend canonical candles to the latest closed interval."""
         selected_assets = assets or tuple(ASSET_SYMBOLS)
@@ -180,6 +184,8 @@ class DataService:
         )
 
         for asset in selected_assets:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             self.logger.info("processing completion asset", extra={"asset": asset})
             if any(
                 not canonical_candle_file(
@@ -193,6 +199,8 @@ class DataService:
 
             interval_results: list[dict[str, object]] = []
             for interval in self.data_settings.intervals:
+                if cancellation_token is not None:
+                    cancellation_token.raise_if_cancelled()
                 candle_path = canonical_candle_file(
                     self.data_settings.canonical_dir,
                     asset,
@@ -229,6 +237,8 @@ class DataService:
                     candles=existing,
                     target_end=target_end,
                     allow_synthetic=allow_synthetic,
+                    cancellation_token=cancellation_token,
+                    progress_callback=progress_callback,
                 )
                 write_candles(candle_path, completed)
                 after = check_candles(asset=asset, interval=interval, path=candle_path)
@@ -259,6 +269,16 @@ class DataService:
                         **stats,
                     }
                 )
+                if progress_callback is not None:
+                    progress_callback(
+                        {
+                            "asset": asset,
+                            "interval": interval,
+                            "status": interval_results[-1]["status"],
+                            "completed_ranges": stats["total_ranges_completed"],
+                            "total_ranges_planned": stats["total_ranges_planned"],
+                        }
+                    )
 
             completion_assets.append({"asset": asset, "intervals": interval_results})
 
@@ -423,6 +443,8 @@ class DataService:
         candles: list[Candle],
         target_end: int,
         allow_synthetic: bool,
+        cancellation_token: CancellationToken | None = None,
+        progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> tuple[list[Candle], dict[str, Any]]:
         symbol_map = ASSET_SYMBOLS[asset]
         merged = candles
@@ -452,6 +474,8 @@ class DataService:
         )
 
         for start_ts, end_ts in native_refresh_ranges:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             refreshed_rows = self._fetch_kraken_range(
                 asset=asset,
                 pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
@@ -470,8 +494,20 @@ class DataService:
                 started_at=started_at,
                 phase="native_refresh",
             )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "asset": asset,
+                        "interval": interval,
+                        "phase": "native_refresh",
+                        "completed_ranges": completed_ranges,
+                        "total_ranges_planned": total_ranges_planned,
+                    }
+                )
 
         for start_ts, end_ts in missing_ranges:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             if start_ts > end_ts:
                 continue
 
@@ -530,6 +566,16 @@ class DataService:
                 started_at=started_at,
                 phase="gap_fill",
             )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "asset": asset,
+                        "interval": interval,
+                        "phase": "gap_fill",
+                        "completed_ranges": completed_ranges,
+                        "total_ranges_planned": total_ranges_planned,
+                    }
+                )
 
         remaining_ranges = self._missing_ranges(merged, interval, target_end=target_end)
         return merged, {

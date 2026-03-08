@@ -6,6 +6,7 @@ import csv
 import json
 import math
 import pickle
+from collections.abc import Callable
 from datetime import UTC, datetime
 from numbers import Real
 from pathlib import Path
@@ -17,6 +18,7 @@ from sklearn.linear_model import LogisticRegression, Ridge  # type: ignore[impor
 from sklearn.pipeline import Pipeline  # type: ignore[import-untyped]
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
+from tradebot.cancellation import CancellationToken
 from tradebot.config import AppConfig
 from tradebot.data.storage import write_json
 from tradebot.logging_config import get_logger
@@ -57,7 +59,11 @@ class ModelService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
+        cancellation_token: CancellationToken | None = None,
+        progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> ModelTrainingSummary:
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         if not self.config.model.enabled:
             raise ValueError("Model subsystem is disabled in configuration")
         self.logger.info(
@@ -68,6 +74,7 @@ class ModelService:
         feature_store = self.research_service.build_feature_store(
             assets=assets,
             force=force_features,
+            cancellation_token=cancellation_token,
         )
         rows = self._load_dataset_rows(Path(feature_store.dataset_file))
         timestamps = self._unique_timestamps(rows)
@@ -82,6 +89,8 @@ class ModelService:
         predictions: list[PredictionRow] = []
         split_count = 0
         for timestamp in timestamps[self.config.model.initial_train_timestamps :]:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             train_rows = [row for row in rows if self._coerce_int(row["timestamp"]) < timestamp]
             validation_rows = [
                 row for row in rows if self._coerce_int(row["timestamp"]) == timestamp
@@ -89,7 +98,19 @@ class ModelService:
             bundle = self._fit_bundle(train_rows)
             predictions.extend(self._predict_rows(bundle, validation_rows))
             split_count += 1
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "split_count": split_count,
+                        "total_splits": len(
+                            timestamps[self.config.model.initial_train_timestamps :]
+                        ),
+                        "timestamp": timestamp,
+                    }
+                )
 
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         final_bundle = self._fit_bundle(rows)
         model_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}_{feature_store.dataset_id}"
         manifest_path = model_manifest_file(self.paths.models_dir, model_id)

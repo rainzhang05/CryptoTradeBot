@@ -1,8 +1,9 @@
-"""Configuration loading and validation."""
+"""Configuration loading, validation, and application-home bootstrap."""
 
 from __future__ import annotations
 
 import os
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +16,26 @@ from tradebot.constants import BASE_CURRENCY, FIXED_UNIVERSE, PRIMARY_EXCHANGE, 
 
 class ConfigError(RuntimeError):
     """Raised when configuration cannot be loaded or validated."""
+
+
+TRADEBOT_HOME_ENV = "TRADEBOT_HOME"
+BOT_CONFIG_PATH_ENV = "BOT_CONFIG_PATH"
+
+
+@dataclass(frozen=True)
+class AppHomeLayout:
+    """Resolved application-home layout used by global installations."""
+
+    home: Path
+    config_dir: Path
+    config_path: Path
+    env_path: Path
+    data_dir: Path
+    artifacts_dir: Path
+    runtime_dir: Path
+
+    def to_dict(self) -> dict[str, str]:
+        return {key: str(value) for key, value in asdict(self).items()}
 
 
 class AppSettings(BaseModel):
@@ -279,9 +300,112 @@ class AppConfig(BaseModel):
 
 
 def default_config_path() -> Path:
-    """Resolve the default configuration path from the environment or repository root."""
-    configured_path = os.getenv("BOT_CONFIG_PATH", "config/settings.yaml")
-    return Path(configured_path).expanduser().resolve()
+    """Resolve the default configuration path from explicit overrides or the app home."""
+    configured_path = os.getenv(BOT_CONFIG_PATH_ENV)
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    return app_home_layout().config_path.resolve()
+
+
+def default_tradebot_home() -> Path:
+    """Resolve the default Tradebot home directory."""
+    configured_home = os.getenv(TRADEBOT_HOME_ENV)
+    if configured_home:
+        return Path(configured_home).expanduser().resolve()
+    return (Path.home() / ".tradebot").resolve()
+
+
+def app_home_layout(home: Path | None = None) -> AppHomeLayout:
+    """Return the default application-home layout for the given home root."""
+    resolved_home = (home or default_tradebot_home()).expanduser().resolve()
+    return AppHomeLayout(
+        home=resolved_home,
+        config_dir=resolved_home / "config",
+        config_path=resolved_home / "config" / "settings.yaml",
+        env_path=resolved_home / ".env",
+        data_dir=resolved_home / "data",
+        artifacts_dir=resolved_home / "artifacts",
+        runtime_dir=resolved_home / "runtime",
+    )
+
+
+def default_config_payload() -> dict[str, Any]:
+    """Return the starter configuration payload for a new application home."""
+    return {
+        "app": AppSettings().model_dump(mode="json"),
+        "runtime": RuntimeSettings().model_dump(mode="json"),
+        "exchange": ExchangeSettings().model_dump(mode="json"),
+        "data": DataSettings().model_dump(mode="json"),
+        "strategy": StrategySettings().model_dump(mode="json"),
+        "research": ResearchSettings().model_dump(mode="json"),
+        "model": ModelSettings().model_dump(mode="json"),
+        "backtest": BacktestSettings().model_dump(mode="json"),
+        "alerts": AlertSettings().model_dump(mode="json"),
+        "paths": PathsSettings().model_dump(mode="json"),
+    }
+
+
+def default_env_template() -> str:
+    """Return the starter .env template for a new application home."""
+    return "\n".join(
+        [
+            "# Kraken API credentials",
+            "KRAKEN_API_KEY=",
+            "KRAKEN_API_SECRET=",
+            "KRAKEN_API_OTP=",
+            "",
+            "# SMTP alert delivery",
+            "SMTP_HOST=",
+            "SMTP_PORT=587",
+            "SMTP_USERNAME=",
+            "SMTP_PASSWORD=",
+            "",
+        ]
+    )
+
+
+def initialize_app_home(
+    *,
+    home: Path | None = None,
+    force: bool = False,
+) -> dict[str, object]:
+    """Create the application-home layout and starter files."""
+    layout = app_home_layout(home)
+    for directory in (
+        layout.home,
+        layout.config_dir,
+        layout.data_dir,
+        layout.data_dir / "kraken_data",
+        layout.data_dir / "canonical",
+        layout.artifacts_dir,
+        layout.artifacts_dir / "reports",
+        layout.runtime_dir,
+        layout.runtime_dir / "logs",
+        layout.runtime_dir / "state",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    config_created = force or not layout.config_path.exists()
+    if config_created:
+        layout.config_path.write_text(
+            yaml.safe_dump(default_config_payload(), sort_keys=False),
+            encoding="utf-8",
+        )
+
+    env_created = force or not layout.env_path.exists()
+    if env_created:
+        layout.env_path.write_text(default_env_template(), encoding="utf-8")
+
+    return {
+        "home": str(layout.home),
+        "config_path": str(layout.config_path),
+        "env_path": str(layout.env_path),
+        "data_dir": str(layout.data_dir),
+        "artifacts_dir": str(layout.artifacts_dir),
+        "runtime_dir": str(layout.runtime_dir),
+        "config_created": config_created,
+        "env_created": env_created,
+    }
 
 
 def load_config(config_path: Path | None = None, env_path: Path | None = None) -> AppConfig:
@@ -295,10 +419,11 @@ def load_config(config_path: Path | None = None, env_path: Path | None = None) -
     if env_path:
         resolved_env_path = env_path.expanduser().resolve()
     else:
-        resolved_env_path = (project_root / ".env").resolve()
+        default_layout = app_home_layout(project_root)
+        resolved_env_path = default_layout.env_path.resolve()
 
     if resolved_env_path.exists():
-        load_dotenv(resolved_env_path, override=False)
+        load_dotenv(resolved_env_path, override=env_path is not None)
 
     if not resolved_config_path.exists():
         raise ConfigError(f"Configuration file does not exist: {resolved_config_path}")

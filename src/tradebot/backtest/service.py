@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -27,6 +28,7 @@ from tradebot.backtest.storage import (
     simulate_state_file,
     write_csv_rows,
 )
+from tradebot.cancellation import CancellationToken
 from tradebot.config import AppConfig
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
@@ -53,7 +55,11 @@ class BacktestService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
+        cancellation_token: CancellationToken | None = None,
+        progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> BacktestRunSummary:
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         self.logger.info(
             "backtest started",
             extra={"assets": list(assets or ()), "force_features": force_features},
@@ -61,6 +67,7 @@ class BacktestService:
         feature_store = self.research_service.build_feature_store(
             assets=assets,
             force=force_features,
+            cancellation_token=cancellation_token,
         )
         if feature_store.row_count <= 0:
             raise ValueError("Feature store does not contain enough rows for backtesting")
@@ -82,6 +89,8 @@ class BacktestService:
         equity_curve: list[EquityPoint] = []
 
         for timestamp in sorted(rows_by_timestamp):
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             execution_timestamp = next_timestamp_map.get(timestamp)
             if execution_timestamp is None:
                 continue
@@ -142,6 +151,14 @@ class BacktestService:
                     gross_exposure=gross_exposure,
                 )
             )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "timestamp": execution_timestamp,
+                        "decision_count": len(decisions),
+                        "fill_count": len(fills),
+                    }
+                )
 
         if not equity_curve:
             raise ValueError("Backtest did not produce any executable decision points")

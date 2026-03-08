@@ -2,6 +2,6 @@
 
 
 if __name__ == "__main__":
-    from tradebot.cli import app
+    from tradebot.cli import main
 
-    app()
+    main()

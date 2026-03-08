@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from tradebot.cancellation import CancellationToken
 from tradebot.config import AppConfig
 from tradebot.constants import FIXED_UNIVERSE
 from tradebot.data.integrity import read_candles
@@ -35,8 +36,11 @@ class ResearchService:
         self,
         assets: tuple[str, ...] | None = None,
         force: bool = False,
+        cancellation_token: CancellationToken | None = None,
     ) -> FeatureBuildSummary:
         """Build or reuse a deterministic dataset for the selected assets."""
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         selected_assets = self._select_assets(assets)
         candles_by_asset = self._load_daily_candles(selected_assets)
         dataset_id = self._dataset_id(selected_assets, candles_by_asset)
@@ -59,10 +63,14 @@ class ResearchService:
                 cached=True,
             )
 
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         rows, stats = build_feature_rows(candles_by_asset, self.config.research)
         fieldnames = feature_column_names(self.config.research)
         row_count = write_dataset_rows(dataset_path, fieldnames, rows)
         experiment_root.mkdir(parents=True, exist_ok=True)
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
 
         asset_stats = self._build_asset_stats(candles_by_asset, stats)
         manifest = {

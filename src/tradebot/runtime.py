@@ -11,6 +11,7 @@ from pathlib import Path
 from time import sleep as default_sleep
 
 from tradebot.backtest.service import BacktestService
+from tradebot.cancellation import CancellationToken, CommandCancelledError
 from tradebot.config import AppConfig, sanitized_config_payload
 from tradebot.constants import SUPPORTED_MODES
 from tradebot.data.storage import write_json
@@ -146,6 +147,7 @@ class RuntimeService:
         mode: str,
         max_cycles: int | None = None,
         *,
+        cancellation_token: CancellationToken | None = None,
         on_cycle: Callable[[RuntimeSnapshot], None] | None = None,
         on_alert: Callable[[AlertEvent], None] | None = None,
     ) -> list[RuntimeSnapshot]:
@@ -176,6 +178,8 @@ class RuntimeService:
             self.logger.info("runtime started", extra={"mode": mode, "cycle_limit": cycle_limit})
 
             for cycle in range(1, cycle_limit + 1):
+                if cancellation_token is not None:
+                    cancellation_token.raise_if_cancelled()
                 snapshot = self._run_cycle(mode=mode, cycle=cycle)
                 alerts = self.alert_service.process_snapshot(snapshot)
                 latest_alert_payloads = [alert.to_dict() for alert in alerts]
@@ -205,6 +209,8 @@ class RuntimeService:
                         on_alert(alert)
                 snapshots.append(snapshot)
                 if cycle < cycle_limit:
+                    if cancellation_token is not None:
+                        cancellation_token.raise_if_cancelled()
                     self.sleep_fn(self.config.runtime.cycle_interval_seconds)
 
             self.logger.info(
@@ -222,6 +228,23 @@ class RuntimeService:
                 last_alerts=latest_alert_payloads,
             )
             return snapshots
+        except CommandCancelledError:
+            self.logger.info(
+                "runtime cancelled",
+                extra={"mode": mode, "completed_cycles": len(snapshots)},
+            )
+            self._write_runtime_context(
+                mode=mode,
+                status="cancelled",
+                cycle_limit=cycle_limit,
+                completed_cycles=len(snapshots),
+                started_at=started_at,
+                finished_at=self._now_iso(),
+                last_snapshot=(None if not snapshots else snapshots[-1].to_dict()),
+                last_alerts=latest_alert_payloads,
+                error="Command cancelled",
+            )
+            raise
         except Exception as exc:
             failure_status = "startup_failed" if not snapshots else "failed"
             self.logger.exception(
