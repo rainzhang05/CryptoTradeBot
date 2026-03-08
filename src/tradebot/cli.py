@@ -1,6 +1,7 @@
 """CLI entrypoints for the trading bot."""
 
 import json
+from pathlib import Path
 from typing import Any, cast
 
 import typer
@@ -11,6 +12,7 @@ from tradebot.config import load_config
 from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
 from tradebot.model.service import ModelService
+from tradebot.operations import OperationsService
 from tradebot.research.service import ResearchService
 from tradebot.runtime import RuntimeService
 
@@ -20,6 +22,9 @@ data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
 model_app = typer.Typer(help="Train, validate, and promote ML model artifacts.")
 backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
+email_app = typer.Typer(help="Manage alert email configuration and SMTP checks.")
+report_app = typer.Typer(help="List and export generated reports and artifacts.")
+logs_app = typer.Typer(help="Inspect durable application logs.")
 ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
@@ -27,6 +32,9 @@ app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
 app.add_typer(model_app, name="model")
 app.add_typer(backtest_app, name="backtest")
+app.add_typer(email_app, name="email")
+app.add_typer(report_app, name="report")
+app.add_typer(logs_app, name="logs")
 
 
 @app.command("version")
@@ -44,29 +52,12 @@ def config_path() -> None:
 
 @app.command("doctor")
 def doctor() -> None:
-    """Run a lightweight preflight summary for the local environment."""
+    """Validate config, local environment, and exchange connectivity."""
     config = load_config()
-    paths = config.resolved_paths()
-    summary = {
-        "config_path": str(config.config_path),
-        "project_root": str(config.project_root),
-        "exchange": config.exchange.name,
-        "base_currency": config.exchange.base_currency,
-        "default_mode": config.runtime.default_mode,
-        "log_format": config.app.log_format,
-        "email_configured": bool(config.alerts.email_recipient),
-        "paths": {
-            "data_dir": str(paths.data_dir),
-            "artifacts_dir": str(paths.artifacts_dir),
-            "features_dir": str(paths.features_dir),
-            "experiments_dir": str(paths.experiments_dir),
-            "models_dir": str(paths.models_dir),
-            "model_reports_dir": str(paths.model_reports_dir),
-            "logs_dir": str(paths.logs_dir),
-            "state_dir": str(paths.state_dir),
-        },
-    }
+    summary = OperationsService(config).doctor_summary()
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    if not bool(summary["ok"]):
+        raise typer.Exit(code=1)
 
 
 @config_app.command("show")
@@ -111,6 +102,27 @@ def run(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Completed {len(snapshots)} cycle(s) in {effective_mode} mode.")
+
+
+@app.command("stop")
+def stop() -> None:
+    """Stop a managed runtime process when one is active."""
+    config = load_config()
+    service = OperationsService(config)
+    try:
+        summary = service.stop_runtime()
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@app.command("status")
+def status() -> None:
+    """Show the latest known runtime status, positions, balances, and health."""
+    config = load_config()
+    summary = OperationsService(config).runtime_status()
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 def sanitized_config(config: Any) -> dict[str, Any]:
@@ -158,6 +170,77 @@ def render_runtime_snapshot(snapshot: Any) -> str:
             f"incidents={incidents or 'none'}",
         ]
     )
+
+
+@email_app.command("set")
+def email_set(recipient: str = typer.Argument(..., help="Alert email recipient.")) -> None:
+    """Set or update the configured alert email recipient."""
+    config = load_config()
+    try:
+        summary = OperationsService(config).set_email_recipient(recipient)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@email_app.command("test")
+def email_test(
+    recipient: str | None = typer.Option(
+        default=None,
+        help="Optional override recipient. Defaults to the configured alert recipient.",
+    ),
+) -> None:
+    """Send a test email using the configured SMTP settings."""
+    config = load_config()
+    try:
+        summary = OperationsService(config).send_test_email(recipient=recipient)
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@report_app.command("list")
+def report_list() -> None:
+    """List stored reports and artifacts under the project artifacts directory."""
+    config = load_config()
+    entries = OperationsService(config).list_reports()
+    typer.echo(json.dumps(entries, indent=2, sort_keys=True))
+
+
+@report_app.command("export")
+def report_export(
+    source: str = typer.Argument(..., help="Source report or artifact path."),
+    destination: str = typer.Argument(..., help="Destination file path."),
+) -> None:
+    """Export one stored report or artifact to a chosen destination."""
+    config = load_config()
+    try:
+        summary = OperationsService(config).export_report(source, Path(destination))
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@logs_app.command("tail")
+def logs_tail(
+    lines: int = typer.Option(
+        default=50,
+        min=1,
+        help="Number of recent log lines to render.",
+    ),
+) -> None:
+    """Tail recent durable logs in a readable format."""
+    config = load_config()
+    try:
+        rendered_lines = OperationsService(config).tail_logs(lines=lines)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    for line in rendered_lines:
+        typer.echo(line)
 
 
 @data_app.command("import")

@@ -35,6 +35,23 @@ This preserves the concise style the project wants while keeping commands readab
 - `bot stop`: stop a managed runtime if process control is implemented.
 - `bot status`: show current runtime status, positions, balances, and health.
 
+### `bot stop`
+
+This command must:
+
+- read the tracked runtime-process metadata from `runtime/state/runtime_process.json`
+- request graceful termination of the recorded process when it is still running
+- return a non-zero exit when no managed runtime process is active
+
+### `bot status`
+
+This command must:
+
+- show the tracked runtime process when one exists
+- show the latest live status report when live mode has run
+- show the latest persisted simulate state when simulate mode has run
+- show the active promoted model reference when one exists
+
 ### Configuration and setup
 
 - `bot doctor`: validate environment, config, and exchange connectivity.
@@ -42,6 +59,30 @@ This preserves the concise style the project wants while keeping commands readab
 - `bot config validate`: validate the loaded configuration.
 - `bot email set`: set or update the alert email recipient.
 - `bot email test`: send a test email.
+
+### `bot doctor`
+
+This command must:
+
+- validate that configuration loads successfully
+- check Kraken public system status
+- check private Kraken authentication when credentials are configured or required by mode
+- return a non-zero exit when required connectivity checks fail
+
+### `bot email set`
+
+This command must:
+
+- update `alerts.email_recipient` in the active YAML configuration file
+- validate that the supplied value is a plausible email address
+
+### `bot email test`
+
+This command must:
+
+- use the configured SMTP secrets from `.env`
+- default to the configured `alerts.email_recipient` unless an override recipient is provided
+- return a non-zero exit when SMTP configuration is incomplete or delivery fails
 
 ### Data
 
@@ -168,6 +209,28 @@ This command must:
 - `bot report list`: list generated reports and artifacts.
 - `bot report export`: export a chosen report.
 - `bot logs tail`: tail recent structured logs in a readable form.
+
+### `bot report list`
+
+This command must:
+
+- list generated files beneath `artifacts/`
+- distinguish operator-facing reports from other stored artifacts
+
+### `bot report export`
+
+This command must:
+
+- export a chosen stored report or artifact file to a target path
+- return a non-zero exit when the requested source file does not exist
+
+### `bot logs tail`
+
+This command must:
+
+- read from the durable runtime log file at `runtime/logs/tradebot.log`
+- render recent JSON log lines in a human-readable form
+- return a non-zero exit when no durable log file exists yet
 
 ## Command Behavior Requirements
 

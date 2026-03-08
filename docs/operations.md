@@ -62,6 +62,8 @@ The project must implement comprehensive logs.
 - separate human-readable terminal monitoring from durable log storage
 - no secret leakage in logs
 
+Phase 8 writes durable application logs to `runtime/logs/tradebot.log` in JSON-line format so CLI inspection commands can tail recent activity.
+
 ## Alerting Requirements
 
 Alerts must be sent to:
@@ -118,6 +120,7 @@ After restart, the system must be able to:
 - resume safely only after consistency checks pass
 
 For simulate mode, the minimum persisted state includes the last simulated cash balance, open simulated positions, and the most recent decision timestamp.
+Phase 8 also tracks the active foreground runtime process in `runtime/state/runtime_process.json` so status inspection and managed termination are possible from the CLI.
 
 ## Runbook Requirements
 

@@ -152,3 +152,13 @@ jobs:
 
       - name: Phase 7 live-runtime smoke test
         run: uv run --python 3.12 pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live
+
+      - name: Phase 8 CLI smoke test
+        run: |
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot status
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot report list
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot report export artifacts/reports/models/latest_training_summary.json .ci-phase6/exports/latest_training_summary.json
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot email set trader@example.com
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot logs tail --lines 1
+          test -f .ci-phase6/exports/latest_training_summary.json
+          grep -q "trader@example.com" .ci-phase6/config/settings.yaml
