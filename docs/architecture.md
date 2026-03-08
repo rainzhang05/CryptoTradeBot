@@ -79,6 +79,14 @@ Responsibilities:
 - version model artifacts
 - expose inference outputs to the strategy engine
 
+Phase 6 implements this through a local artifact-oriented model service that:
+
+- trains only on deterministic Phase 3 feature-store rows
+- performs expanding walk-forward validation across later timestamps
+- writes bundle, manifest, metrics, and prediction artifacts under `artifacts/models/<model_id>/`
+- writes latest operator-facing summaries under `artifacts/reports/models/`
+- maintains a promoted-model reference so runtime and backtests can load the active artifact deterministically
+
 ### 5. Strategy subsystem
 
 Responsibilities:
@@ -87,6 +95,8 @@ Responsibilities:
 - consume ML outputs
 - generate portfolio targets
 - generate hold, reduce, exit, and freeze decisions
+
+The implemented strategy path keeps the rule shell authoritative for hard vetoes, regime-aware exposure, and freeze handling, then blends optional promoted-model predictions into ranking, entry gating, and sell refinement.
 
 ### 6. Portfolio subsystem
 
@@ -123,6 +133,8 @@ Phase 4 implements this as a deterministic daily bar engine that:
 - executes fills on the next aligned daily bar with configured fee and slippage assumptions
 - writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`
 - maintains `artifacts/reports/backtests/latest_backtest_report.json` as the operator-friendly latest pointer
+
+Phase 6 extends the same engine to enrich feature rows with promoted-model predictions when the active model matches the dataset in use.
 
 ### 9. Runtime orchestration subsystem
 
@@ -201,6 +213,7 @@ The system must persist enough state to resume safely after restart.
 - runtime health and freeze state
 
 Phase 4 also persists simulate-mode portfolio state so repeated local runs can resume from the last simulated holdings and cash balance.
+Phase 6 also persists promoted-model reference state so the same active artifact is reused consistently across simulate and backtest runs until a newer model is promoted.
 
 ## Storage Layout Expectations
 

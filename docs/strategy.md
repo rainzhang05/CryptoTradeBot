@@ -133,6 +133,14 @@ The ML layer may use:
 
 The ML layer must not use future information, blended future data, or non-point-in-time availability assumptions.
 
+Phase 6 currently implements three supervised outputs from the deterministic feature store:
+
+- expected-return regression for ranking support
+- downside-risk classification for entry gating and defensive scaling
+- sell-risk classification for stronger reduction and exit confirmation
+
+Only predictions from the active promoted model that matches the current dataset may be consumed by the strategy engine.
+
 ## Portfolio Construction
 
 ### Asset count
@@ -151,6 +159,8 @@ Portfolio weights must be generated through a bounded scoring process that combi
 - Concentration limits.
 
 The implementation should prefer normalized score-based allocation over equal weight because the project goal is to maximize expected return, but the final weights must remain capped for concentration control.
+
+The implemented allocation path combines rule-based scores, normalized expected-return ranking when promoted predictions are available, downside penalties, regime scaling, and drawdown-aware risk-state scaling before final concentration and cash normalization.
 
 ### Concentration rule
 
@@ -172,6 +182,8 @@ An asset becomes a candidate for purchase or increased weight when:
 - The downside-risk score is below the configured exclusion threshold.
 
 Entries are driven by relative attractiveness, not by dip-buying logic alone.
+
+The current implementation also blocks new entries when predicted downside risk breaches the configured entry threshold even if the broader rule shell remains constructive.
 
 ## Exit and Sell Logic
 
@@ -203,6 +215,8 @@ The system should reduce but not necessarily fully exit when:
 - Expected return score falls toward neutral.
 - Downside risk rises but not enough to justify a full exit.
 - Market breadth weakens while BTC remains constructive.
+
+The implemented Phase 6 path also reduces positions when sell-risk or downside-risk predictions deteriorate before a hard forced-exit condition is reached.
 
 ### Loss-handling policy
 
@@ -262,6 +276,8 @@ Instead, drawdown should feed a layered defense process:
 - reduced aggressiveness state
 - catastrophe state
 
+The current implementation maps these layers to normal, elevated, stressed, and frozen portfolio risk states so exposure can be reduced progressively before a full freeze or catastrophe response is required.
+
 The exact thresholds must be declared in implementation docs and validated by backtest evidence before live deployment, but the governing principle is fixed: drawdown alone should not trigger routine selling of otherwise supported positions.
 
 ## ML Modeling Requirements
@@ -282,6 +298,8 @@ The ML subsystem must improve decisions in these areas:
 - Clear versioning of datasets, features, models, and results.
 - Performance must be assessed on Kraken-based evaluation data.
 - The ML layer must demonstrate incremental benefit over the rule-only baseline before promotion.
+
+The current validation summaries track expected-return MAE, expected-return correlation, directional accuracy, downside Brier score, sell-risk Brier score, validation row count, and walk-forward split count.
 
 ## Strategy Promotion Rules
 

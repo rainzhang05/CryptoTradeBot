@@ -58,6 +58,34 @@ This preserves the concise style the project wants while keeping commands readab
 - `bot model validate`: run validation for a model candidate.
 - `bot model promote`: promote a model artifact after validation gates pass.
 
+### `bot model train`
+
+This command must:
+
+- build or reuse the deterministic feature dataset for the selected assets
+- train the expected-return, downside-risk, and sell-risk models on point-in-time rows only
+- perform walk-forward validation across later timestamps
+- write artifacts under `artifacts/models/<model_id>/`
+- update `artifacts/reports/models/latest_training_summary.json`
+
+### `bot model validate`
+
+This command must:
+
+- load the specified model artifact or default to the latest available candidate
+- evaluate promotion eligibility from saved validation metrics and configured thresholds
+- print human-readable validation output and support machine-usable summaries
+- update `artifacts/reports/models/latest_validation_summary.json`
+
+### `bot model promote`
+
+This command must:
+
+- refuse promotion when validation gates fail
+- record the promoted model reference used by runtime and backtests
+- update `artifacts/reports/models/latest_promotion_summary.json`
+- make the promoted model immediately available to the shared hybrid strategy path
+
 ### `bot features build`
 
 This command must:
@@ -93,6 +121,7 @@ This command must:
 - build or reuse the deterministic feature dataset for the selected assets
 - run a Kraken-only daily bar backtest using canonical `1d` candles
 - generate order intents, simulated fills, and portfolio accounting from shared backtest models
+- enrich feature rows with promoted-model predictions when the active model matches the dataset in use
 - write run artifacts under `artifacts/backtests/<run_id>/`
 - update `artifacts/reports/backtests/latest_backtest_report.json`
 
@@ -110,6 +139,7 @@ This command must:
 
 - reuse the same target-weight and simulated execution path as the backtest service wherever practical
 - load the latest persisted simulated portfolio state from `runtime/state/simulate_state.json`
+- load the active promoted model reference when available so simulation uses the same hybrid strategy path as backtests
 - update that state after each completed simulation cycle
 - return a clear waiting state when canonical data or deterministic signals are not yet available
 
