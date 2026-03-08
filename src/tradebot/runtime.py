@@ -54,6 +54,10 @@ class RuntimeService:
         if mode not in SUPPORTED_MODES:
             supported = ", ".join(SUPPORTED_MODES)
             raise ValueError(f"Unsupported mode '{mode}'. Expected one of: {supported}")
+        if mode == "live":
+            raise NotImplementedError(
+                "Live mode is scheduled for Phase 7 and is not implemented in Phase 6."
+            )
 
         self.bootstrap()
         cycle_limit = max_cycles if max_cycles is not None else self.config.runtime.max_cycles
@@ -77,19 +81,16 @@ class RuntimeService:
         return snapshots
 
     def _run_cycle(self, mode: str, cycle: int) -> RuntimeSnapshot:
-        if mode == "simulate":
-            summary = self.backtest_service.simulate_latest_cycle()
-            return RuntimeSnapshot(
-                mode=mode,
-                cycle=cycle,
-                status=summary.status,
-                timestamp=summary.timestamp,
-                regime_state=summary.regime_state,
-                risk_state=summary.risk_state,
-                equity_usd=summary.equity_usd,
-                cash_usd=summary.cash_usd,
-                fill_count=summary.fill_count,
-                freeze_reason=summary.freeze_reason,
-            )
-
-        return RuntimeSnapshot(mode=mode, cycle=cycle, status="pending_live_engine")
+        summary = self.backtest_service.simulate_latest_cycle()
+        return RuntimeSnapshot(
+            mode=mode,
+            cycle=cycle,
+            status=summary.status,
+            timestamp=summary.timestamp,
+            regime_state=summary.regime_state,
+            risk_state=summary.risk_state,
+            equity_usd=summary.equity_usd,
+            cash_usd=summary.cash_usd,
+            fill_count=summary.fill_count,
+            freeze_reason=summary.freeze_reason,
+        )

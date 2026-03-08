@@ -61,17 +61,91 @@ jobs:
             -v "$PWD/.ci-smoke/data:/app/data" \
             -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
             crypto-spot-trading-bot:ci features build --assets BTC --assets ETH
-          if [ -f data/canonical/kraken/BTC/candles_1d.csv ] && [ -f data/canonical/kraken/ETH/candles_1d.csv ]; then
-            mkdir -p .ci-smoke/runtime
-            docker run --rm \
-              -v "$PWD/data:/app/data" \
-              -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
-              -v "$PWD/.ci-smoke/runtime:/app/runtime" \
-              crypto-spot-trading-bot:ci backtest run --assets BTC --assets ETH
-            docker run --rm \
-              -v "$PWD/data:/app/data" \
-              -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
-              crypto-spot-trading-bot:ci backtest report
-          else
-            echo "Skipping backtest Docker smoke test because canonical BTC/ETH daily candles are unavailable in the checkout."
-          fi
+          test -f .ci-smoke/data/canonical/kraken/BTC/candles_1d.csv
+          test -f .ci-smoke/data/canonical/kraken/ETH/candles_1d.csv
+
+      - name: Phase 4-6 CLI smoke test
+        run: |
+          rm -rf .ci-phase6
+          mkdir -p .ci-phase6/config
+          cat > .ci-phase6/config/settings.yaml <<'YAML'
+          app:
+            environment: ci
+            log_format: console
+          runtime:
+            default_mode: simulate
+            max_cycles: 1
+          exchange: {}
+          data:
+            canonical_dir: data/canonical
+          strategy:
+            fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+          research:
+            primary_interval: 1d
+            momentum_windows_days: [2]
+            trend_windows_days: [2, 4]
+            volatility_windows_days: [2]
+            relative_strength_window_days: 2
+            breadth_window_days: 2
+            dollar_volume_window_days: 2
+            source_window_days: 2
+            forward_return_days: 1
+            downside_lookahead_days: 2
+            downside_threshold: 0.05
+            sell_lookahead_days: 3
+            sell_drawdown_threshold: 0.08
+            sell_return_threshold: -0.01
+          model:
+            initial_train_timestamps: 2
+            minimum_validation_rows: 1
+            minimum_walk_forward_splits: 1
+            promotion_min_expected_return_correlation: -1.0
+            promotion_max_downside_brier: 1.0
+            promotion_max_sell_brier: 1.0
+          backtest:
+            initial_cash_usd: 1000.0
+            fee_rate_bps: 0.0
+            slippage_bps: 0.0
+            max_positions: 2
+            max_asset_weight: 0.35
+            min_order_notional_usd: 10.0
+          alerts: {}
+          paths: {}
+          YAML
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 python - <<'PY'
+          from pathlib import Path
+          from tradebot.data.models import Candle
+          from tradebot.data.storage import write_candles
+
+          root = Path(".ci-phase6")
+          start_timestamp = 1_704_067_200
+          series = {
+              "BTC": ([100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+                      [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131]),
+              "ETH": ([50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+                      [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72]),
+          }
+
+          for asset, (closes, lows) in series.items():
+              path = root / "data" / "canonical" / "kraken" / asset / "candles_1d.csv"
+              candles = [
+                  Candle(
+                      timestamp=start_timestamp + index * 86_400,
+                      open=close - 0.5,
+                      high=close + 1.0,
+                      low=lows[index],
+                      close=close,
+                      volume=1_000 + index * 10,
+                      trade_count=100 + index,
+                      source="kraken_api",
+                  )
+                  for index, close in enumerate(closes)
+              ]
+              write_candles(path, candles)
+          PY
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot model train --assets BTC --assets ETH
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot model validate
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot model promote
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot backtest run --assets BTC --assets ETH
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot backtest report
+          BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot run --mode simulate --max-cycles 1

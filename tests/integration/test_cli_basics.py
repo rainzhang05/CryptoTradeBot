@@ -91,3 +91,30 @@ paths: {}
 
         assert result.exit_code == 0
         assert "Completed 1 cycle(s) in simulate mode." in result.stdout
+
+
+def test_run_live_command_fails_until_phase_7(tmp_path: Path, monkeypatch) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "settings.yaml"
+        config_path.write_text(
+                """
+app:
+    log_format: console
+runtime:
+    default_mode: simulate
+    max_cycles: 1
+exchange: {}
+strategy:
+    fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+                encoding="utf-8",
+        )
+        monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+
+        result = runner.invoke(app, ["run", "--mode", "live"])
+
+        assert result.exit_code == 1
+        assert "not implemented" in result.stderr.lower()

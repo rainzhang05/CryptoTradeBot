@@ -86,7 +86,10 @@ def config_validate() -> None:
 
 @app.command("run")
 def run(
-    mode: str | None = typer.Option(default=None, help="Runtime mode: simulate or live."),
+    mode: str | None = typer.Option(
+        default=None,
+        help="Runtime mode. `live` is reserved for Phase 7 and later.",
+    ),
     max_cycles: int | None = typer.Option(
         default=None,
         min=1,
@@ -98,6 +101,12 @@ def run(
     configure_logging(config)
     runtime = RuntimeService(config)
     effective_mode = mode or config.runtime.default_mode
+    if effective_mode == "live":
+        typer.echo(
+            "Live mode is scheduled for Phase 7 and is not implemented in the Phase 6 repository.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     snapshots = runtime.run(mode=effective_mode, max_cycles=max_cycles)
     typer.echo(f"Completed {len(snapshots)} cycle(s) in {effective_mode} mode.")
 

@@ -276,7 +276,7 @@ Instead, drawdown should feed a layered defense process:
 - reduced aggressiveness state
 - catastrophe state
 
-The current implementation maps these layers to normal, elevated, stressed, and frozen portfolio risk states so exposure can be reduced progressively before a full freeze or catastrophe response is required.
+The current implementation maps these layers to the explicit portfolio risk states `normal`, `elevated_caution`, `reduced_aggressiveness`, `catastrophe`, and `frozen` so exposure can be reduced progressively before a full freeze or catastrophe response is required.
 
 The exact thresholds must be declared in implementation docs and validated by backtest evidence before live deployment, but the governing principle is fixed: drawdown alone should not trigger routine selling of otherwise supported positions.
 

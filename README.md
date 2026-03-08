@@ -1,6 +1,6 @@
 # Crypto Trading Bot for Spot Market
 
-Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and full support for research, simulation, backtesting, and live execution.
+Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 6 support for data preparation, research, backtesting, simulation, and ML-assisted portfolio decisions.
 
 ## Status
 
@@ -31,6 +31,8 @@ The current implementation provides:
 - versioned model artifacts with manifests, metrics, predictions, and promotion metadata
 - hybrid rule-plus-ML portfolio decisions that consume promoted model predictions when available
 - CLI commands for model training, validation, and promotion
+
+Phase 7 and later work still cover Kraken live execution, continuous terminal monitoring, alert delivery, and the remaining operator workflows from the final CLI specification.
 
 ## Quick Start
 
