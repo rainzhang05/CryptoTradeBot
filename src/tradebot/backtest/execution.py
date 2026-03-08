@@ -59,7 +59,7 @@ def apply_decision(
         )
         return frozen_portfolio, [], [], end_equity, gross_exposure
 
-    intents = _build_order_intents(
+    intents = build_order_intents(
         portfolio=portfolio,
         decision=decision,
         reference_prices=reference_prices,
@@ -90,7 +90,7 @@ def apply_decision(
     return portfolio, intents, fills, end_equity, gross_exposure
 
 
-def _build_order_intents(
+def build_order_intents(
     *,
     portfolio: PortfolioState,
     decision: DecisionSnapshot,

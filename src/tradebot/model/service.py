@@ -200,12 +200,18 @@ class ModelService:
         return summary
 
     def load_active_reference(self, *, dataset_id: str) -> ActiveModelReference | None:
+        return self._load_active_reference(dataset_id=dataset_id)
+
+    def load_latest_active_reference(self) -> ActiveModelReference | None:
+        return self._load_active_reference(dataset_id=None)
+
+    def _load_active_reference(self, *, dataset_id: str | None) -> ActiveModelReference | None:
         pointer_path = active_model_pointer_file(self.paths.models_dir)
         if not pointer_path.exists():
             return None
 
         payload = json.loads(pointer_path.read_text(encoding="utf-8"))
-        if str(payload.get("dataset_id")) != dataset_id:
+        if dataset_id is not None and str(payload.get("dataset_id")) != dataset_id:
             return None
         manifest_path = Path(str(payload["manifest_file"]))
         required_paths = (
@@ -248,6 +254,47 @@ class ModelService:
                 enriched_row["downside_risk_score"] = prediction_row["downside_risk_score"]
                 enriched_row["sell_risk_score"] = prediction_row["sell_risk_score"]
             enriched[asset] = enriched_row
+        return enriched, reference.model_id
+
+    def infer_rows_with_active_model(
+        self,
+        rows_by_asset: dict[str, dict[str, object]],
+    ) -> tuple[dict[str, dict[str, object]], str | None]:
+        """Run the promoted model bundle on point-in-time rows for live inference."""
+        reference = self.load_latest_active_reference()
+        if reference is None:
+            return rows_by_asset, None
+
+        manifest = json.loads(Path(reference.manifest_file).read_text(encoding="utf-8"))
+        feature_columns = [str(column) for column in manifest.get("feature_columns", [])]
+        if any(
+            any(column not in row for column in feature_columns)
+            for row in rows_by_asset.values()
+        ):
+            return rows_by_asset, None
+
+        bundle = pickle.loads(Path(reference.bundle_file).read_bytes())
+        ordered_assets = sorted(rows_by_asset)
+        ordered_rows = [rows_by_asset[asset] for asset in ordered_assets]
+        features = [self._feature_payload(row) for row in ordered_rows]
+        expected_values = list(bundle["expected_return"].predict(features))
+        downside_values = self._positive_class_probabilities(bundle["downside_risk"], features)
+        sell_values = self._positive_class_probabilities(bundle["sell_risk"], features)
+
+        enriched: dict[str, dict[str, object]] = {}
+        for asset, row, expected, downside, sell in zip(
+            ordered_assets,
+            ordered_rows,
+            expected_values,
+            downside_values,
+            sell_values,
+            strict=True,
+        ):
+            enriched[asset] = dict(row) | {
+                "expected_return_score": self._coerce_float(expected),
+                "downside_risk_score": self._coerce_float(downside),
+                "sell_risk_score": self._coerce_float(sell),
+            }
         return enriched, reference.model_id
 
     def _latest_trained_model_id(self) -> str:
@@ -369,11 +416,10 @@ class ModelService:
         return pipeline
 
     def _feature_payload(self, row: ModelRow) -> dict[str, object]:
-        label_columns = set(self._label_columns().values())
         return {
             key: value
             for key, value in row.items()
-            if key not in label_columns and key != "timestamp"
+            if key != "timestamp" and not key.startswith("label_")
         }
 
     def _feature_columns(self, rows: list[ModelRow]) -> list[str]:

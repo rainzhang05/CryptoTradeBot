@@ -60,6 +60,24 @@ def build_feature_rows(
     settings: ResearchSettings,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
     """Build deterministic feature and label rows from aligned daily candles."""
+    return _build_rows(candles_by_asset, settings, include_labels=True)
+
+
+def build_signal_rows(
+    candles_by_asset: dict[str, list[Candle]],
+    settings: ResearchSettings,
+) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
+    """Build point-in-time signal rows without requiring forward labels."""
+    return _build_rows(candles_by_asset, settings, include_labels=False)
+
+
+def _build_rows(
+    candles_by_asset: dict[str, list[Candle]],
+    settings: ResearchSettings,
+    *,
+    include_labels: bool,
+) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
+    """Build deterministic feature and label rows from aligned daily candles."""
     aligned = _align_candles(candles_by_asset)
     series = {asset: _AssetSeries(candles) for asset, candles in aligned.items()}
     assets = tuple(aligned)
@@ -114,6 +132,7 @@ def build_feature_rows(
                 btc_volatility=btc_volatility,
                 universe_average_momentum=universe_average_momentum,
                 asset_momentum=momentum_by_asset[asset],
+                include_labels=include_labels,
             )
             if row is None:
                 continue
@@ -182,6 +201,7 @@ def _build_asset_row(
     btc_volatility: float | None,
     universe_average_momentum: float | None,
     asset_momentum: float | None,
+    include_labels: bool,
 ) -> dict[str, object] | None:
     momentum_values = {
         window: asset_series.momentum(window, index) for window in settings.momentum_windows_days
@@ -205,10 +225,26 @@ def _build_asset_row(
     fallback_ratio = None if kraken_ratio is None else max(0.0, 1.0 - kraken_ratio)
     source_confidence = kraken_ratio
 
-    forward_return = asset_series.forward_return(settings.forward_return_days, index)
-    downside_return = asset_series.forward_min_low_return(settings.downside_lookahead_days, index)
-    sell_return = asset_series.forward_return(settings.sell_lookahead_days, index)
-    sell_drawdown = asset_series.forward_min_low_return(settings.sell_lookahead_days, index)
+    forward_return = (
+        asset_series.forward_return(settings.forward_return_days, index)
+        if include_labels
+        else None
+    )
+    downside_return = (
+        asset_series.forward_min_low_return(settings.downside_lookahead_days, index)
+        if include_labels
+        else None
+    )
+    sell_return = (
+        asset_series.forward_return(settings.sell_lookahead_days, index)
+        if include_labels
+        else None
+    )
+    sell_drawdown = (
+        asset_series.forward_min_low_return(settings.sell_lookahead_days, index)
+        if include_labels
+        else None
+    )
 
     required_values = [
         *momentum_values.values(),
@@ -228,11 +264,16 @@ def _build_asset_row(
         coinbase_ratio,
         fallback_ratio,
         source_confidence,
-        forward_return,
-        downside_return,
-        sell_return,
-        sell_drawdown,
     ]
+    if include_labels:
+        required_values.extend(
+            [
+                forward_return,
+                downside_return,
+                sell_return,
+                sell_drawdown,
+            ]
+        )
     if any(value is None for value in required_values):
         return None
 
@@ -250,11 +291,6 @@ def _build_asset_row(
     assert coinbase_ratio is not None
     assert fallback_ratio is not None
     assert source_confidence is not None
-    assert forward_return is not None
-    assert downside_return is not None
-    assert sell_return is not None
-    assert sell_drawdown is not None
-
     row: dict[str, object] = {
         "asset": asset,
         "timestamp": timestamp,
@@ -275,18 +311,25 @@ def _build_asset_row(
         f"fallback_source_ratio_{settings.source_window_days}d": fallback_ratio,
         f"source_confidence_{settings.source_window_days}d": source_confidence,
         "regime_state": regime_state,
-        f"label_forward_return_{settings.forward_return_days}d": forward_return,
-        f"label_downside_return_{settings.downside_lookahead_days}d": downside_return,
-        f"label_downside_risk_flag_{settings.downside_lookahead_days}d": 1
-        if downside_return <= -settings.downside_threshold
-        else 0,
-        f"label_sell_return_{settings.sell_lookahead_days}d": sell_return,
-        f"label_sell_drawdown_{settings.sell_lookahead_days}d": sell_drawdown,
-        f"label_sell_risk_flag_{settings.sell_lookahead_days}d": 1
-        if sell_drawdown <= -settings.sell_drawdown_threshold
-        and sell_return <= settings.sell_return_threshold
-        else 0,
     }
+    if include_labels:
+        assert forward_return is not None
+        assert downside_return is not None
+        assert sell_return is not None
+        assert sell_drawdown is not None
+        row |= {
+            f"label_forward_return_{settings.forward_return_days}d": forward_return,
+            f"label_downside_return_{settings.downside_lookahead_days}d": downside_return,
+            f"label_downside_risk_flag_{settings.downside_lookahead_days}d": 1
+            if downside_return <= -settings.downside_threshold
+            else 0,
+            f"label_sell_return_{settings.sell_lookahead_days}d": sell_return,
+            f"label_sell_drawdown_{settings.sell_lookahead_days}d": sell_drawdown,
+            f"label_sell_risk_flag_{settings.sell_lookahead_days}d": 1
+            if sell_drawdown <= -settings.sell_drawdown_threshold
+            and sell_return <= settings.sell_return_threshold
+            else 0,
+        }
 
     for window, value in momentum_values.items():
         row[f"momentum_{window}d"] = value

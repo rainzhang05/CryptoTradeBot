@@ -5,14 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from tradebot.config import AppConfig
 from tradebot.constants import FIXED_UNIVERSE
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
-from tradebot.research.features import build_feature_rows, feature_column_names
+from tradebot.research.features import build_feature_rows, build_signal_rows, feature_column_names
 from tradebot.research.models import AssetDatasetStats, FeatureBuildSummary
 from tradebot.research.storage import (
     feature_dataset_file,
@@ -195,3 +195,22 @@ class ResearchService:
             selected_assets=tuple(manifest["selected_assets"]),
             asset_stats=asset_stats,
         )
+
+    def build_live_signal_rows(
+        self,
+        assets: tuple[str, ...] | None = None,
+    ) -> tuple[str, int, dict[str, dict[str, object]]]:
+        """Build the latest point-in-time signal rows without forward labels."""
+        selected_assets = self._select_assets(assets)
+        candles_by_asset = self._load_daily_candles(selected_assets)
+        dataset_id = self._dataset_id(selected_assets, candles_by_asset)
+        rows, _ = build_signal_rows(candles_by_asset, self.config.research)
+        if not rows:
+            raise ValueError("No point-in-time live signal rows are available yet")
+        latest_timestamp = max(cast(int, row["timestamp"]) for row in rows)
+        rows_by_asset = {
+            str(row["asset"]): row
+            for row in rows
+            if cast(int, row["timestamp"]) == latest_timestamp
+        }
+        return dataset_id, latest_timestamp, rows_by_asset

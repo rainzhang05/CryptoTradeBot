@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tradebot.config import load_config
@@ -137,6 +138,56 @@ def test_enrich_rows_with_active_predictions_adds_model_scores(tmp_path: Path) -
         rows_by_asset=rows_for_timestamp,
         timestamp=latest_timestamp,
     )
+
+    assert model_id == training.model_id
+    assert "expected_return_score" in enriched["BTC"]
+    assert "downside_risk_score" in enriched["BTC"]
+    assert "sell_risk_score" in enriched["BTC"]
+
+
+def test_train_model_manifest_excludes_forward_label_columns(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    service = ModelService(config)
+    training = service.train_model(assets=("BTC", "ETH"))
+    manifest = json.loads(Path(training.manifest_file).read_text(encoding="utf-8"))
+
+    assert all(not str(column).startswith("label_") for column in manifest["feature_columns"])
+
+
+def test_infer_rows_with_active_model_scores_live_signal_rows(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    service = ModelService(config)
+    training = service.train_model(assets=("BTC", "ETH"))
+    service.promote_model(training.model_id)
+    _, _, rows_by_asset = service.research_service.build_live_signal_rows(assets=("BTC", "ETH"))
+
+    enriched, model_id = service.infer_rows_with_active_model(rows_by_asset)
 
     assert model_id == training.model_id
     assert "expected_return_score" in enriched["BTC"]

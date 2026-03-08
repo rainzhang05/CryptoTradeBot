@@ -73,6 +73,8 @@ class LiveState:
     last_model_id: str | None = None
     last_regime: str | None = None
     last_risk_state: str | None = None
+    peak_equity_usd: float | None = None
+    consecutive_order_failures: int = 0
     freeze_reason: str | None = None
     incidents: list[str] = field(default_factory=list)
     last_synced_at: str | None = None
@@ -87,7 +89,55 @@ class LiveState:
             "last_model_id": self.last_model_id,
             "last_regime": self.last_regime,
             "last_risk_state": self.last_risk_state,
+            "peak_equity_usd": self.peak_equity_usd,
+            "consecutive_order_failures": self.consecutive_order_failures,
             "freeze_reason": self.freeze_reason,
             "incidents": list(self.incidents),
             "last_synced_at": self.last_synced_at,
+        }
+
+
+@dataclass(frozen=True)
+class LiveCycleSummary:
+    """Summary of one live runtime cycle."""
+
+    dataset_id: str | None
+    timestamp: int | None
+    status: str
+    system_status: str
+    connectivity_state: str
+    regime_state: str | None
+    risk_state: str | None
+    equity_usd: float
+    cash_usd: float
+    fill_count: int
+    fills: list[FillEvent]
+    holdings: dict[str, float]
+    open_order_count: int
+    incidents: list[str]
+    state_file: str
+    freeze_reason: str | None = None
+    model_id: str | None = None
+    decision_executed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dataset_id": self.dataset_id,
+            "timestamp": self.timestamp,
+            "status": self.status,
+            "system_status": self.system_status,
+            "connectivity_state": self.connectivity_state,
+            "regime_state": self.regime_state,
+            "risk_state": self.risk_state,
+            "equity_usd": self.equity_usd,
+            "cash_usd": self.cash_usd,
+            "fill_count": self.fill_count,
+            "fills": [fill.to_dict() for fill in self.fills],
+            "holdings": self.holdings,
+            "open_order_count": self.open_order_count,
+            "incidents": list(self.incidents),
+            "state_file": self.state_file,
+            "freeze_reason": self.freeze_reason,
+            "model_id": self.model_id,
+            "decision_executed": self.decision_executed,
         }
