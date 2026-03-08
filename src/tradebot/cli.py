@@ -356,7 +356,11 @@ def model_validate(
     """Validate one trained model artifact against the promotion rules."""
     config = load_config()
     service = ModelService(config)
-    summary = service.validate_model(model_id=model_id)
+    try:
+        summary = service.validate_model(model_id=model_id)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
 
 
@@ -370,7 +374,11 @@ def model_promote(
     """Promote one validated model artifact to the active strategy pointer."""
     config = load_config()
     service = ModelService(config)
-    summary = service.promote_model(model_id=model_id)
+    try:
+        summary = service.promote_model(model_id=model_id)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
 
 
