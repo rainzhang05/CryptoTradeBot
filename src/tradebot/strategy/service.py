@@ -70,6 +70,12 @@ class StrategyEngine:
             )
 
         current_weights = self._current_weights(portfolio, prices_by_asset, current_equity)
+        expected_return_ranks = self._normalized_prediction_scores(
+            scoped_rows,
+            key="expected_return_score",
+        )
+        downside_scores = self._prediction_values(scoped_rows, key="downside_risk_score")
+        sell_risk_scores = self._prediction_values(scoped_rows, key="sell_risk_score")
         preliminary: dict[str, AssetDecision] = {}
         scores: dict[str, float] = {}
         reserved_weights: dict[str, float] = {}
@@ -95,6 +101,9 @@ class StrategyEngine:
                 held=asset in portfolio.positions,
                 current_weight=current_weights.get(asset, 0.0),
                 regime_state=regime_state,
+                expected_return_rank=expected_return_ranks.get(asset, 0.0),
+                downside_risk_score=downside_scores.get(asset, 0.0),
+                sell_risk_score=sell_risk_scores.get(asset, 0.0),
             )
             preliminary[asset] = decision
             if decision.action == "reduce" and decision.target_weight > 0:
@@ -132,6 +141,9 @@ class StrategyEngine:
         held: bool,
         current_weight: float,
         regime_state: str,
+        expected_return_rank: float,
+        downside_risk_score: float,
+        sell_risk_score: float,
     ) -> AssetDecision:
         source_confidence = self._float_value(
             row,
@@ -198,7 +210,11 @@ class StrategyEngine:
                 and relative_strength <= self.strategy_settings.weak_relative_strength_floor
             )
         )
-        if held and severe_breakdown:
+        if (
+            held
+            and severe_breakdown
+            and sell_risk_score >= self.config.model.exit_sell_risk_threshold
+        ):
             return self._asset_decision(
                 asset=asset,
                 action="exit",
@@ -214,6 +230,7 @@ class StrategyEngine:
             and short_trend >= self.strategy_settings.entry_trend_gap_floor
             and long_trend >= self.strategy_settings.entry_trend_gap_floor
             and volatility <= self.strategy_settings.max_realized_volatility
+            and downside_risk_score < self.config.model.entry_downside_threshold
         )
         hold_eligible = (
             long_momentum >= self.strategy_settings.hold_momentum_floor
@@ -224,9 +241,11 @@ class StrategyEngine:
             or relative_strength <= self.strategy_settings.weak_relative_strength_floor
             or volatility >= self.strategy_settings.reduction_volatility_threshold
             or breadth_above_trend < 0.5
+            or sell_risk_score >= self.config.model.reduce_sell_risk_threshold
+            or downside_risk_score >= self.config.model.entry_downside_threshold
         )
 
-        score = self._score_asset(
+        rule_score = self._score_asset(
             short_momentum=short_momentum,
             long_momentum=long_momentum,
             short_trend=short_trend,
@@ -237,11 +256,31 @@ class StrategyEngine:
             breadth_above_trend=breadth_above_trend,
             held=held,
         )
+        score = self._hybrid_score(
+            rule_score=rule_score,
+            expected_return_rank=expected_return_rank,
+            downside_risk_score=downside_risk_score,
+            sell_risk_score=sell_risk_score,
+        )
 
         if held and hold_eligible and regime_state in {"constructive", "neutral"}:
             score = max(score, self.strategy_settings.held_asset_score_bonus * 0.5)
 
-        if held and (regime_state == "defensive" or not hold_eligible or reduction_signal):
+        if held and sell_risk_score >= self.config.model.exit_sell_risk_threshold:
+            return self._asset_decision(
+                asset=asset,
+                action="exit",
+                reason="sell_risk_exit",
+                score=0.0,
+                current_weight=current_weight,
+            )
+
+        if held and (
+            regime_state == "defensive"
+            or not hold_eligible
+            or reduction_signal
+            or downside_risk_score >= self.config.model.exit_downside_threshold
+        ):
             reduced_weight = min(
                 current_weight * self.strategy_settings.reduction_target_fraction,
                 self.backtest_settings.max_asset_weight,
@@ -310,6 +349,22 @@ class StrategyEngine:
         if held:
             score += self.strategy_settings.held_asset_score_bonus
         return max(score, 0.0)
+
+    def _hybrid_score(
+        self,
+        *,
+        rule_score: float,
+        expected_return_rank: float,
+        downside_risk_score: float,
+        sell_risk_score: float,
+    ) -> float:
+        return max(
+            rule_score
+            + self.config.model.expected_return_weight * expected_return_rank
+            - self.config.model.downside_penalty_weight * downside_risk_score
+            - self.config.model.sell_risk_penalty_weight * sell_risk_score,
+            0.0,
+        )
 
     def _build_target_weights(
         self,
@@ -472,6 +527,46 @@ class StrategyEngine:
             for asset, position in portfolio.positions.items()
         }
 
+    def _normalized_prediction_scores(
+        self,
+        rows_by_asset: dict[str, dict[str, object]],
+        *,
+        key: str,
+    ) -> dict[str, float]:
+        raw_values = {
+            asset: self._optional_float_value(row, key)
+            for asset, row in rows_by_asset.items()
+        }
+        present_values = [value for value in raw_values.values() if value is not None]
+        if not present_values:
+            return {asset: 0.0 for asset in rows_by_asset}
+        minimum = min(present_values)
+        maximum = max(present_values)
+        if maximum <= minimum:
+            return {
+                asset: 0.5 if raw_values[asset] is not None else 0.0
+                for asset in rows_by_asset
+            }
+        return {
+            asset: (
+                0.0
+                if raw_values[asset] is None
+                else (raw_values[asset] - minimum) / (maximum - minimum)
+            )
+            for asset in rows_by_asset
+        }
+
+    def _prediction_values(
+        self,
+        rows_by_asset: dict[str, dict[str, object]],
+        *,
+        key: str,
+    ) -> dict[str, float]:
+        return {
+            asset: self._optional_float_value(row, key) or 0.0
+            for asset, row in rows_by_asset.items()
+        }
+
     def _portfolio_equity(
         self,
         portfolio: PortfolioState,
@@ -565,4 +660,9 @@ class StrategyEngine:
     def _float_or_default(self, row: dict[str, object], key: str, *, default: float) -> float:
         if key not in row:
             return default
+        return self._float_value(row, key)
+
+    def _optional_float_value(self, row: dict[str, object], key: str) -> float | None:
+        if key not in row:
+            return None
         return self._float_value(row, key)

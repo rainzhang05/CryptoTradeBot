@@ -132,6 +132,7 @@ class SimulationCycleSummary:
     fills: list[FillEvent]
     state_file: str
     freeze_reason: str | None = None
+    model_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -146,4 +147,5 @@ class SimulationCycleSummary:
             "fills": [fill.to_dict() for fill in self.fills],
             "state_file": self.state_file,
             "freeze_reason": self.freeze_reason,
+            "model_id": self.model_id,
         }

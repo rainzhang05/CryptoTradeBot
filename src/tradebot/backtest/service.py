@@ -31,6 +31,7 @@ from tradebot.config import AppConfig
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
+from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.service import StrategyEngine
 
@@ -42,6 +43,7 @@ class BacktestService:
         self.config = config
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
+        self.model_service = ModelService(config)
         self.research_service = ResearchService(config)
         self.strategy_engine = StrategyEngine(config)
 
@@ -59,6 +61,7 @@ class BacktestService:
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
         rows_by_timestamp = self._rows_by_timestamp(rows)
+        active_model_id: str | None = None
         selected_assets = tuple(feature_store.selected_assets)
         bars_by_asset = self._load_daily_bars(selected_assets)
         aligned_timestamps = self._common_timestamps(bars_by_asset)
@@ -77,6 +80,13 @@ class BacktestService:
             if execution_timestamp is None:
                 continue
             rows_for_timestamp = rows_by_timestamp[timestamp]
+            rows_for_timestamp, active_model_id = (
+                self.model_service.enrich_rows_with_active_predictions(
+                dataset_id=feature_store.dataset_id,
+                rows_by_asset=rows_for_timestamp,
+                timestamp=timestamp,
+                )
+            )
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
             if (
@@ -194,6 +204,7 @@ class BacktestService:
         payload = summary.to_dict() | {
             "portfolio": portfolio.to_dict(),
             "dataset_file": feature_store.dataset_file,
+            "model_id": active_model_id,
         }
         write_json(report_path, payload)
         write_json(latest_backtest_report_file(self.paths.artifacts_dir), payload)
@@ -258,6 +269,13 @@ class BacktestService:
             for row in rows
             if cast(int, row["timestamp"]) == latest_timestamp
         }
+        rows_for_timestamp, active_model_id = (
+            self.model_service.enrich_rows_with_active_predictions(
+            dataset_id=feature_store.dataset_id,
+            rows_by_asset=rows_for_timestamp,
+            timestamp=latest_timestamp,
+            )
+        )
         bars_by_asset = self._load_daily_bars(tuple(rows_for_timestamp))
         mark_bars = self._bars_at_timestamp(bars_by_asset, latest_timestamp)
         if len(mark_bars) != len(rows_for_timestamp):
@@ -319,6 +337,7 @@ class BacktestService:
             fills=fills,
             state_file=str(state_path),
             freeze_reason=strategy_decision.freeze_reason,
+            model_id=active_model_id,
         )
 
     def _load_daily_bars(self, assets: tuple[str, ...]) -> dict[str, dict[int, Candle]]:

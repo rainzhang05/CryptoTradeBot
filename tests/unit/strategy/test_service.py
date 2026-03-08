@@ -172,3 +172,32 @@ def test_strategy_engine_exits_on_low_source_confidence(tmp_path: Path) -> None:
     assert decision.asset_decisions["BTC"].action == "exit"
     assert decision.asset_decisions["BTC"].reason == "low_source_confidence"
     assert decision.target_weights == {}
+
+
+def test_strategy_engine_blocks_entry_on_high_downside_prediction(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    engine = StrategyEngine(config)
+    portfolio = PortfolioState(cash_usd=1_000.0, peak_equity_usd=1_000.0)
+
+    decision = engine.evaluate(
+        timestamp=1_700_000_000,
+        rows_by_asset={
+            "BTC": _row(
+                asset="BTC",
+                regime_state="constructive",
+                breadth_positive=0.8,
+                breadth_above_trend=0.8,
+            )
+            | {
+                "expected_return_score": 0.08,
+                "downside_risk_score": 0.9,
+                "sell_risk_score": 0.1,
+            }
+        },
+        portfolio=portfolio,
+        prices_by_asset={"BTC": 100.0},
+    )
+
+    assert decision.asset_decisions["BTC"].action == "blocked"
+    assert decision.asset_decisions["BTC"].reason == "entry_filter_failed"
+    assert decision.target_weights == {}
