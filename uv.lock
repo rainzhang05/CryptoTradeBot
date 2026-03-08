@@ -162,7 +162,7 @@ wheels = [
 ]
 
 [[package]]
-name = "crypto-spot-trading-bot"
+name = "cryptotradebot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

@@ -25,7 +25,7 @@ Phase 11 extends the release gate with global-install and interactive-shell vali
 ## Docker and Deployment
 
 - `docker compose config` succeeds.
-- `docker build -t crypto-spot-trading-bot .` succeeds in an environment with a running Docker daemon.
+- `docker build -t cryptotradebot .` succeeds in an environment with a running Docker daemon.
 - Container smoke checks pass for CLI startup, data import, and feature generation.
 - The compose-based local deployment path remains valid.
 - Distribution build artifacts are produced successfully as wheel and sdist bundles.

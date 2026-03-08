@@ -1,4 +1,4 @@
-# Crypto Trading Bot for Spot Market
+# CryptoTradeBot
 
 Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 11 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, interactive terminal operations, and global installation.
 
@@ -49,7 +49,7 @@ The current implementation provides:
 ### Published install
 
 1. Install `pipx`.
-2. Run `pipx install crypto-spot-trading-bot`.
+2. Run `pipx install CryptoTradeBot`.
 3. Launch the shell: `tradebot`
 
 Notes:
@@ -108,11 +108,11 @@ Useful final operator commands:
 
 Build the container:
 
-- `docker build -t crypto-spot-trading-bot .`
+- `docker build -t cryptotradebot .`
 
 Run a preflight check in the container:
 
-- `docker run --rm crypto-spot-trading-bot doctor`
+- `docker run --rm cryptotradebot doctor`
 
 Use the local compose workflow:
 

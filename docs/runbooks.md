@@ -8,7 +8,7 @@ environment from `source .venv/bin/activate` unless noted otherwise.
 
 For a published release install:
 
-1. Run `pipx install crypto-spot-trading-bot`.
+1. Run `pipx install CryptoTradeBot`.
 2. Launch the shell with `tradebot`.
 
 Expected outcome:
@@ -158,8 +158,8 @@ Before treating a work session as complete:
 1. Run `ruff check src tests`.
 2. Run `mypy src`.
 3. Run `pytest`.
-4. Build Docker with `docker build -t crypto-spot-trading-bot .`.
-5. Run the safe container preflight with `docker run --rm crypto-spot-trading-bot doctor`.
+4. Build Docker with `docker build -t cryptotradebot .`.
+5. Run the safe container preflight with `docker run --rm cryptotradebot doctor`.
 6. Run the compose preflight with `docker compose run --rm tradebot`.
 7. Validate the published install smoke path with `tradebot --help`, `tradebot config validate`, and `tradebot` in an isolated environment when release packaging changed.
 

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "crypto-spot-trading-bot"
+name = "CryptoTradeBot"
 version = "0.1.0"
 description = "CLI-first Kraken spot trading bot with hybrid rule-based and ML-driven decision support."
 readme = "README.md"
@@ -12,6 +12,7 @@ license = { file = "LICENSE" }
 authors = [
   { name = "Rain Zhang" }
 ]
+
 dependencies = [
   "httpx>=0.28,<0.29",
   "pydantic>=2.11,<3.0",
@@ -32,6 +33,9 @@ dev = [
   "ruff>=0.12,<0.13",
   "types-PyYAML>=6.0.12,<7.0"
 ]
+
+[project.urls]
+Repository = "https://github.com/rainzhang05/CryptoTradeBot"
 
 [project.scripts]
 tradebot = "tradebot.cli:main"

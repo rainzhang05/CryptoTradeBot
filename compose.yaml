@@ -2,7 +2,7 @@ services:
   tradebot:
     build:
       context: .
-    image: crypto-spot-trading-bot:local
+    image: cryptotradebot:local
     environment:
       BOT_CONFIG_PATH: ${BOT_CONFIG_PATH:-config/settings.yaml}
       TRADEBOT_HOME: ${TRADEBOT_HOME:-/app}
