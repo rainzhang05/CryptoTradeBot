@@ -99,6 +99,10 @@ def test_train_validate_and_promote_model(tmp_path: Path) -> None:
     assert validation.model_id == training.model_id
     assert validation.promotion_eligible is True
     assert Path(promotion.pointer_file).exists()
+    promotion_summary = (
+        tmp_path / "artifacts" / "reports" / "models" / "latest_promotion_summary.json"
+    )
+    assert promotion_summary.exists()
     assert service.load_active_reference(dataset_id=training.dataset_id) is not None
 
 
@@ -138,3 +142,38 @@ def test_enrich_rows_with_active_predictions_adds_model_scores(tmp_path: Path) -
     assert "expected_return_score" in enriched["BTC"]
     assert "downside_risk_score" in enriched["BTC"]
     assert "sell_risk_score" in enriched["BTC"]
+
+
+def test_positive_class_probabilities_handle_single_class_outputs(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    service = ModelService(config)
+    features = [{"asset": "BTC", "momentum_2d": 0.1}, {"asset": "ETH", "momentum_2d": -0.1}]
+
+    all_negative = service._fit_classifier(features, [0, 0])
+    all_positive = service._fit_classifier(features, [1, 1])
+
+    assert service._positive_class_probabilities(all_negative, features) == [0.0, 0.0]
+    assert service._positive_class_probabilities(all_positive, features) == [1.0, 1.0]
+
+
+def test_load_active_reference_ignores_missing_artifact_files(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    service = ModelService(config)
+    training = service.train_model(assets=("BTC", "ETH"))
+    service.promote_model(training.model_id)
+    Path(training.predictions_file).unlink()
+
+    assert service.load_active_reference(dataset_id=training.dataset_id) is None

@@ -34,6 +34,10 @@ def latest_validation_summary_file(root: Path) -> Path:
     return root / "latest_validation_summary.json"
 
 
+def latest_promotion_summary_file(root: Path) -> Path:
+    return root / "latest_promotion_summary.json"
+
+
 def active_model_pointer_file(root: Path) -> Path:
     return root / "production" / "latest_model.json"
 

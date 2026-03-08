@@ -7,6 +7,7 @@ import json
 import math
 import pickle
 from datetime import UTC, datetime
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from tradebot.model.models import (
 )
 from tradebot.model.storage import (
     active_model_pointer_file,
+    latest_promotion_summary_file,
     latest_training_summary_file,
     latest_validation_summary_file,
     model_bundle_file,
@@ -183,7 +185,7 @@ class ModelService:
             "promoted_at": datetime.now(tz=UTC).isoformat(),
         }
         write_json(pointer_path, payload)
-        return ModelPromotionSummary(
+        summary = ModelPromotionSummary(
             model_id=validation.model_id,
             dataset_id=validation.dataset_id,
             pointer_file=str(pointer_path),
@@ -191,6 +193,11 @@ class ModelService:
             previous_model_id=previous_model_id,
             promoted_at=str(payload["promoted_at"]),
         )
+        write_json(
+            latest_promotion_summary_file(self.paths.model_reports_dir),
+            summary.to_dict(),
+        )
+        return summary
 
     def load_active_reference(self, *, dataset_id: str) -> ActiveModelReference | None:
         pointer_path = active_model_pointer_file(self.paths.models_dir)
@@ -201,7 +208,13 @@ class ModelService:
         if str(payload.get("dataset_id")) != dataset_id:
             return None
         manifest_path = Path(str(payload["manifest_file"]))
-        if not manifest_path.exists():
+        required_paths = (
+            manifest_path,
+            Path(str(payload["metrics_file"])),
+            Path(str(payload["predictions_file"])),
+            Path(str(payload["bundle_file"])),
+        )
+        if any(not path.exists() for path in required_paths):
             return None
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         return ActiveModelReference(
@@ -290,12 +303,8 @@ class ModelService:
     ) -> list[PredictionRow]:
         features = [self._feature_payload(row) for row in rows]
         expected_values = list(bundle["expected_return"].predict(features))
-        downside_values = self._positive_class_probabilities(
-            bundle["downside_risk"].predict_proba(features)
-        )
-        sell_values = self._positive_class_probabilities(
-            bundle["sell_risk"].predict_proba(features)
-        )
+        downside_values = self._positive_class_probabilities(bundle["downside_risk"], features)
+        sell_values = self._positive_class_probabilities(bundle["sell_risk"], features)
         label_columns = self._label_columns()
         predictions: list[PredictionRow] = []
         for row, expected, downside, sell in zip(
@@ -452,13 +461,22 @@ class ModelService:
                 }
         return index
 
-    def _positive_class_probabilities(self, values: Any) -> list[float]:
-        matrix = [list(row) for row in values]
+    def _positive_class_probabilities(
+        self,
+        model: Pipeline,
+        features: list[dict[str, object]],
+    ) -> list[float]:
+        matrix = [list(row) for row in model.predict_proba(features)]
         if not matrix:
             return []
-        if len(matrix[0]) == 1:
-            return [self._coerce_float(row[0]) for row in matrix]
-        return [self._coerce_float(row[1]) for row in matrix]
+
+        classifier = model.named_steps["model"]
+        classes = [self._coerce_int(value) for value in getattr(classifier, "classes_", [])]
+        if 1 not in classes:
+            return [0.0 for _ in matrix]
+
+        positive_index = classes.index(1)
+        return [self._coerce_float(row[positive_index]) for row in matrix]
 
     def _mean_absolute_error(self, pairs: list[tuple[float, float]]) -> float:
         return sum(abs(predicted - actual) for predicted, actual in pairs) / len(pairs)
@@ -497,16 +515,16 @@ class ModelService:
     def _coerce_int(self, value: object) -> int:
         if isinstance(value, bool):
             return int(value)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float | str):
+        if isinstance(value, Real):
+            return int(float(value))
+        if isinstance(value, str):
             return int(value)
         raise TypeError(f"Expected int-compatible value, got {type(value).__name__}")
 
     def _coerce_float(self, value: object) -> float:
         if isinstance(value, bool):
             return float(value)
-        if isinstance(value, int | float):
+        if isinstance(value, Real):
             return float(value)
         if isinstance(value, str):
             return float(value)
