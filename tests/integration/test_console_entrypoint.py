@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def _tradebot_script_path() -> Path:
@@ -16,6 +20,10 @@ def _tradebot_script_path() -> Path:
     if sys.platform == "win32":
         script_path = script_path.with_suffix(".exe")
     return script_path
+
+
+def _plain_text(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def test_tradebot_console_script_help() -> None:
@@ -31,7 +39,7 @@ def test_tradebot_console_script_help() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "CLI for the crypto spot trading bot." in result.stdout
+    assert "CLI for the crypto spot trading bot." in _plain_text(result.stdout)
 
 
 def test_tradebot_console_script_no_args_prints_help_non_interactively(tmp_path: Path) -> None:
@@ -60,7 +68,7 @@ def test_tradebot_console_script_no_args_prints_help_non_interactively(tmp_path:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "Usage: tradebot" in result.stdout
+    assert "Usage: tradebot" in _plain_text(result.stdout)
 
 
 def test_pyproject_uses_renamed_distribution_metadata() -> None:

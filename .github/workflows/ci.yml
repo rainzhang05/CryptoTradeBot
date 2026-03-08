@@ -52,9 +52,16 @@ jobs:
           .ci-install-venv/bin/python -m pip install dist/*.whl
           .ci-install-venv/bin/python - <<'PY'
           import os
+          import re
           import subprocess
           import sys
           from pathlib import Path
+
+          ansi_escape_re = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+          def plain_text(value: str) -> str:
+            return ansi_escape_re.sub("", value)
 
           root = Path.cwd()
           home = root / ".ci-install-home"
@@ -97,7 +104,7 @@ jobs:
             check=False,
           )
           assert no_arg_result.returncode == 0, no_arg_result.stderr
-          assert "Usage: tradebot" in no_arg_result.stdout
+          assert "Usage: tradebot" in plain_text(no_arg_result.stdout)
           PY
 
       - name: Validate release-readiness workflow
