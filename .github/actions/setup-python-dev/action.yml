@@ -1,5 +1,5 @@
 name: Setup Python Dev Environment
-description: Check out the repository, install Python and uv, and sync dev dependencies.
+description: Install Python and uv, and sync dev dependencies.
 
 inputs:
   python-version:
@@ -14,9 +14,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Check out repository
-      uses: actions/checkout@v4
-
     - name: Set up Python
       uses: actions/setup-python@v5
       with:

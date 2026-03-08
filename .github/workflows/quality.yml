@@ -12,6 +12,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Prepare Python environment
         uses: ./.github/actions/setup-python-dev
 
@@ -23,6 +26,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Prepare Python environment
         uses: ./.github/actions/setup-python-dev
 
@@ -34,6 +40,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Prepare Python environment
         uses: ./.github/actions/setup-python-dev
 
