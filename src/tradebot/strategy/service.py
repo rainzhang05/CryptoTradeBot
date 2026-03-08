@@ -547,14 +547,13 @@ class StrategyEngine:
                 asset: 0.5 if raw_values[asset] is not None else 0.0
                 for asset in rows_by_asset
             }
-        return {
-            asset: (
-                0.0
-                if raw_values[asset] is None
-                else (raw_values[asset] - minimum) / (maximum - minimum)
-            )
-            for asset in rows_by_asset
-        }
+        normalized: dict[str, float] = {}
+        for asset, value in raw_values.items():
+            if value is None:
+                normalized[asset] = 0.0
+                continue
+            normalized[asset] = (value - minimum) / (maximum - minimum)
+        return normalized
 
     def _prediction_values(
         self,

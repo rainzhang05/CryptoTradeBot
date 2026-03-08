@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import pickle
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sklearn.dummy import DummyClassifier, DummyRegressor
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.dummy import DummyClassifier, DummyRegressor  # type: ignore[import-untyped]
+from sklearn.feature_extraction import DictVectorizer  # type: ignore[import-untyped]
+from sklearn.linear_model import LogisticRegression, Ridge  # type: ignore[import-untyped]
+from sklearn.pipeline import Pipeline  # type: ignore[import-untyped]
+from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
 from tradebot.config import AppConfig
 from tradebot.data.storage import write_json
@@ -34,6 +35,10 @@ from tradebot.model.storage import (
     write_prediction_rows,
 )
 from tradebot.research.service import ResearchService
+
+type ModelRow = dict[str, object]
+type PredictionRow = dict[str, object]
+type MetricPayload = dict[str, object]
 
 
 class ModelService:
@@ -64,11 +69,13 @@ class ModelService:
                 "walk-forward window"
             )
 
-        predictions: list[dict[str, object]] = []
+        predictions: list[PredictionRow] = []
         split_count = 0
         for timestamp in timestamps[self.config.model.initial_train_timestamps :]:
-            train_rows = [row for row in rows if int(row["timestamp"]) < timestamp]
-            validation_rows = [row for row in rows if int(row["timestamp"]) == timestamp]
+            train_rows = [row for row in rows if self._coerce_int(row["timestamp"]) < timestamp]
+            validation_rows = [
+                row for row in rows if self._coerce_int(row["timestamp"]) == timestamp
+            ]
             bundle = self._fit_bundle(train_rows)
             predictions.extend(self._predict_rows(bundle, validation_rows))
             split_count += 1
@@ -237,12 +244,12 @@ class ModelService:
         payload = json.loads(summary_path.read_text(encoding="utf-8"))
         return str(payload["model_id"])
 
-    def _load_dataset_rows(self, path: Path) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
+    def _load_dataset_rows(self, path: Path) -> list[ModelRow]:
+        rows: list[ModelRow] = []
         with path.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
-                parsed: dict[str, object] = {}
+                parsed: ModelRow = {}
                 for key, value in row.items():
                     if key is None or value is None:
                         continue
@@ -255,14 +262,21 @@ class ModelService:
                 rows.append(parsed)
         return rows
 
-    def _unique_timestamps(self, rows: list[dict[str, object]]) -> list[int]:
-        return sorted({int(row["timestamp"]) for row in rows})
+    def _unique_timestamps(self, rows: list[ModelRow]) -> list[int]:
+        return sorted({self._coerce_int(row["timestamp"]) for row in rows})
 
-    def _fit_bundle(self, rows: list[dict[str, object]]) -> dict[str, Any]:
+    def _fit_bundle(self, rows: list[ModelRow]) -> dict[str, Any]:
         features = [self._feature_payload(row) for row in rows]
-        expected_targets = [float(row[self._label_columns()["expected_return"]]) for row in rows]
-        downside_targets = [int(float(row[self._label_columns()["downside_risk"]])) for row in rows]
-        sell_targets = [int(float(row[self._label_columns()["sell_risk"]])) for row in rows]
+        label_columns = self._label_columns()
+        expected_targets = [
+            self._coerce_float(row[label_columns["expected_return"]]) for row in rows
+        ]
+        downside_targets = [
+            int(self._coerce_float(row[label_columns["downside_risk"]])) for row in rows
+        ]
+        sell_targets = [
+            int(self._coerce_float(row[label_columns["sell_risk"]])) for row in rows
+        ]
         return {
             "expected_return": self._fit_regressor(features, expected_targets),
             "downside_risk": self._fit_classifier(features, downside_targets),
@@ -272,8 +286,8 @@ class ModelService:
     def _predict_rows(
         self,
         bundle: dict[str, Any],
-        rows: list[dict[str, object]],
-    ) -> list[dict[str, object]]:
+        rows: list[ModelRow],
+    ) -> list[PredictionRow]:
         features = [self._feature_payload(row) for row in rows]
         expected_values = list(bundle["expected_return"].predict(features))
         downside_values = self._positive_class_probabilities(
@@ -283,7 +297,7 @@ class ModelService:
             bundle["sell_risk"].predict_proba(features)
         )
         label_columns = self._label_columns()
-        predictions: list[dict[str, object]] = []
+        predictions: list[PredictionRow] = []
         for row, expected, downside, sell in zip(
             rows,
             expected_values,
@@ -293,14 +307,20 @@ class ModelService:
         ):
             predictions.append(
                 {
-                    "timestamp": int(row["timestamp"]),
+                    "timestamp": self._coerce_int(row["timestamp"]),
                     "asset": str(row["asset"]),
-                    "expected_return_score": float(expected),
-                    "downside_risk_score": float(downside),
-                    "sell_risk_score": float(sell),
-                    "actual_forward_return": float(row[label_columns["expected_return"]]),
-                    "actual_downside_risk_flag": int(float(row[label_columns["downside_risk"]])),
-                    "actual_sell_risk_flag": int(float(row[label_columns["sell_risk"]])),
+                    "expected_return_score": self._coerce_float(expected),
+                    "downside_risk_score": self._coerce_float(downside),
+                    "sell_risk_score": self._coerce_float(sell),
+                    "actual_forward_return": self._coerce_float(
+                        row[label_columns["expected_return"]]
+                    ),
+                    "actual_downside_risk_flag": int(
+                        self._coerce_float(row[label_columns["downside_risk"]])
+                    ),
+                    "actual_sell_risk_flag": int(
+                        self._coerce_float(row[label_columns["sell_risk"]])
+                    ),
                 }
             )
         return predictions
@@ -339,7 +359,7 @@ class ModelService:
         pipeline.fit(features, targets)
         return pipeline
 
-    def _feature_payload(self, row: dict[str, object]) -> dict[str, object]:
+    def _feature_payload(self, row: ModelRow) -> dict[str, object]:
         label_columns = set(self._label_columns().values())
         return {
             key: value
@@ -347,7 +367,7 @@ class ModelService:
             if key not in label_columns and key != "timestamp"
         }
 
-    def _feature_columns(self, rows: list[dict[str, object]]) -> list[str]:
+    def _feature_columns(self, rows: list[ModelRow]) -> list[str]:
         columns = sorted(self._feature_payload(rows[0]).keys())
         return columns
 
@@ -364,30 +384,30 @@ class ModelService:
 
     def _metrics_payload(
         self,
-        predictions: list[dict[str, object]],
+        predictions: list[PredictionRow],
         split_count: int,
-    ) -> dict[str, object]:
+    ) -> MetricPayload:
         if not predictions:
             raise ValueError("Walk-forward validation did not produce any prediction rows")
 
         expected_pairs = [
             (
-                float(row["expected_return_score"]),
-                float(row["actual_forward_return"]),
+                self._coerce_float(row["expected_return_score"]),
+                self._coerce_float(row["actual_forward_return"]),
             )
             for row in predictions
         ]
         downside_pairs = [
             (
-                float(row["downside_risk_score"]),
-                float(row["actual_downside_risk_flag"]),
+                self._coerce_float(row["downside_risk_score"]),
+                self._coerce_float(row["actual_downside_risk_flag"]),
             )
             for row in predictions
         ]
         sell_pairs = [
             (
-                float(row["sell_risk_score"]),
-                float(row["actual_sell_risk_flag"]),
+                self._coerce_float(row["sell_risk_score"]),
+                self._coerce_float(row["actual_sell_risk_flag"]),
             )
             for row in predictions
         ]
@@ -401,15 +421,17 @@ class ModelService:
             "sell_brier_score": self._brier_score(sell_pairs),
         }
 
-    def _promotion_eligible(self, metrics: dict[str, object]) -> bool:
+    def _promotion_eligible(self, metrics: MetricPayload) -> bool:
         return (
-            int(metrics["validation_row_count"]) >= self.config.model.minimum_validation_rows
-            and int(metrics["split_count"]) >= self.config.model.minimum_walk_forward_splits
-            and float(metrics["expected_return_correlation"])
+            self._coerce_int(metrics["validation_row_count"])
+            >= self.config.model.minimum_validation_rows
+            and self._coerce_int(metrics["split_count"])
+            >= self.config.model.minimum_walk_forward_splits
+            and self._coerce_float(metrics["expected_return_correlation"])
             >= self.config.model.promotion_min_expected_return_correlation
-            and float(metrics["downside_brier_score"])
+            and self._coerce_float(metrics["downside_brier_score"])
             <= self.config.model.promotion_max_downside_brier
-            and float(metrics["sell_brier_score"])
+            and self._coerce_float(metrics["sell_brier_score"])
             <= self.config.model.promotion_max_sell_brier
         )
 
@@ -431,12 +453,12 @@ class ModelService:
         return index
 
     def _positive_class_probabilities(self, values: Any) -> list[float]:
-        matrix = list(values)
+        matrix = [list(row) for row in values]
         if not matrix:
             return []
         if len(matrix[0]) == 1:
-            return [float(row[0]) for row in matrix]
-        return [float(row[1]) for row in matrix]
+            return [self._coerce_float(row[0]) for row in matrix]
+        return [self._coerce_float(row[1]) for row in matrix]
 
     def _mean_absolute_error(self, pairs: list[tuple[float, float]]) -> float:
         return sum(abs(predicted - actual) for predicted, actual in pairs) / len(pairs)
@@ -470,4 +492,22 @@ class ModelService:
         actual_denom = sum((actual - actual_mean) ** 2 for _, actual in pairs)
         if predicted_denom <= 0 or actual_denom <= 0:
             return 0.0
-        return numerator / ((predicted_denom * actual_denom) ** 0.5)
+        return numerator / math.sqrt(predicted_denom * actual_denom)
+
+    def _coerce_int(self, value: object) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float | str):
+            return int(value)
+        raise TypeError(f"Expected int-compatible value, got {type(value).__name__}")
+
+    def _coerce_float(self, value: object) -> float:
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, int | float):
+            return float(value)
+        if isinstance(value, str):
+            return float(value)
+        raise TypeError(f"Expected float-compatible value, got {type(value).__name__}")
