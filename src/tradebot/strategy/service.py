@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from tradebot.backtest.models import PortfolioState, PositionState
+from tradebot.backtest.models import PortfolioState
 from tradebot.config import AppConfig
-from tradebot.strategy.models import AssetDecision, AssetAction, RiskState, StrategyDecision
+from tradebot.strategy.models import AssetAction, AssetDecision, RiskState, StrategyDecision
 
 
 class StrategyEngine:
@@ -355,7 +355,9 @@ class StrategyEngine:
         current_weights: dict[str, float],
     ) -> dict[str, AssetDecision]:
         decisions: dict[str, AssetDecision] = {}
-        asset_scope = tuple(sorted(set(preliminary) | set(portfolio.positions) | set(target_weights)))
+        asset_scope = tuple(
+            sorted(set(preliminary) | set(portfolio.positions) | set(target_weights))
+        )
         for asset in asset_scope:
             base = preliminary.get(
                 asset,
@@ -470,7 +472,11 @@ class StrategyEngine:
             for asset, position in portfolio.positions.items()
         }
 
-    def _portfolio_equity(self, portfolio: PortfolioState, prices_by_asset: dict[str, float]) -> float:
+    def _portfolio_equity(
+        self,
+        portfolio: PortfolioState,
+        prices_by_asset: dict[str, float],
+    ) -> float:
         return portfolio.cash_usd + sum(
             position.quantity * prices_by_asset.get(asset, 0.0)
             for asset, position in portfolio.positions.items()

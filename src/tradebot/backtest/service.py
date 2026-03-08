@@ -27,7 +27,6 @@ from tradebot.backtest.storage import (
     simulate_state_file,
     write_csv_rows,
 )
-from tradebot.backtest.strategy import build_target_weights
 from tradebot.config import AppConfig
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
@@ -80,7 +79,10 @@ class BacktestService:
             rows_for_timestamp = rows_by_timestamp[timestamp]
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
-            if len(execution_bars) != len(selected_assets) or len(signal_bars) != len(selected_assets):
+            if (
+                len(execution_bars) != len(selected_assets)
+                or len(signal_bars) != len(selected_assets)
+            ):
                 continue
 
             strategy_decision = self.strategy_engine.evaluate(
