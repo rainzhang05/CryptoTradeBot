@@ -220,6 +220,26 @@ Ship the final production-grade project with measurable quality gates.
 
 - A production-grade Kraken spot trading bot repository that can be installed, validated, simulated, and run live through the CLI with complete supporting documentation.
 
+## Phase 11: Interactive Operator Shell and Global Installation
+
+### Objective
+
+Layer a globally installed, interactive terminal shell on top of the production CLI without breaking the existing automation-friendly command surface.
+
+### Includes
+
+- Add a full-screen terminal shell launched by bare `tradebot` on interactive TTYs.
+- Keep `tradebot <command> ...` stable for CI, scripts, Docker, and direct operator usage.
+- Add `tradebot shell` as an explicit shell entrypoint and `tradebot init` for first-run bootstrap.
+- Move the default installed workspace to a single application home under `~/.tradebot/`, with `TRADEBOT_HOME` override support.
+- Introduce a shared command registry and structured execution-event layer reused by both direct commands and the shell.
+- Add guided parameter selection, command suggestions, readable transcript rendering, and cooperative cancellation in the shell.
+- Add distribution build and publish automation for global installation through PyPI and `pipx`.
+
+### Deliverable
+
+- A globally installable `tradebot` package that launches an interactive terminal shell by default on interactive terminals, while preserving the full direct CLI contract for automation.
+
 ## Final Deliverable Definition
 
 The final deliverable for this project is not just a trading algorithm.

@@ -1,10 +1,10 @@
 # Crypto Trading Bot for Spot Market
 
-Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 10 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, operator runbooks, and final release validation.
+Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 11 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, interactive terminal operations, and global installation.
 
 ## Status
 
-The repository is in Phase 10 of the roadmap.
+The repository is in Phase 11 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -41,14 +41,25 @@ The current implementation provides:
 - operator runbooks for setup, data workflows, simulate mode, live mode, freeze recovery, incident handling, and release validation
 - an end-to-end release-readiness validation workflow from fixture data through simulate mode and operator inspection
 - a final release checklist covering validation, Docker, reproducibility, and live preflight gates
+- a global-installable `tradebot` command with a default application home under `~/.tradebot/`
+- an interactive terminal shell with guided command entry, structured transcript output, and shell-native help/clear/exit flows
 
 ## Quick Start
+
+### Published install
+
+1. Install `pipx`.
+2. Run `pipx install crypto-spot-trading-bot`.
+3. Launch the shell: `tradebot`
+4. Complete the first-run bootstrap or run `tradebot init`.
+
+### Repository development
 
 1. Install `uv`.
 2. Sync dependencies: `uv sync --python 3.12 --extra dev`
 3. Activate the local environment: `source .venv/bin/activate`
-4. Copy `.env.example` to `.env` and adjust values as needed.
-5. Review `config/settings.yaml`.
+4. Set `BOT_CONFIG_PATH=config/settings.yaml` for repo-local workflows.
+5. Copy `.env.example` to `.env` and adjust values as needed.
 6. Run the CLI: `tradebot --help`
 
 Useful Phase 2 data commands:

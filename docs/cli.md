@@ -12,6 +12,14 @@
 
 The root command for the project is `tradebot`.
 
+Phase 11 extends the product from direct one-shot commands into a hybrid CLI:
+
+- `tradebot` on an interactive TTY and with no subcommand launches the interactive shell.
+- `tradebot shell` explicitly launches the interactive shell.
+- `tradebot <documented command> ...` remains supported for automation and scripts.
+- `tradebot --help` remains a normal one-shot help command.
+- `tradebot` with no args in a non-interactive context must print help and exit instead of opening a blocking shell.
+
 Commands should follow a short noun-plus-action style such as:
 
 - `tradebot run`
@@ -34,6 +42,8 @@ This preserves the concise style the project wants while keeping commands readab
 - `tradebot run`: start continuous runtime.
 - `tradebot stop`: stop a managed runtime if process control is implemented.
 - `tradebot status`: show current runtime status, positions, balances, and health.
+- `tradebot init`: bootstrap the default application home and starter configuration.
+- `tradebot shell`: open the interactive operator shell explicitly.
 
 ### `tradebot stop`
 
@@ -55,11 +65,22 @@ This command must:
 
 ### Configuration and setup
 
+- `tradebot init`: create the default application home and starter files.
 - `tradebot doctor`: validate environment, config, and exchange connectivity.
 - `tradebot config show`: display active non-secret configuration.
 - `tradebot config validate`: validate the loaded configuration.
 - `tradebot email set`: set or update the alert email recipient.
 - `tradebot email test`: send a test email.
+
+### `tradebot init`
+
+This command must:
+
+- create the default application home under `~/.tradebot/` unless overridden by `TRADEBOT_HOME`
+- preserve `BOT_CONFIG_PATH` as the highest-precedence explicit config override for existing workflows
+- create `config/settings.yaml`, `.env`, `data/`, `artifacts/`, and `runtime/` beneath the application home
+- avoid overwriting existing files unless a force option is provided
+- print the resolved home, config, and env paths
 
 ### `tradebot doctor`
 
@@ -235,6 +256,30 @@ This command must:
 - return a non-zero exit when no durable log file exists yet
 
 ## Command Behavior Requirements
+
+### Interactive shell
+
+The interactive shell must:
+
+- render a full-screen terminal UI with header, transcript, side panels, and bottom command input
+- accept shell-native commands such as `help`, `clear`, and `exit`
+- accept direct command phrases such as `model train`, `data source`, and `run`
+- open guided parameter selection when a command requires or benefits from option inputs
+- show dropdown-style suggestions for matching commands and known-choice fields
+- disable new command entry while one command is executing
+- use `Ctrl-C` to cancel the active command and return the shell to idle instead of exiting the whole application
+- render structured execution updates in readable transcript form rather than raw JSON logs
+
+### Shared command layer
+
+The shell must not shell out to Typer or spawn subprocesses to run project commands.
+
+The implementation must define a shared command registry that:
+
+- describes the direct command surface and shell command surface in one place
+- provides field metadata, validation, and choice providers for guided shell input
+- routes direct CLI handlers and shell execution through the same underlying command handlers
+- preserves the existing direct command names and flags for automation compatibility
 
 ### `tradebot run`
 

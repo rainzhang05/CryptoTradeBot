@@ -4,6 +4,20 @@ This file defines the operator runbooks required by `docs/operations.md`.
 All commands assume the repository root as the working directory and an active local
 environment from `source .venv/bin/activate` unless noted otherwise.
 
+## 0. Global Install
+
+For a published release install:
+
+1. Run `pipx install crypto-spot-trading-bot`.
+2. Launch the shell with `tradebot`.
+3. If first-run bootstrap is needed, complete the guided setup or run `tradebot init`.
+
+Expected outcome:
+
+- `tradebot` works from any directory
+- the default application home is `~/.tradebot/` unless `TRADEBOT_HOME` is set
+- starter files exist under `~/.tradebot/config/settings.yaml` and `~/.tradebot/.env`
+
 ## 1. Initial Setup
 
 1. Install `uv` and Docker.
@@ -147,6 +161,7 @@ Before treating a work session as complete:
 4. Build Docker with `docker build -t crypto-spot-trading-bot .`.
 5. Run the safe container preflight with `docker run --rm crypto-spot-trading-bot doctor`.
 6. Run the compose preflight with `docker compose run --rm tradebot`.
+7. Validate the published install smoke path with `tradebot --help` and `tradebot init` in an isolated environment when release packaging changed.
 
 The release candidate is valid only when:
 

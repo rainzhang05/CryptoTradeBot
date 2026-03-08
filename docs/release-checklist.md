@@ -4,6 +4,8 @@ This checklist defines the final phase 10 release gate for the repository.
 All items must be satisfied before treating the project as production-ready.
 Command examples assume the local environment is active from `source .venv/bin/activate`.
 
+Phase 11 extends the release gate with global-install and interactive-shell validation.
+
 ## Repository and Documentation
 
 - `docs/` reflects the implemented behavior and remains the source of truth.
@@ -26,6 +28,8 @@ Command examples assume the local environment is active from `source .venv/bin/a
 - `docker build -t crypto-spot-trading-bot .` succeeds in an environment with a running Docker daemon.
 - Container smoke checks pass for CLI startup, data import, and feature generation.
 - The compose-based local deployment path remains valid.
+- Distribution build artifacts are produced successfully as wheel and sdist bundles.
+- A fresh isolated environment can install the package and invoke `tradebot` without cloning the repository.
 
 ## Reproducibility
 
@@ -39,3 +43,10 @@ Command examples assume the local environment is active from `source .venv/bin/a
 - `tradebot doctor` remains the required live preflight command.
 - Live mode still requires Kraken credentials and freezes when the promoted model or data prerequisites are missing.
 - Email alert routing remains configurable and testable through the CLI.
+
+## Interactive Shell Readiness
+
+- `tradebot` opens the interactive shell on an interactive TTY with no subcommand.
+- `tradebot` prints help and exits in non-interactive no-arg contexts.
+- `tradebot shell` explicitly launches the shell.
+- Guided parameter collection and command suggestions function for the documented shell command surface.

@@ -13,6 +13,7 @@
 ### Initial target
 
 - macOS local machine
+- interactive terminal shell for operator workflows
 
 ### Portability target
 
@@ -92,6 +93,20 @@ Terminal monitoring must render newly emitted alerts immediately, and email deli
 The CLI must allow the operator to set the email recipient.
 Email delivery credentials, if needed, are secrets and must be loaded through `.env`.
 
+## Interactive Shell Requirements
+
+Phase 11 introduces an interactive operator shell launched by bare `tradebot` on interactive terminals.
+
+The shell must:
+
+- present operator context such as active home, config path, runtime mode, and active model
+- render structured command progress and summaries in readable transcript form
+- keep the input surface locked while a long-running command is active
+- allow `Ctrl-C` to cancel the current command and return the shell to idle
+- keep durable JSON logs and operator-facing reports as the system of record beneath the hood
+
+The direct command mode remains required for automation and scripts.
+
 ## Freeze Policy
 
 Automatic freeze behavior is required.
@@ -147,3 +162,4 @@ These procedures are maintained in `docs/runbooks.md`.
 - Docker is the required deployment format.
 - Local operation is the initial standard deployment.
 - Future cloud deployment should require minimal architectural change.
+- Global operator installation must be supported through a published Python package installable via `pipx`.

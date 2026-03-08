@@ -168,8 +168,11 @@ Responsibilities:
 Responsibilities:
 
 - expose all operator workflows through short, consistent commands
+- expose a full-screen interactive shell for operators on interactive terminals
 - validate input and configuration
 - dispatch to the correct application services
+- normalize execution output into readable shell transcript events
+- coordinate guided parameter collection, completion, and cancellation
 
 Phase 8 implements the documented CLI surface through operator-oriented services that:
 
@@ -179,6 +182,14 @@ Phase 8 implements the documented CLI surface through operator-oriented services
 - expose the latest runtime context and alert history for operator inspection
 - list and export stored reports and artifacts
 - tail durable JSON log files from `runtime/logs/tradebot.log`
+
+Phase 11 extends the CLI subsystem with:
+
+- a shared command registry used by both direct CLI entrypoints and the interactive shell
+- a Textual-based terminal shell with header, transcript, input bar, and operator side panels
+- guided field-selection and completion widgets for known-choice parameters
+- a structured command-event layer that presents readable shell output without replacing durable logs
+- cooperative cancellation support for long-running command execution
 
 ## Shared Domain Model Requirements
 
@@ -238,6 +249,7 @@ Phase 6 also persists promoted-model reference state so the same active artifact
 Phase 7 also persists live-mode balances, holdings, open orders, fills, and freeze state so live runs can resume after restart with Kraken reconciliation.
 Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `tradebot status` and `tradebot stop` can inspect or manage an active runtime process.
 Phase 9 also persists runtime context under `runtime/state/runtime_context.json`, alert-deduplication state under `runtime/state/alert_state.json`, and operator-facing mirrors under `artifacts/reports/runtime/`.
+Phase 11 changes the default installed workspace from the repository root to a user application home rooted at `~/.tradebot/`, with `TRADEBOT_HOME` and `BOT_CONFIG_PATH` overrides for explicit workflows.
 
 ## Storage Layout Expectations
 
