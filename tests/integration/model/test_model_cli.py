@@ -101,3 +101,34 @@ def test_model_train_validate_and_promote_commands(tmp_path: Path, monkeypatch) 
     promote_result = runner.invoke(app, ["model", "promote"])
     assert promote_result.exit_code == 0
     assert '"pointer_file":' in promote_result.stdout
+
+
+def test_model_train_reports_actionable_error_when_history_is_too_short(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_path = _write_config(tmp_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "initial_train_timestamps: 2",
+            "initial_train_timestamps: 20",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    result = runner.invoke(app, ["model", "train", "--assets", "BTC", "--assets", "ETH"])
+
+    assert result.exit_code == 1
+    assert "Not enough usable aligned feature timestamps" in result.stderr

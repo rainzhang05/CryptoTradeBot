@@ -67,8 +67,10 @@ class ModelService:
         timestamps = self._unique_timestamps(rows)
         if len(timestamps) <= self.config.model.initial_train_timestamps:
             raise ValueError(
-                "Not enough timestamps to train the ML model with the configured "
-                "walk-forward window"
+                self._insufficient_training_data_message(
+                    feature_store=feature_store,
+                    timestamp_count=len(timestamps),
+                )
             )
 
         predictions: list[PredictionRow] = []
@@ -303,6 +305,30 @@ class ModelService:
             raise FileNotFoundError("No model training summary exists yet")
         payload = json.loads(summary_path.read_text(encoding="utf-8"))
         return str(payload["model_id"])
+
+    def _insufficient_training_data_message(
+        self,
+        *,
+        feature_store: Any,
+        timestamp_count: int,
+    ) -> str:
+        minimum_required = self.config.model.initial_train_timestamps + 1
+        limiting_asset = min(
+            feature_store.asset_stats,
+            key=lambda entry: entry.kraken_rows + entry.fallback_rows,
+        )
+        limiting_history = limiting_asset.kraken_rows + limiting_asset.fallback_rows
+        return (
+            "Not enough usable aligned feature timestamps to train the ML model. "
+            f"Available={timestamp_count}, required>{self.config.model.initial_train_timestamps} "
+            f"(minimum {minimum_required}). "
+            "This does not mean your candles have gaps; it usually means the selected assets only "
+            "share a shorter common history after the feature lookbacks and forward-label windows "
+            f"are applied. The shortest-history selected asset is {limiting_asset.asset} with "
+            f"{limiting_history} daily candles. "
+            "Options: lower model.initial_train_timestamps, reduce the longest research windows, "
+            "or train on a subset of assets with deeper shared history."
+        )
 
     def _load_dataset_rows(self, path: Path) -> list[ModelRow]:
         rows: list[ModelRow] = []

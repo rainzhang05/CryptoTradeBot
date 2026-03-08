@@ -141,7 +141,7 @@ class ModelSettings(BaseModel):
     """ML training, validation, and promotion settings."""
 
     enabled: bool = True
-    initial_train_timestamps: int = Field(default=120, ge=2)
+    initial_train_timestamps: int = Field(default=80, ge=2)
     minimum_validation_rows: int = Field(default=60, ge=1)
     minimum_walk_forward_splits: int = Field(default=20, ge=1)
     retrain_cadence_days: int = Field(default=30, ge=1)

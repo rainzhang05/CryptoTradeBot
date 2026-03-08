@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tradebot.config import load_config
 from tradebot.data.models import Candle
 from tradebot.data.storage import write_candles
@@ -193,6 +195,36 @@ def test_infer_rows_with_active_model_scores_live_signal_rows(tmp_path: Path) ->
     assert "expected_return_score" in enriched["BTC"]
     assert "downside_risk_score" in enriched["BTC"]
     assert "sell_risk_score" in enriched["BTC"]
+
+
+def test_train_model_reports_aligned_timestamp_shortfall(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    limited_config_path = tmp_path / "config" / "settings.yaml"
+    limited_config_path.write_text(
+        limited_config_path.read_text(encoding="utf-8").replace(
+            "initial_train_timestamps: 2",
+            "initial_train_timestamps: 20",
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(config_path=limited_config_path, env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    service = ModelService(config)
+
+    with pytest.raises(ValueError, match="Not enough usable aligned feature timestamps"):
+        service.train_model(assets=("BTC", "ETH"))
 
 
 def test_positive_class_probabilities_handle_single_class_outputs(tmp_path: Path) -> None:

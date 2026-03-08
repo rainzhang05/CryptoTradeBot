@@ -72,7 +72,7 @@ research:
 
 model:
   enabled: true
-  initial_train_timestamps: 120
+  initial_train_timestamps: 80
   minimum_validation_rows: 60
   minimum_walk_forward_splits: 20
   retrain_cadence_days: 30

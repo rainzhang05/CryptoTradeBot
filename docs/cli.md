@@ -106,6 +106,7 @@ This command must:
 - build or reuse the deterministic feature dataset for the selected assets
 - train the expected-return, downside-risk, and sell-risk models on point-in-time rows only
 - perform walk-forward validation across later timestamps
+- require enough aligned daily timestamps after feature lookbacks and forward-label windows are applied
 - write artifacts under `artifacts/models/<model_id>/`
 - update `artifacts/reports/models/latest_training_summary.json`
 

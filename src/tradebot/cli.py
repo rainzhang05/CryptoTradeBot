@@ -335,10 +335,14 @@ def model_train(
     """Train the Phase 6 ML artifact with walk-forward validation."""
     config = load_config()
     service = ModelService(config)
-    summary = service.train_model(
-        assets=tuple(assets) if assets else None,
-        force_features=force_features,
-    )
+    try:
+        summary = service.train_model(
+            assets=tuple(assets) if assets else None,
+            force_features=force_features,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
 
 
