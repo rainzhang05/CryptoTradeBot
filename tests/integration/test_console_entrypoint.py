@@ -9,7 +9,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
