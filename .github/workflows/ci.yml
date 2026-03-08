@@ -50,12 +50,55 @@ jobs:
           rm -rf .ci-install-home .ci-install-venv
           python -m venv .ci-install-venv
           .ci-install-venv/bin/python -m pip install dist/*.whl
-          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot --help
-          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot config validate
-          test -f .ci-install-home/config/settings.yaml
-          test -f .ci-install-home/.env
-          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot > .ci-install-help.txt < /dev/null
-          grep -q "Usage: tradebot" .ci-install-help.txt
+          .ci-install-venv/bin/python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          root = Path.cwd()
+          home = root / ".ci-install-home"
+          script = root / ".ci-install-venv" / "bin" / "tradebot"
+          if sys.platform == "win32":
+            script = script.with_suffix(".exe")
+
+          env = os.environ.copy()
+          env["TRADEBOT_HOME"] = str(home)
+
+          help_result = subprocess.run(
+            [str(script), "--help"],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+          )
+          assert help_result.returncode == 0, help_result.stderr
+
+          validate_result = subprocess.run(
+            [str(script), "config", "validate"],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+          )
+          assert validate_result.returncode == 0, validate_result.stderr
+          assert (home / "config" / "settings.yaml").exists()
+          assert (home / ".env").exists()
+
+          no_arg_result = subprocess.run(
+            [str(script)],
+            cwd=root,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+          )
+          assert no_arg_result.returncode == 0, no_arg_result.stderr
+          assert "Usage: tradebot" in no_arg_result.stdout
+          PY
 
       - name: Validate release-readiness workflow
         run: .venv/bin/pytest --no-cov tests/integration/test_release_readiness.py
@@ -67,7 +110,7 @@ jobs:
         run: docker compose config
 
       - name: Build Docker image
-        run: docker build -t crypto-spot-trading-bot:ci .
+        run: docker build -t cryptotradebot:ci .
 
       - name: Validate Docker CLI and data pipeline smoke workflow
         run: |
@@ -75,16 +118,16 @@ jobs:
           mkdir -p .ci-smoke/data/kraken_data .ci-smoke/artifacts
           cp tests/fixtures/raw/kraken/XBTUSD.csv .ci-smoke/data/kraken_data/XBTUSD.csv
           cp tests/fixtures/raw/kraken/ETHUSD.csv .ci-smoke/data/kraken_data/ETHUSD.csv
-          docker run --rm crypto-spot-trading-bot:ci doctor
-          docker run --rm crypto-spot-trading-bot:ci run --mode simulate --max-cycles 1
+          docker run --rm cryptotradebot:ci doctor
+          docker run --rm cryptotradebot:ci run --mode simulate --max-cycles 1
           docker run --rm \
             -v "$PWD/.ci-smoke/data:/app/data" \
             -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
-            crypto-spot-trading-bot:ci data import --assets BTC --assets ETH
+            cryptotradebot:ci data import --assets BTC --assets ETH
           docker run --rm \
             -v "$PWD/.ci-smoke/data:/app/data" \
             -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
-            crypto-spot-trading-bot:ci features build --assets BTC --assets ETH
+            cryptotradebot:ci features build --assets BTC --assets ETH
           test -f .ci-smoke/data/canonical/kraken/BTC/candles_1d.csv
           test -f .ci-smoke/data/canonical/kraken/ETH/candles_1d.csv
 
