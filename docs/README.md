@@ -25,6 +25,7 @@ If any future implementation, discussion, or legacy note conflicts with these do
 
 - `testing-and-quality.md`: Testing strategy, CI requirements, coverage threshold, validation gates, and release quality bar.
 - `operations.md`: Runtime operations, logging, alerting, email notifications, safety freezes, and runbook expectations.
+- `runbooks.md`: Operator procedures for setup, historical data import, simulate mode, live preflight, live operations, freeze recovery, incident investigation, and release validation.
 
 ## Project Summary
 

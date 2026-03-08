@@ -1,10 +1,10 @@
 # Crypto Trading Bot for Spot Market
 
-Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 8 support for data preparation, research, backtesting, simulation, live execution, and the full documented CLI surface.
+Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 9 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, and operator runbooks.
 
 ## Status
 
-The repository is in Phase 8 of the roadmap.
+The repository is in Phase 9 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -36,8 +36,9 @@ The current implementation provides:
 - freeze-on-failure safeguards for stale data, missing active models, order-management errors, and reconciliation anomalies
 - the full documented CLI groups for runtime, status, report export, email configuration, and log inspection
 - durable JSON log files and tracked runtime-process metadata for operator workflows
-
-Later phases still cover email alert routing, runbooks, and the remaining production-hardening work from the roadmap.
+- SMTP-backed email alerts with per-condition deduplication and terminal alert rendering during runtime
+- persisted runtime context and alert history for restart-safe diagnostics
+- operator runbooks for setup, data workflows, simulate mode, live mode, freeze recovery, incident handling, and release validation
 
 ## Quick Start
 
@@ -76,7 +77,7 @@ Useful Phase 7 live-runtime command:
 
 - `uv run bot run --mode live --max-cycles 1`
 
-Useful Phase 8 operator commands:
+Useful Phase 9 operator commands:
 
 - `uv run bot doctor`
 - `uv run bot status`
@@ -97,6 +98,7 @@ Run a preflight check in the container:
 Use the local compose workflow:
 
 - `docker compose run --rm bot`
+- `docker compose run --rm bot run --mode simulate`
 
 ## Source of Truth
 

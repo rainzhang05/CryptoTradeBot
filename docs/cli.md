@@ -48,6 +48,7 @@ This command must:
 This command must:
 
 - show the tracked runtime process when one exists
+- show the latest persisted runtime context and alert history when present
 - show the latest live status report when live mode has run
 - show the latest persisted simulate state when simulate mode has run
 - show the active promoted model reference when one exists
@@ -261,6 +262,7 @@ The terminal display must include at minimum:
 - recent order activity
 - freeze status
 - alert-worthy incidents
+- terminal-rendered alert lines for newly emitted alert events
 
 ## CLI Safety Behavior
 

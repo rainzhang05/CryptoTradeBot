@@ -63,6 +63,7 @@ The project must implement comprehensive logs.
 - no secret leakage in logs
 
 Phase 8 writes durable application logs to `runtime/logs/tradebot.log` in JSON-line format so CLI inspection commands can tail recent activity.
+Phase 9 also persists the latest runtime context under `runtime/state/runtime_context.json` and writes operator-facing runtime status reports under `artifacts/reports/runtime/latest_runtime_context.json`.
 
 ## Alerting Requirements
 
@@ -82,6 +83,9 @@ Alerts must be sent to:
 - portfolio drawdown threshold events
 - startup failure
 - model or inference failure
+
+Phase 9 persists alert-deduplication state under `runtime/state/alert_state.json` and writes the latest operator-facing alert history under `artifacts/reports/runtime/latest_alerts.json`.
+Terminal monitoring must render newly emitted alerts immediately, and email delivery must avoid repeating the same alert condition every cycle.
 
 ## Email Configuration
 
@@ -109,6 +113,7 @@ When frozen, the system must:
 - preserve enough state for investigation and recovery
 
 Phase 7 persists freeze and live-account state in `runtime/state/live_state.json` and writes the latest cycle summary to `artifacts/reports/runtime/latest_live_status.json`.
+Phase 9 persists runtime context, alert state, and the latest alert history so freeze investigation can continue after restart.
 
 ## Restart and Recovery Requirements
 
@@ -134,6 +139,8 @@ The final project must include operator runbooks for:
 - freeze recovery
 - incident investigation
 - release validation
+
+These procedures are maintained in `docs/runbooks.md`.
 
 ## Deployment Expectations
 
