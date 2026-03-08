@@ -17,5 +17,5 @@ RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:${PATH}"
 
-ENTRYPOINT ["bot"]
+ENTRYPOINT ["tradebot"]
 CMD ["--help"]

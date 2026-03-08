@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-bot = "tradebot.cli:app"
+tradebot = "tradebot.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tradebot"]

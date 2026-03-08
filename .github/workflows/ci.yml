@@ -28,13 +28,13 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Lint
-        run: uv run --python 3.12 ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Type-check
-        run: uv run --python 3.12 mypy src
+        run: .venv/bin/mypy src
 
       - name: Test with coverage
-        run: uv run --python 3.12 pytest
+        run: .venv/bin/pytest
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -43,10 +43,10 @@ jobs:
           path: coverage.xml
 
       - name: Validate release-readiness workflow
-        run: uv run --python 3.12 pytest --no-cov tests/integration/test_release_readiness.py
+        run: .venv/bin/pytest --no-cov tests/integration/test_release_readiness.py
 
       - name: Validate live runtime safety workflow
-        run: uv run --python 3.12 pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live
+        run: .venv/bin/pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live
 
       - name: Validate Docker Compose configuration
         run: docker compose config
@@ -121,7 +121,7 @@ jobs:
           alerts: {}
           paths: {}
           YAML
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 python - <<'PY'
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/python - <<'PY'
           from pathlib import Path
           from tradebot.data.models import Candle
           from tradebot.data.storage import write_candles
@@ -152,19 +152,19 @@ jobs:
               ]
               write_candles(path, candles)
           PY
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot model train --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot model validate
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot model promote
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot backtest run --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot backtest report
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot run --mode simulate --max-cycles 1
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model train --assets BTC --assets ETH
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model validate
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model promote
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest run --assets BTC --assets ETH
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest report
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot run --mode simulate --max-cycles 1
 
       - name: Validate operator CLI workflow
         run: |
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot status
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot report list
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot report export artifacts/reports/models/latest_training_summary.json .ci-release/exports/latest_training_summary.json
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot email set trader@example.com
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" uv run --python 3.12 bot logs tail --lines 1
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot status
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report list
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report export artifacts/reports/models/latest_training_summary.json .ci-release/exports/latest_training_summary.json
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot email set trader@example.com
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot logs tail --lines 1
           test -f .ci-release/exports/latest_training_summary.json
           grep -q "trader@example.com" .ci-release/config/settings.yaml

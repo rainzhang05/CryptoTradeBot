@@ -46,46 +46,47 @@ The current implementation provides:
 
 1. Install `uv`.
 2. Sync dependencies: `uv sync --python 3.12 --extra dev`
-3. Copy `.env.example` to `.env` and adjust values as needed.
-4. Review `config/settings.yaml`.
-5. Run the CLI: `uv run bot --help`
+3. Activate the local environment: `source .venv/bin/activate`
+4. Copy `.env.example` to `.env` and adjust values as needed.
+5. Review `config/settings.yaml`.
+6. Run the CLI: `tradebot --help`
 
 Useful Phase 2 data commands:
 
-- `uv run bot data source`
-- `uv run bot data import`
-- `uv run bot data check`
-- `uv run bot data sync`
-- `uv run bot data complete`
-- `uv run bot data prune-raw`
+- `tradebot data source`
+- `tradebot data import`
+- `tradebot data check`
+- `tradebot data sync`
+- `tradebot data complete`
+- `tradebot data prune-raw`
 
 Useful Phase 3 research command:
 
-- `uv run bot features build`
+- `tradebot features build`
 
 Useful Phase 4 backtest and simulation commands:
 
-- `uv run bot backtest run`
-- `uv run bot backtest report`
-- `uv run bot run --mode simulate --max-cycles 1`
+- `tradebot backtest run`
+- `tradebot backtest report`
+- `tradebot run --mode simulate --max-cycles 1`
 
 Useful Phase 6 model commands:
 
-- `uv run bot model train`
-- `uv run bot model validate`
-- `uv run bot model promote`
+- `tradebot model train`
+- `tradebot model validate`
+- `tradebot model promote`
 
 Useful Phase 7 live-runtime command:
 
-- `uv run bot run --mode live --max-cycles 1`
+- `tradebot run --mode live --max-cycles 1`
 
 Useful final operator commands:
 
-- `uv run bot doctor`
-- `uv run bot status`
-- `uv run bot email set trader@example.com`
-- `uv run bot report list`
-- `uv run bot logs tail --lines 20`
+- `tradebot doctor`
+- `tradebot status`
+- `tradebot email set trader@example.com`
+- `tradebot report list`
+- `tradebot logs tail --lines 20`
 
 ## Docker
 
@@ -99,8 +100,8 @@ Run a preflight check in the container:
 
 Use the local compose workflow:
 
-- `docker compose run --rm bot`
-- `docker compose run --rm bot run --mode simulate`
+- `docker compose run --rm tradebot`
+- `docker compose run --rm tradebot run --mode simulate`
 
 ## Source of Truth
 

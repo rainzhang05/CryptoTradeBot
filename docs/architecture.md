@@ -173,7 +173,7 @@ Responsibilities:
 
 Phase 8 implements the documented CLI surface through operator-oriented services that:
 
-- validate Kraken connectivity through `bot doctor`
+- validate Kraken connectivity through `tradebot doctor`
 - expose tracked runtime status and managed-process stop control
 - manage the configured alert email recipient and SMTP test flow
 - expose the latest runtime context and alert history for operator inspection
@@ -236,7 +236,7 @@ The system must persist enough state to resume safely after restart.
 Phase 4 also persists simulate-mode portfolio state so repeated local runs can resume from the last simulated holdings and cash balance.
 Phase 6 also persists promoted-model reference state so the same active artifact is reused consistently across simulate and backtest runs until a newer model is promoted.
 Phase 7 also persists live-mode balances, holdings, open orders, fills, and freeze state so live runs can resume after restart with Kraken reconciliation.
-Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `bot status` and `bot stop` can inspect or manage an active runtime process.
+Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `tradebot status` and `tradebot stop` can inspect or manage an active runtime process.
 Phase 9 also persists runtime context under `runtime/state/runtime_context.json`, alert-deduplication state under `runtime/state/alert_state.json`, and operator-facing mirrors under `artifacts/reports/runtime/`.
 
 ## Storage Layout Expectations

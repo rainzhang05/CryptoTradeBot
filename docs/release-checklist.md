@@ -2,6 +2,7 @@
 
 This checklist defines the final phase 10 release gate for the repository.
 All items must be satisfied before treating the project as production-ready.
+Command examples assume the local environment is active from `source .venv/bin/activate`.
 
 ## Repository and Documentation
 
@@ -12,9 +13,9 @@ All items must be satisfied before treating the project as production-ready.
 
 ## Validation and Quality Gates
 
-- `uv run --python 3.12 ruff check src tests`
-- `uv run --python 3.12 mypy src`
-- `uv run --python 3.12 pytest`
+- `ruff check src tests`
+- `mypy src`
+- `pytest`
 - Coverage remains at or above 80%.
 - The end-to-end release-readiness integration flow passes.
 - Live-runtime safety tests pass.
@@ -35,6 +36,6 @@ All items must be satisfied before treating the project as production-ready.
 
 ## Live Preflight Readiness
 
-- `bot doctor` remains the required live preflight command.
+- `tradebot doctor` remains the required live preflight command.
 - Live mode still requires Kraken credentials and freezes when the promoted model or data prerequisites are missing.
 - Email alert routing remains configurable and testable through the CLI.

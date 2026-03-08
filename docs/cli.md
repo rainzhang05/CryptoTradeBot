@@ -10,13 +10,13 @@
 
 ## Command Naming Rule
 
-The root command for the project is `bot`.
+The root command for the project is `tradebot`.
 
 Commands should follow a short noun-plus-action style such as:
 
-- `bot run`
-- `bot data sync`
-- `bot backtest run`
+- `tradebot run`
+- `tradebot data sync`
+- `tradebot backtest run`
 
 This preserves the concise style the project wants while keeping commands readable.
 
@@ -31,11 +31,11 @@ This preserves the concise style the project wants while keeping commands readab
 
 ### Core runtime
 
-- `bot run`: start continuous runtime.
-- `bot stop`: stop a managed runtime if process control is implemented.
-- `bot status`: show current runtime status, positions, balances, and health.
+- `tradebot run`: start continuous runtime.
+- `tradebot stop`: stop a managed runtime if process control is implemented.
+- `tradebot status`: show current runtime status, positions, balances, and health.
 
-### `bot stop`
+### `tradebot stop`
 
 This command must:
 
@@ -43,7 +43,7 @@ This command must:
 - request graceful termination of the recorded process when it is still running
 - return a non-zero exit when no managed runtime process is active
 
-### `bot status`
+### `tradebot status`
 
 This command must:
 
@@ -55,13 +55,13 @@ This command must:
 
 ### Configuration and setup
 
-- `bot doctor`: validate environment, config, and exchange connectivity.
-- `bot config show`: display active non-secret configuration.
-- `bot config validate`: validate the loaded configuration.
-- `bot email set`: set or update the alert email recipient.
-- `bot email test`: send a test email.
+- `tradebot doctor`: validate environment, config, and exchange connectivity.
+- `tradebot config show`: display active non-secret configuration.
+- `tradebot config validate`: validate the loaded configuration.
+- `tradebot email set`: set or update the alert email recipient.
+- `tradebot email test`: send a test email.
 
-### `bot doctor`
+### `tradebot doctor`
 
 This command must:
 
@@ -70,14 +70,14 @@ This command must:
 - check private Kraken authentication when credentials are configured or required by mode
 - return a non-zero exit when required connectivity checks fail
 
-### `bot email set`
+### `tradebot email set`
 
 This command must:
 
 - update `alerts.email_recipient` in the active YAML configuration file
 - validate that the supplied value is a plausible email address
 
-### `bot email test`
+### `tradebot email test`
 
 This command must:
 
@@ -87,20 +87,20 @@ This command must:
 
 ### Data
 
-- `bot data import`: import local Kraken historical data packages.
-- `bot data sync`: fetch missing or newer market data.
-- `bot data check`: run integrity checks and gap reports.
-- `bot data complete`: repair historical gaps and extend canonical data to the latest closed interval.
-- `bot data source`: show source coverage and fallback usage.
+- `tradebot data import`: import local Kraken historical data packages.
+- `tradebot data sync`: fetch missing or newer market data.
+- `tradebot data check`: run integrity checks and gap reports.
+- `tradebot data complete`: repair historical gaps and extend canonical data to the latest closed interval.
+- `tradebot data source`: show source coverage and fallback usage.
 
 ### Research and models
 
-- `bot features build`: build derived features.
-- `bot model train`: train the ML model.
-- `bot model validate`: run validation for a model candidate.
-- `bot model promote`: promote a model artifact after validation gates pass.
+- `tradebot features build`: build derived features.
+- `tradebot model train`: train the ML model.
+- `tradebot model validate`: run validation for a model candidate.
+- `tradebot model promote`: promote a model artifact after validation gates pass.
 
-### `bot model train`
+### `tradebot model train`
 
 This command must:
 
@@ -111,7 +111,7 @@ This command must:
 - write artifacts under `artifacts/models/<model_id>/`
 - update `artifacts/reports/models/latest_training_summary.json`
 
-### `bot model validate`
+### `tradebot model validate`
 
 This command must:
 
@@ -120,7 +120,7 @@ This command must:
 - print human-readable validation output and support machine-usable summaries
 - update `artifacts/reports/models/latest_validation_summary.json`
 
-### `bot model promote`
+### `tradebot model promote`
 
 This command must:
 
@@ -129,7 +129,7 @@ This command must:
 - update `artifacts/reports/models/latest_promotion_summary.json`
 - make the promoted model immediately available to the shared hybrid strategy path
 
-### `bot features build`
+### `tradebot features build`
 
 This command must:
 
@@ -141,11 +141,11 @@ This command must:
 
 ### Backtesting and simulation
 
-- `bot backtest run`: execute a backtest.
-- `bot backtest report`: view or export backtest results.
-- `bot run --mode simulate`: start continuous simulation mode.
+- `tradebot backtest run`: execute a backtest.
+- `tradebot backtest report`: view or export backtest results.
+- `tradebot run --mode simulate`: start continuous simulation mode.
 
-### `bot data complete`
+### `tradebot data complete`
 
 This command must:
 
@@ -157,7 +157,7 @@ This command must:
 - emit progress logs with completed range count, remaining range count, and ETA based on observed per-range throughput
 - write a machine-readable completion summary under `artifacts/reports/data/latest_completion_summary.json`
 
-### `bot backtest run`
+### `tradebot backtest run`
 
 This command must:
 
@@ -168,7 +168,7 @@ This command must:
 - write run artifacts under `artifacts/backtests/<run_id>/`
 - update `artifacts/reports/backtests/latest_backtest_report.json`
 
-### `bot backtest report`
+### `tradebot backtest report`
 
 This command must:
 
@@ -176,7 +176,7 @@ This command must:
 - support loading a specific `run_id` when provided
 - return a non-zero exit path if the requested report does not exist
 
-### `bot run --mode simulate`
+### `tradebot run --mode simulate`
 
 This command must:
 
@@ -188,12 +188,12 @@ This command must:
 
 ### Live trading and monitoring
 
-- `bot run --mode live`: start continuous live trading and terminal monitoring.
+- `tradebot run --mode live`: start continuous live trading and terminal monitoring.
 
 Live trading and monitoring are intentionally one runtime surface in V1.
 The terminal during live mode must display monitoring information directly.
 
-### `bot run --mode live`
+### `tradebot run --mode live`
 
 This command must:
 
@@ -208,25 +208,25 @@ This command must:
 
 ### Reporting and maintenance
 
-- `bot report list`: list generated reports and artifacts.
-- `bot report export`: export a chosen report.
-- `bot logs tail`: tail recent structured logs in a readable form.
+- `tradebot report list`: list generated reports and artifacts.
+- `tradebot report export`: export a chosen report.
+- `tradebot logs tail`: tail recent structured logs in a readable form.
 
-### `bot report list`
+### `tradebot report list`
 
 This command must:
 
 - list generated files beneath `artifacts/`
 - distinguish operator-facing reports from other stored artifacts
 
-### `bot report export`
+### `tradebot report export`
 
 This command must:
 
 - export a chosen stored report or artifact file to a target path
 - return a non-zero exit when the requested source file does not exist
 
-### `bot logs tail`
+### `tradebot logs tail`
 
 This command must:
 
@@ -236,7 +236,7 @@ This command must:
 
 ## Command Behavior Requirements
 
-### `bot run`
+### `tradebot run`
 
 This is the most important command.
 It must:
@@ -250,7 +250,7 @@ It must:
 - display monitoring information continuously
 - emit alerts on critical events
 
-### Monitoring output during `bot run`
+### Monitoring output during `tradebot run`
 
 The terminal display must include at minimum:
 
