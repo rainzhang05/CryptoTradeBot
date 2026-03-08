@@ -117,6 +117,7 @@ def sanitized_config(config: Any) -> dict[str, Any]:
     payload["secrets_present"] = {
         "kraken_api_key": bool(config.secrets.kraken_api_key),
         "kraken_api_secret": bool(config.secrets.kraken_api_secret),
+        "kraken_api_otp": bool(config.secrets.kraken_api_otp),
         "smtp_host": bool(config.secrets.smtp_host),
         "smtp_username": bool(config.secrets.smtp_username),
         "smtp_password": bool(config.secrets.smtp_password),

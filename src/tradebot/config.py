@@ -31,6 +31,10 @@ class RuntimeSettings(BaseModel):
     default_mode: Literal["simulate", "live"] = "simulate"
     max_cycles: int = Field(default=1, ge=1)
     cycle_interval_seconds: float = Field(default=1.0, gt=0)
+    live_order_poll_seconds: float = Field(default=2.0, gt=0)
+    live_order_timeout_seconds: float = Field(default=20.0, gt=0)
+    live_dead_man_switch_seconds: int = Field(default=60, ge=0)
+    live_max_order_failures: int = Field(default=2, ge=1)
 
 
 class ExchangeSettings(BaseModel):
@@ -215,6 +219,7 @@ class SecretSettings(BaseModel):
 
     kraken_api_key: str | None = None
     kraken_api_secret: str | None = None
+    kraken_api_otp: str | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -312,6 +317,7 @@ def load_config(config_path: Path | None = None, env_path: Path | None = None) -
         "secrets": {
             "kraken_api_key": os.getenv("KRAKEN_API_KEY"),
             "kraken_api_secret": os.getenv("KRAKEN_API_SECRET"),
+            "kraken_api_otp": os.getenv("KRAKEN_API_OTP"),
             "smtp_host": os.getenv("SMTP_HOST"),
             "smtp_port": int(os.getenv("SMTP_PORT", "587")),
             "smtp_username": os.getenv("SMTP_USERNAME"),
