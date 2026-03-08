@@ -98,7 +98,7 @@ def test_build_feature_rows_generates_expected_labels_and_regime(tmp_path: Path)
                 sources=[
                     "kraken_api",
                     "kraken_api",
-                    "binance",
+                    "binance_fallback",
                     "kraken_api",
                     "kraken_api",
                     "kraken_api",

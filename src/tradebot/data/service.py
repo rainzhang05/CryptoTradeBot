@@ -602,22 +602,22 @@ class DataService:
         if start_timestamp > end_timestamp:
             return [], None
 
-        try:
-            rows = self._safe_fetch_binance(symbol_map, interval, start_timestamp, end_timestamp)
-            return rows, "binance"
-        except Exception as exc:
-            self.logger.warning(
-                "binance fallback failed",
-                extra={
-                    "asset": symbol_map.asset,
-                    "interval": interval,
-                    "start_timestamp": start_timestamp,
-                    "end_timestamp": end_timestamp,
-                    "error": str(exc),
-                },
-            )
-            rows = self._safe_fetch_coinbase(symbol_map, interval, start_timestamp, end_timestamp)
-            return rows, "coinbase" if rows else None
+        binance_rows = self._safe_fetch_binance(
+            symbol_map,
+            interval,
+            start_timestamp,
+            end_timestamp,
+        )
+        if binance_rows:
+            return binance_rows, "binance"
+
+        coinbase_rows = self._safe_fetch_coinbase(
+            symbol_map,
+            interval,
+            start_timestamp,
+            end_timestamp,
+        )
+        return coinbase_rows, "coinbase" if coinbase_rows else None
 
     def _fetch_kraken_range(
         self,
@@ -775,8 +775,11 @@ class DataService:
     def _source_priority(source: str) -> int:
         priorities = {
             "synthetic_gap_fill": 0,
+            "coinbase": 1,
             "coinbase_fallback": 1,
+            "binance": 2,
             "binance_fallback": 2,
+            "kraken": 3,
             "kraken_api": 3,
             "kraken_raw": 4,
         }

@@ -428,10 +428,13 @@ class _AssetSeries:
             return None
         window_sources = self.sources[index - window + 1 : index + 1]
         counts = Counter(window_sources)
-        if source_name == "kraken":
-            match_count = sum(
-                count for source, count in counts.items() if source.startswith("kraken")
-            )
-        else:
-            match_count = counts.get(source_name, 0)
+        match_count = sum(
+            count
+            for source, count in counts.items()
+            if self._source_matches(source, source_name)
+        )
         return match_count / len(window_sources)
+
+    @staticmethod
+    def _source_matches(source: str, source_name: str) -> bool:
+        return source == source_name or source.startswith(f"{source_name}_")
