@@ -1,0 +1,47 @@
+name: Quality
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Prepare Python environment
+        uses: ./.github/actions/setup-python-dev
+
+      - name: Lint
+        run: .venv/bin/ruff check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Prepare Python environment
+        uses: ./.github/actions/setup-python-dev
+
+      - name: Type-check
+        run: .venv/bin/mypy src
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Prepare Python environment
+        uses: ./.github/actions/setup-python-dev
+
+      - name: Test with coverage
+        run: .venv/bin/pytest
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml

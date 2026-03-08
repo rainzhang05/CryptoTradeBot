@@ -1,4 +1,4 @@
-name: CI
+name: Package Validation
 
 on:
   push:
@@ -7,43 +7,16 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  install-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.8.15"
-
-      - name: Sync dependencies
-        run: uv sync --frozen --extra dev
-
-      - name: Lint
-        run: .venv/bin/ruff check .
-
-      - name: Type-check
-        run: .venv/bin/mypy src
-
-      - name: Test with coverage
-        run: .venv/bin/pytest
+      - name: Prepare Python environment
+        uses: ./.github/actions/setup-python-dev
 
       - name: Build distribution packages
         run: .venv/bin/python -m build
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
 
       - name: Validate global-install smoke workflow
         run: |
@@ -107,36 +80,27 @@ jobs:
           assert "Usage: tradebot" in plain_text(no_arg_result.stdout)
           PY
 
+  runtime-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Prepare Python environment
+        uses: ./.github/actions/setup-python-dev
+
       - name: Validate release-readiness workflow
         run: .venv/bin/pytest --no-cov tests/integration/test_release_readiness.py
 
       - name: Validate live runtime safety workflow
         run: .venv/bin/pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live
 
-      - name: Validate Docker Compose configuration
-        run: docker compose config
+  operator-scenario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
 
-      - name: Build Docker image
-        run: docker build -t cryptotradebot:ci .
-
-      - name: Validate Docker CLI and data pipeline smoke workflow
-        run: |
-          rm -rf .ci-smoke
-          mkdir -p .ci-smoke/data/kraken_data .ci-smoke/artifacts
-          cp tests/fixtures/raw/kraken/XBTUSD.csv .ci-smoke/data/kraken_data/XBTUSD.csv
-          cp tests/fixtures/raw/kraken/ETHUSD.csv .ci-smoke/data/kraken_data/ETHUSD.csv
-          docker run --rm cryptotradebot:ci doctor
-          docker run --rm cryptotradebot:ci run --mode simulate --max-cycles 1
-          docker run --rm \
-            -v "$PWD/.ci-smoke/data:/app/data" \
-            -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
-            cryptotradebot:ci data import --assets BTC --assets ETH
-          docker run --rm \
-            -v "$PWD/.ci-smoke/data:/app/data" \
-            -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
-            cryptotradebot:ci features build --assets BTC --assets ETH
-          test -f .ci-smoke/data/canonical/kraken/BTC/candles_1d.csv
-          test -f .ci-smoke/data/canonical/kraken/ETH/candles_1d.csv
+    steps:
+      - name: Prepare Python environment
+        uses: ./.github/actions/setup-python-dev
 
       - name: Validate research, model, backtest, and simulation workflow
         run: |

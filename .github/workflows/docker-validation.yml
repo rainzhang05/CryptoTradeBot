@@ -1,0 +1,41 @@
+name: Docker Validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config
+
+      - name: Build Docker image
+        run: docker build -t cryptotradebot:ci .
+
+      - name: Validate Docker CLI and data pipeline smoke workflow
+        run: |
+          rm -rf .ci-smoke
+          mkdir -p .ci-smoke/data/kraken_data .ci-smoke/artifacts
+          cp tests/fixtures/raw/kraken/XBTUSD.csv .ci-smoke/data/kraken_data/XBTUSD.csv
+          cp tests/fixtures/raw/kraken/ETHUSD.csv .ci-smoke/data/kraken_data/ETHUSD.csv
+          docker run --rm cryptotradebot:ci doctor
+          docker run --rm cryptotradebot:ci run --mode simulate --max-cycles 1
+          docker run --rm \
+            -v "$PWD/.ci-smoke/data:/app/data" \
+            -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
+            cryptotradebot:ci data import --assets BTC --assets ETH
+          docker run --rm \
+            -v "$PWD/.ci-smoke/data:/app/data" \
+            -v "$PWD/.ci-smoke/artifacts:/app/artifacts" \
+            cryptotradebot:ci features build --assets BTC --assets ETH
+          test -f .ci-smoke/data/canonical/kraken/BTC/candles_1d.csv
+          test -f .ci-smoke/data/canonical/kraken/ETH/candles_1d.csv

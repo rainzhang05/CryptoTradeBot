@@ -1,0 +1,32 @@
+name: Setup Python Dev Environment
+description: Check out the repository, install Python and uv, and sync dev dependencies.
+
+inputs:
+  python-version:
+    description: Python version to install.
+    required: false
+    default: "3.12"
+  uv-version:
+    description: uv version to install.
+    required: false
+    default: "0.8.15"
+
+runs:
+  using: composite
+  steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: ${{ inputs.uv-version }}
+
+    - name: Sync dependencies
+      shell: bash
+      run: uv sync --frozen --extra dev
