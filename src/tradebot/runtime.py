@@ -11,11 +11,13 @@ from pathlib import Path
 from time import sleep as default_sleep
 
 from tradebot.backtest.service import BacktestService
-from tradebot.config import AppConfig
+from tradebot.config import AppConfig, sanitized_config_payload
 from tradebot.constants import SUPPORTED_MODES
 from tradebot.data.storage import write_json
 from tradebot.execution.service import LiveExecutionService
 from tradebot.logging_config import get_logger
+from tradebot.operations.alerts import AlertEvent, RuntimeAlertService
+from tradebot.operations.storage import latest_runtime_context_report_file, runtime_context_file
 
 
 @dataclass(frozen=True)
@@ -39,9 +41,37 @@ class RuntimeSnapshot:
     freeze_reason: str | None = None
     model_id: str | None = None
     decision_executed: bool = False
+    fills: list[dict[str, object]] = field(default_factory=list)
+    portfolio_drawdown: float | None = None
+    target_weights: dict[str, float] = field(default_factory=dict)
+    decision_actions: dict[str, str] = field(default_factory=dict)
+    decision_reasons: dict[str, str] = field(default_factory=dict)
+    predictions: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         """Return a machine-friendly runtime snapshot payload."""
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class RuntimeContextState:
+    """Persisted runtime context for restart-safe diagnostics and recovery."""
+
+    pid: int
+    mode: str
+    status: str
+    cycle_limit: int
+    completed_cycles: int
+    started_at: str
+    updated_at: str
+    config_path: str
+    config_snapshot: dict[str, object]
+    finished_at: str | None = None
+    last_snapshot: dict[str, object] | None = None
+    last_alerts: list[dict[str, object]] = field(default_factory=list)
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
@@ -85,12 +115,14 @@ class RuntimeService:
         *,
         backtest_service: BacktestService | None = None,
         live_service: LiveExecutionService | None = None,
+        alert_service: RuntimeAlertService | None = None,
         sleep_fn: Callable[[float], None] | None = None,
     ) -> None:
         self.config = config
         self.logger = get_logger("tradebot.runtime")
         self.backtest_service = backtest_service or BacktestService(config)
         self.live_service = live_service or LiveExecutionService(config)
+        self.alert_service = alert_service or RuntimeAlertService(config)
         self.sleep_fn = sleep_fn or default_sleep
 
     def bootstrap(self) -> None:
@@ -115,26 +147,38 @@ class RuntimeService:
         max_cycles: int | None = None,
         *,
         on_cycle: Callable[[RuntimeSnapshot], None] | None = None,
+        on_alert: Callable[[AlertEvent], None] | None = None,
     ) -> list[RuntimeSnapshot]:
         """Execute a bounded runtime loop for the requested mode."""
-        if mode not in SUPPORTED_MODES:
-            supported = ", ".join(SUPPORTED_MODES)
-            raise ValueError(f"Unsupported mode '{mode}'. Expected one of: {supported}")
-
         self.bootstrap()
         cycle_limit = max_cycles if max_cycles is not None else self.config.runtime.max_cycles
-        if mode == "live" and (
-            not self.config.secrets.kraken_api_key or not self.config.secrets.kraken_api_secret
-        ):
-            raise ValueError("Live mode requires Kraken API key and secret in the environment")
         process_path = runtime_process_file(self.config.resolved_paths().state_dir)
-        self._register_process(process_path, mode)
-        self.logger.info("runtime started", extra={"mode": mode, "cycle_limit": cycle_limit})
-
+        started_at = self._now_iso()
+        snapshots: list[RuntimeSnapshot] = []
+        latest_alert_payloads: list[dict[str, object]] = []
         try:
-            snapshots: list[RuntimeSnapshot] = []
+            if mode not in SUPPORTED_MODES:
+                supported = ", ".join(SUPPORTED_MODES)
+                raise ValueError(f"Unsupported mode '{mode}'. Expected one of: {supported}")
+            if mode == "live" and (
+                not self.config.secrets.kraken_api_key or not self.config.secrets.kraken_api_secret
+            ):
+                raise ValueError("Live mode requires Kraken API key and secret in the environment")
+
+            self._register_process(process_path, mode, started_at=started_at)
+            self._write_runtime_context(
+                mode=mode,
+                status="starting",
+                cycle_limit=cycle_limit,
+                completed_cycles=0,
+                started_at=started_at,
+            )
+            self.logger.info("runtime started", extra={"mode": mode, "cycle_limit": cycle_limit})
+
             for cycle in range(1, cycle_limit + 1):
                 snapshot = self._run_cycle(mode=mode, cycle=cycle)
+                alerts = self.alert_service.process_snapshot(snapshot)
+                latest_alert_payloads = [alert.to_dict() for alert in alerts]
                 self.logger.info(
                     "runtime cycle completed",
                     extra={
@@ -142,10 +186,23 @@ class RuntimeService:
                         "cycle": cycle,
                         "status": snapshot.status,
                         "fill_count": snapshot.fill_count,
+                        "freeze_reason": snapshot.freeze_reason,
                     },
+                )
+                self._write_runtime_context(
+                    mode=mode,
+                    status="running",
+                    cycle_limit=cycle_limit,
+                    completed_cycles=cycle,
+                    started_at=started_at,
+                    last_snapshot=snapshot.to_dict(),
+                    last_alerts=latest_alert_payloads,
                 )
                 if on_cycle is not None:
                     on_cycle(snapshot)
+                if on_alert is not None:
+                    for alert in alerts:
+                        on_alert(alert)
                 snapshots.append(snapshot)
                 if cycle < cycle_limit:
                     self.sleep_fn(self.config.runtime.cycle_interval_seconds)
@@ -154,7 +211,44 @@ class RuntimeService:
                 "runtime finished",
                 extra={"mode": mode, "completed_cycles": cycle_limit},
             )
+            self._write_runtime_context(
+                mode=mode,
+                status="finished",
+                cycle_limit=cycle_limit,
+                completed_cycles=len(snapshots),
+                started_at=started_at,
+                finished_at=self._now_iso(),
+                last_snapshot=(None if not snapshots else snapshots[-1].to_dict()),
+                last_alerts=latest_alert_payloads,
+            )
             return snapshots
+        except Exception as exc:
+            failure_status = "startup_failed" if not snapshots else "failed"
+            self.logger.exception(
+                "runtime failed",
+                extra={"mode": mode, "completed_cycles": len(snapshots)},
+            )
+            alerts = (
+                self.alert_service.process_startup_failure(mode=mode, error=str(exc))
+                if not snapshots
+                else []
+            )
+            latest_alert_payloads = [alert.to_dict() for alert in alerts]
+            if on_alert is not None:
+                for alert in alerts:
+                    on_alert(alert)
+            self._write_runtime_context(
+                mode=mode,
+                status=failure_status,
+                cycle_limit=cycle_limit,
+                completed_cycles=len(snapshots),
+                started_at=started_at,
+                finished_at=self._now_iso(),
+                last_snapshot=(None if not snapshots else snapshots[-1].to_dict()),
+                last_alerts=latest_alert_payloads,
+                error=str(exc),
+            )
+            raise
         finally:
             self._clear_process(process_path)
 
@@ -179,6 +273,12 @@ class RuntimeService:
                 freeze_reason=live_summary.freeze_reason,
                 model_id=live_summary.model_id,
                 decision_executed=live_summary.decision_executed,
+                fills=[fill.to_dict() for fill in live_summary.fills],
+                portfolio_drawdown=live_summary.portfolio_drawdown,
+                target_weights=live_summary.target_weights,
+                decision_actions=live_summary.decision_actions,
+                decision_reasons=live_summary.decision_reasons,
+                predictions=live_summary.predictions,
             )
 
         simulate_summary = self.backtest_service.simulate_latest_cycle()
@@ -194,14 +294,22 @@ class RuntimeService:
             equity_usd=simulate_summary.equity_usd,
             cash_usd=simulate_summary.cash_usd,
             fill_count=simulate_summary.fill_count,
+            holdings=simulate_summary.holdings,
+            incidents=simulate_summary.incidents,
             freeze_reason=simulate_summary.freeze_reason,
             model_id=simulate_summary.model_id,
             decision_executed=(
                 simulate_summary.fill_count > 0 or simulate_summary.timestamp is not None
             ),
+            fills=[fill.to_dict() for fill in simulate_summary.fills],
+            portfolio_drawdown=simulate_summary.portfolio_drawdown,
+            target_weights=simulate_summary.target_weights,
+            decision_actions=simulate_summary.decision_actions,
+            decision_reasons=simulate_summary.decision_reasons,
+            predictions=simulate_summary.predictions,
         )
 
-    def _register_process(self, path: Path, mode: str) -> None:
+    def _register_process(self, path: Path, mode: str, *, started_at: str) -> None:
         existing = self._read_process_state(path)
         if existing is not None and existing.pid != os.getpid() and pid_is_running(existing.pid):
             raise ValueError(
@@ -213,10 +321,43 @@ class RuntimeService:
         state = RuntimeProcessState(
             pid=os.getpid(),
             mode=mode,
-            started_at=datetime.now(tz=UTC).isoformat(),
+            started_at=started_at,
             config_path=str(self.config.config_path),
         )
         write_json(path, state.to_dict())
+
+    def _write_runtime_context(
+        self,
+        *,
+        mode: str,
+        status: str,
+        cycle_limit: int,
+        completed_cycles: int,
+        started_at: str,
+        finished_at: str | None = None,
+        last_snapshot: dict[str, object] | None = None,
+        last_alerts: list[dict[str, object]] | None = None,
+        error: str | None = None,
+    ) -> None:
+        payload = RuntimeContextState(
+            pid=os.getpid(),
+            mode=mode,
+            status=status,
+            cycle_limit=cycle_limit,
+            completed_cycles=completed_cycles,
+            started_at=started_at,
+            updated_at=self._now_iso(),
+            config_path=str(self.config.config_path),
+            config_snapshot=sanitized_config_payload(self.config),
+            finished_at=finished_at,
+            last_snapshot=last_snapshot,
+            last_alerts=last_alerts or [],
+            error=error,
+        ).to_dict()
+        state_path = runtime_context_file(self.config.resolved_paths().state_dir)
+        report_path = latest_runtime_context_report_file(self.config.resolved_paths().artifacts_dir)
+        write_json(state_path, payload)
+        write_json(report_path, payload)
 
     @staticmethod
     def _clear_process(path: Path) -> None:
@@ -235,3 +376,7 @@ class RuntimeService:
             started_at=str(payload["started_at"]),
             config_path=str(payload["config_path"]),
         )
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(tz=UTC).isoformat()

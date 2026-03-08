@@ -2,13 +2,13 @@
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import typer
 
 from tradebot import __version__
 from tradebot.backtest.service import BacktestService
-from tradebot.config import load_config
+from tradebot.config import load_config, sanitized_config_payload
 from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
 from tradebot.model.service import ModelService
@@ -64,7 +64,7 @@ def doctor() -> None:
 def config_show() -> None:
     """Print the active non-secret configuration."""
     config = load_config()
-    payload = sanitized_config(config)
+    payload = sanitized_config_payload(config)
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 
 
@@ -97,8 +97,9 @@ def run(
             mode=effective_mode,
             max_cycles=max_cycles,
             on_cycle=lambda snapshot: typer.echo(render_runtime_snapshot(snapshot)),
+            on_alert=lambda alert: typer.echo(render_alert_event(alert)),
         )
-    except ValueError as exc:
+    except Exception as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Completed {len(snapshots)} cycle(s) in {effective_mode} mode.")
@@ -124,21 +125,6 @@ def status() -> None:
     summary = OperationsService(config).runtime_status()
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
-
-def sanitized_config(config: Any) -> dict[str, Any]:
-    """Return a configuration payload without secret values."""
-    payload = cast(dict[str, Any], config.model_dump(mode="json", exclude={"secrets"}))
-    payload["secrets_present"] = {
-        "kraken_api_key": bool(config.secrets.kraken_api_key),
-        "kraken_api_secret": bool(config.secrets.kraken_api_secret),
-        "kraken_api_otp": bool(config.secrets.kraken_api_otp),
-        "smtp_host": bool(config.secrets.smtp_host),
-        "smtp_username": bool(config.secrets.smtp_username),
-        "smtp_password": bool(config.secrets.smtp_password),
-    }
-    return payload
-
-
 def render_runtime_snapshot(snapshot: Any) -> str:
     """Render one runtime-cycle summary for terminal monitoring output."""
     timestamp = "n/a" if snapshot.timestamp is None else str(snapshot.timestamp)
@@ -149,6 +135,11 @@ def render_runtime_snapshot(snapshot: Any) -> str:
         for asset, quantity in sorted(snapshot.holdings.items())
     )
     incidents = ", ".join(snapshot.incidents)
+    drawdown = (
+        "n/a"
+        if snapshot.portfolio_drawdown is None
+        else f"{snapshot.portfolio_drawdown:.2%}"
+    )
     return " | ".join(
         [
             f"mode={snapshot.mode}",
@@ -159,16 +150,70 @@ def render_runtime_snapshot(snapshot: Any) -> str:
             f"timestamp={timestamp}",
             f"regime={snapshot.regime_state or 'n/a'}",
             f"risk={snapshot.risk_state or 'n/a'}",
+            f"drawdown={drawdown}",
             f"equity_usd={equity}",
             f"cash_usd={cash}",
             f"holdings={holdings or 'none'}",
             f"fills={snapshot.fill_count}",
+            f"recent_fills={_render_fill_summary(snapshot)}",
             f"open_orders={snapshot.open_order_count}",
             f"model={snapshot.model_id or 'n/a'}",
+            f"model_summary={_render_model_summary(snapshot)}",
             f"decision_executed={'yes' if snapshot.decision_executed else 'no'}",
             f"freeze={snapshot.freeze_reason or 'none'}",
             f"incidents={incidents or 'none'}",
         ]
+    )
+
+
+def render_alert_event(alert: Any) -> str:
+    """Render one alert event for terminal display."""
+    return " | ".join(
+        [
+            "ALERT",
+            f"severity={alert.severity}",
+            f"class={alert.event_class}",
+            f"mode={alert.mode}",
+            f"message={alert.message}",
+            f"email={'sent' if alert.email_sent else alert.email_error or 'not_sent'}",
+        ]
+    )
+
+
+def _render_fill_summary(snapshot: Any) -> str:
+    fills = getattr(snapshot, "fills", [])
+    if not fills:
+        return "none"
+    rendered = []
+    for fill in fills[:3]:
+        asset = fill.get("asset", "?")
+        side = fill.get("side", "?")
+        quantity = float(fill.get("quantity", 0.0))
+        rendered.append(f"{asset}:{side}:{quantity:.6f}")
+    return ",".join(rendered)
+
+
+def _render_model_summary(snapshot: Any) -> str:
+    predictions = getattr(snapshot, "predictions", {})
+    if not predictions:
+        return "n/a"
+    ranked = sorted(
+        predictions.items(),
+        key=lambda item: float(item[1].get("expected_return_score", 0.0)),
+        reverse=True,
+    )
+    top_asset, top_scores = ranked[0]
+    high_downside = sum(
+        1
+        for scores in predictions.values()
+        if float(scores.get("downside_risk_score", 0.0)) >= 0.55
+    )
+    high_sell_risk = sum(
+        1 for scores in predictions.values() if float(scores.get("sell_risk_score", 0.0)) >= 0.55
+    )
+    return (
+        f"top={top_asset}:{float(top_scores.get('expected_return_score', 0.0)):.3f},"
+        f"downside_flags={high_downside},sell_flags={high_sell_risk}"
     )
 
 

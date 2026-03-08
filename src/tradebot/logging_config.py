@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import TextIO
 
@@ -26,13 +27,21 @@ def configure_logging(config: AppConfig, stream: TextIO | None = None) -> None:
     file_handler = logging.FileHandler(log_file(paths.logs_dir), encoding="utf-8")
     formatter: logging.Formatter
     if config.app.log_format == "json":
-        formatter = JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        formatter = JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+        )
     else:
         formatter = logging.Formatter(
             fmt="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S%z",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
         )
-    file_formatter = JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    file_formatter = JsonFormatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%SZ",
+    )
+    formatter.converter = time.gmtime
+    file_formatter.converter = time.gmtime
 
     console_handler.setFormatter(formatter)
     file_handler.setFormatter(file_formatter)

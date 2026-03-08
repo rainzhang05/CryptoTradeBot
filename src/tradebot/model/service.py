@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
 from tradebot.config import AppConfig
 from tradebot.data.storage import write_json
+from tradebot.logging_config import get_logger
 from tradebot.model.models import (
     ActiveModelReference,
     ModelPromotionSummary,
@@ -49,6 +50,7 @@ class ModelService:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.paths = config.resolved_paths()
+        self.logger = get_logger("tradebot.model")
         self.research_service = ResearchService(config)
 
     def train_model(
@@ -58,6 +60,10 @@ class ModelService:
     ) -> ModelTrainingSummary:
         if not self.config.model.enabled:
             raise ValueError("Model subsystem is disabled in configuration")
+        self.logger.info(
+            "model training started",
+            extra={"assets": list(assets or ()), "force_features": force_features},
+        )
 
         feature_store = self.research_service.build_feature_store(
             assets=assets,
@@ -128,6 +134,15 @@ class ModelService:
             latest_training_summary_file(self.paths.model_reports_dir),
             summary.to_dict() | {"metrics": metrics_payload},
         )
+        self.logger.info(
+            "model training completed",
+            extra={
+                "model_id": model_id,
+                "dataset_id": feature_store.dataset_id,
+                "split_count": split_count,
+                "validation_row_count": len(predictions),
+            },
+        )
         return summary
 
     def validate_model(self, model_id: str | None = None) -> ModelValidationSummary:
@@ -160,6 +175,14 @@ class ModelService:
         write_json(
             latest_validation_summary_file(self.paths.model_reports_dir),
             summary.to_dict(),
+        )
+        self.logger.info(
+            "model validation completed",
+            extra={
+                "model_id": summary.model_id,
+                "dataset_id": summary.dataset_id,
+                "promotion_eligible": summary.promotion_eligible,
+            },
         )
         return summary
 
@@ -198,6 +221,14 @@ class ModelService:
         write_json(
             latest_promotion_summary_file(self.paths.model_reports_dir),
             summary.to_dict(),
+        )
+        self.logger.info(
+            "model promoted",
+            extra={
+                "model_id": summary.model_id,
+                "dataset_id": summary.dataset_id,
+                "previous_model_id": previous_model_id,
+            },
         )
         return summary
 

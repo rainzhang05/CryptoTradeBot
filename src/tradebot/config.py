@@ -331,3 +331,17 @@ def load_config(config_path: Path | None = None, env_path: Path | None = None) -
         return AppConfig.model_validate(merged_config)
     except ValidationError as exc:
         raise ConfigError(f"Invalid application configuration: {exc}") from exc
+
+
+def sanitized_config_payload(config: AppConfig) -> dict[str, Any]:
+    """Return a configuration payload without secret values."""
+    payload = config.model_dump(mode="json", exclude={"secrets"})
+    payload["secrets_present"] = {
+        "kraken_api_key": bool(config.secrets.kraken_api_key),
+        "kraken_api_secret": bool(config.secrets.kraken_api_secret),
+        "kraken_api_otp": bool(config.secrets.kraken_api_otp),
+        "smtp_host": bool(config.secrets.smtp_host),
+        "smtp_username": bool(config.secrets.smtp_username),
+        "smtp_password": bool(config.secrets.smtp_password),
+    }
+    return payload

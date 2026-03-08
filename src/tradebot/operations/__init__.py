@@ -1,5 +1,19 @@
-"""Operational services for the Phase 8 CLI surface."""
+"""Operational services for runtime operations and alerts."""
 
-from tradebot.operations.service import OperationsService
+from __future__ import annotations
 
-__all__ = ["OperationsService"]
+from typing import Any
+
+__all__ = ["OperationsService", "RuntimeAlertService"]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "OperationsService":
+        from tradebot.operations.service import OperationsService
+
+        return OperationsService
+    if name == "RuntimeAlertService":
+        from tradebot.operations.alerts import RuntimeAlertService
+
+        return RuntimeAlertService
+    raise AttributeError(name)

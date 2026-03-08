@@ -12,6 +12,7 @@ from tradebot.constants import FIXED_UNIVERSE
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
+from tradebot.logging_config import get_logger
 from tradebot.research.features import build_feature_rows, build_signal_rows, feature_column_names
 from tradebot.research.models import AssetDatasetStats, FeatureBuildSummary
 from tradebot.research.storage import (
@@ -28,6 +29,7 @@ class ResearchService:
         self.config = config
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
+        self.logger = get_logger("tradebot.research")
 
     def build_feature_store(
         self,
@@ -44,6 +46,10 @@ class ResearchService:
 
         if not force and dataset_path.exists() and manifest_path.exists():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.logger.info(
+                "feature store reused",
+                extra={"dataset_id": dataset_id, "cached": True, "assets": list(selected_assets)},
+            )
             return self._summary_from_manifest(
                 dataset_id=dataset_id,
                 dataset_path=dataset_path,
@@ -84,6 +90,15 @@ class ResearchService:
             },
         }
         write_json(manifest_path, manifest)
+        self.logger.info(
+            "feature store built",
+            extra={
+                "dataset_id": dataset_id,
+                "cached": False,
+                "assets": list(selected_assets),
+                "row_count": row_count,
+            },
+        )
 
         return FeatureBuildSummary(
             dataset_id=dataset_id,
@@ -213,4 +228,12 @@ class ResearchService:
             for row in rows
             if cast(int, row["timestamp"]) == latest_timestamp
         }
+        self.logger.info(
+            "live signal rows built",
+            extra={
+                "dataset_id": dataset_id,
+                "timestamp": latest_timestamp,
+                "asset_count": len(rows_by_asset),
+            },
+        )
         return dataset_id, latest_timestamp, rows_by_asset

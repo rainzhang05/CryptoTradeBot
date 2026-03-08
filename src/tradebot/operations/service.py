@@ -19,8 +19,9 @@ from tradebot.backtest.storage import latest_backtest_report_file, simulate_stat
 from tradebot.config import AppConfig
 from tradebot.execution.kraken import KrakenClient, KrakenClientError
 from tradebot.execution.storage import latest_live_status_file, live_state_file
-from tradebot.logging_config import log_file
+from tradebot.logging_config import get_logger, log_file
 from tradebot.model.storage import active_model_pointer_file
+from tradebot.operations.storage import latest_alerts_report_file, runtime_context_file
 from tradebot.runtime import pid_is_running, runtime_process_file
 
 
@@ -37,6 +38,7 @@ class OperationsService:
         self.config = config
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
+        self.logger = get_logger("tradebot.operations")
         self.kraken_client = kraken_client or KrakenClient(
             api_key=config.secrets.kraken_api_key,
             api_secret=config.secrets.kraken_api_secret,
@@ -194,9 +196,13 @@ class OperationsService:
             latest_backtest_report_file(self.paths.artifacts_dir)
         )
         active_model = self._read_json_file(active_model_pointer_file(self.paths.models_dir))
+        runtime_context = self._read_json_file(runtime_context_file(self.paths.state_dir))
+        latest_alerts = self._read_json_file(latest_alerts_report_file(self.paths.artifacts_dir))
 
         return {
             "managed_process": managed_process,
+            "runtime_context": runtime_context,
+            "latest_alerts": latest_alerts,
             "live_status": live_status,
             "live_state": live_state,
             "simulate_state": simulate_state,
@@ -278,16 +284,27 @@ class OperationsService:
                 rendered.append(stripped)
                 continue
 
-            rendered.append(
-                " ".join(
-                    [
-                        str(payload.get("asctime", "")),
-                        str(payload.get("levelname", "")),
-                        f"[{payload.get('name', 'root')}]",
-                        str(payload.get("message", "")),
-                    ]
-                ).strip()
-            )
+            segments = [
+                str(payload.get("asctime", "")),
+                str(payload.get("levelname", "")),
+                f"[{payload.get('name', 'root')}]",
+                str(payload.get("message", "")),
+            ]
+            for key in (
+                "event_class",
+                "severity",
+                "mode",
+                "status",
+                "freeze_reason",
+                "dataset_id",
+                "model_id",
+                "fill_count",
+                "email_sent",
+                "email_error",
+            ):
+                if key in payload and payload[key] not in {None, ""}:
+                    segments.append(f"{key}={payload[key]}")
+            rendered.append(" ".join(segments).strip())
         return rendered
 
     def _resolve_source_path(self, source: str) -> Path:

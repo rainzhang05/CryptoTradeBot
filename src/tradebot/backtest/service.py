@@ -31,6 +31,7 @@ from tradebot.config import AppConfig
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
+from tradebot.logging_config import get_logger
 from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.service import StrategyEngine
@@ -43,6 +44,7 @@ class BacktestService:
         self.config = config
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
+        self.logger = get_logger("tradebot.backtest")
         self.model_service = ModelService(config)
         self.research_service = ResearchService(config)
         self.strategy_engine = StrategyEngine(config)
@@ -52,6 +54,10 @@ class BacktestService:
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
     ) -> BacktestRunSummary:
+        self.logger.info(
+            "backtest started",
+            extra={"assets": list(assets or ()), "force_features": force_features},
+        )
         feature_store = self.research_service.build_feature_store(
             assets=assets,
             force=force_features,
@@ -208,6 +214,16 @@ class BacktestService:
         }
         write_json(report_path, payload)
         write_json(latest_backtest_report_file(self.paths.artifacts_dir), payload)
+        self.logger.info(
+            "backtest completed",
+            extra={
+                "run_id": run_id,
+                "dataset_id": feature_store.dataset_id,
+                "decision_count": len(decisions),
+                "fill_count": len(fills),
+                "final_equity_usd": final_equity,
+            },
+        )
         return summary
 
     def load_backtest_report(self, run_id: str | None = None) -> dict[str, Any]:
@@ -234,7 +250,7 @@ class BacktestService:
             )
         except (FileNotFoundError, ValueError):
             self._write_simulation_state(state_path, portfolio)
-            return SimulationCycleSummary(
+            summary = SimulationCycleSummary(
                 dataset_id=None,
                 timestamp=None,
                 status="waiting_for_data",
@@ -245,11 +261,14 @@ class BacktestService:
                 fill_count=0,
                 fills=[],
                 state_file=str(state_path),
+                holdings=self._holdings(portfolio),
             )
+            self.logger.info("simulate cycle waiting for data")
+            return summary
 
         if feature_store.row_count <= 0:
             self._write_simulation_state(state_path, portfolio)
-            return SimulationCycleSummary(
+            summary = SimulationCycleSummary(
                 dataset_id=feature_store.dataset_id,
                 timestamp=None,
                 status="waiting_for_signals",
@@ -260,7 +279,13 @@ class BacktestService:
                 fill_count=0,
                 fills=[],
                 state_file=str(state_path),
+                holdings=self._holdings(portfolio),
             )
+            self.logger.info(
+                "simulate cycle waiting for signals",
+                extra={"dataset_id": feature_store.dataset_id},
+            )
+            return summary
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
         latest_timestamp = max(cast(int, row["timestamp"]) for row in rows)
@@ -280,7 +305,7 @@ class BacktestService:
         mark_bars = self._bars_at_timestamp(bars_by_asset, latest_timestamp)
         if len(mark_bars) != len(rows_for_timestamp):
             self._write_simulation_state(state_path, portfolio)
-            return SimulationCycleSummary(
+            summary = SimulationCycleSummary(
                 dataset_id=feature_store.dataset_id,
                 timestamp=latest_timestamp,
                 status="waiting_for_data",
@@ -291,7 +316,13 @@ class BacktestService:
                 fill_count=0,
                 fills=[],
                 state_file=str(state_path),
+                holdings=self._holdings(portfolio),
             )
+            self.logger.info(
+                "simulate cycle waiting for aligned data",
+                extra={"dataset_id": feature_store.dataset_id, "timestamp": latest_timestamp},
+            )
+            return summary
 
         strategy_decision = self.strategy_engine.evaluate(
             timestamp=latest_timestamp,
@@ -325,7 +356,7 @@ class BacktestService:
             settings=self.config.backtest,
         )
         self._write_simulation_state(state_path, portfolio)
-        return SimulationCycleSummary(
+        summary = SimulationCycleSummary(
             dataset_id=feature_store.dataset_id,
             timestamp=latest_timestamp,
             status="frozen" if strategy_decision.is_frozen else "ok",
@@ -338,7 +369,29 @@ class BacktestService:
             state_file=str(state_path),
             freeze_reason=strategy_decision.freeze_reason,
             model_id=active_model_id,
+            holdings=self._holdings(portfolio),
+            incidents=(
+                [strategy_decision.freeze_reason]
+                if strategy_decision.freeze_reason
+                else []
+            ),
+            portfolio_drawdown=strategy_decision.portfolio_drawdown,
+            target_weights=decision.target_weights,
+            decision_actions=decision.asset_actions,
+            decision_reasons=decision.asset_reasons,
+            predictions=self._prediction_summary(rows_for_timestamp),
         )
+        self.logger.info(
+            "simulate cycle completed",
+            extra={
+                "dataset_id": feature_store.dataset_id,
+                "timestamp": latest_timestamp,
+                "status": summary.status,
+                "fill_count": len(fills),
+                "freeze_reason": strategy_decision.freeze_reason,
+            },
+        )
+        return summary
 
     def _load_daily_bars(self, assets: tuple[str, ...]) -> dict[str, dict[int, Candle]]:
         bars_by_asset: dict[str, dict[int, Candle]] = {}
@@ -449,3 +502,29 @@ class BacktestService:
             quantity=float(payload["quantity"]),
             average_entry_price=float(payload["average_entry_price"]),
         )
+
+    @staticmethod
+    def _holdings(portfolio: PortfolioState) -> dict[str, float]:
+        return {
+            asset: position.quantity
+            for asset, position in sorted(portfolio.positions.items())
+        }
+
+    @staticmethod
+    def _prediction_summary(
+        rows_by_asset: dict[str, dict[str, object]],
+    ) -> dict[str, dict[str, float]]:
+        summary: dict[str, dict[str, float]] = {}
+        for asset, row in sorted(rows_by_asset.items()):
+            keys = (
+                "expected_return_score",
+                "downside_risk_score",
+                "sell_risk_score",
+            )
+            if not all(key in row for key in keys):
+                continue
+            summary[asset] = {
+                key: float(row[key])  # type: ignore[arg-type]
+                for key in keys
+            }
+        return summary

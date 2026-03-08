@@ -7,6 +7,11 @@ from pathlib import Path
 from tradebot.backtest.models import SimulationCycleSummary
 from tradebot.config import load_config
 from tradebot.execution.models import LiveCycleSummary
+from tradebot.operations.storage import (
+    latest_alerts_report_file,
+    latest_runtime_context_report_file,
+    runtime_context_file,
+)
 from tradebot.runtime import RuntimeService, runtime_process_file
 
 
@@ -68,6 +73,9 @@ paths:
     assert (tmp_path / "runtime" / "logs").exists()
     assert (tmp_path / "runtime" / "state").exists()
     assert not runtime_process_file(tmp_path / "runtime" / "state").exists()
+    assert runtime_context_file(tmp_path / "runtime" / "state").exists()
+    assert latest_runtime_context_report_file(tmp_path / "artifacts").exists()
+    assert latest_alerts_report_file(tmp_path / "artifacts").exists()
 
 
 def test_runtime_runs_live_cycles_with_live_service(tmp_path: Path) -> None:
@@ -133,3 +141,8 @@ KRAKEN_API_SECRET=dGVzdA==
     assert snapshot.holdings == {"BTC": 0.5}
     assert snapshot.model_id == "model-1"
     assert not runtime_process_file(tmp_path / "runtime" / "state").exists()
+    context_payload = runtime_context_file(tmp_path / "runtime" / "state").read_text(
+        encoding="utf-8"
+    )
+    assert '"status": "finished"' in context_payload
+    assert '"mode": "live"' in context_payload

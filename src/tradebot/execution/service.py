@@ -25,6 +25,7 @@ from tradebot.execution.models import (
     PairMetadata,
 )
 from tradebot.execution.storage import latest_live_status_file, live_state_file
+from tradebot.logging_config import get_logger
 from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.service import StrategyEngine
@@ -55,6 +56,7 @@ class LiveExecutionService:
         self.config = config
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
+        self.logger = get_logger("tradebot.execution.live")
         self.kraken_client = kraken_client or KrakenClient(
             api_key=config.secrets.kraken_api_key,
             api_secret=config.secrets.kraken_api_secret,
@@ -69,6 +71,7 @@ class LiveExecutionService:
     def run_cycle(self, assets: tuple[str, ...] | None = None) -> LiveCycleSummary:
         """Run one live account-sync, decision, and execution cycle."""
         selected_assets = self._select_assets(assets)
+        self.logger.info("live cycle started", extra={"assets": list(selected_assets)})
         state_path = live_state_file(self.paths.state_dir)
         report_path = latest_live_status_file(self.paths.artifacts_dir)
         state = self._load_state(state_path)
@@ -199,6 +202,7 @@ class LiveExecutionService:
         rows_for_timestamp, model_id = self.model_service.infer_rows_with_active_model(
             rows_for_timestamp
         )
+        predictions = self._prediction_summary(rows_for_timestamp)
         if model_id is None or any(
             prediction_key not in row
             for row in rows_for_timestamp.values()
@@ -221,6 +225,7 @@ class LiveExecutionService:
                 positions=account.positions,
                 open_orders=account.open_orders,
                 holdings=self._holdings(account.positions),
+                predictions=predictions,
             )
 
         prices_by_asset = self._prices_by_asset(selected_assets)
@@ -239,6 +244,7 @@ class LiveExecutionService:
                 open_orders=account.open_orders,
                 holdings=self._holdings(account.positions),
                 model_id=model_id,
+                predictions=predictions,
             )
 
         equity_usd = self._portfolio_equity(account.cash_usd, account.positions, prices_by_asset)
@@ -258,7 +264,7 @@ class LiveExecutionService:
                 incidents=incidents,
                 last_synced_at=self._now_iso(),
             )
-            return self._persist_summary(
+            summary = self._persist_summary(
                 summary=LiveCycleSummary(
                     dataset_id=dataset_id,
                     timestamp=latest_timestamp,
@@ -278,11 +284,21 @@ class LiveExecutionService:
                     freeze_reason=None,
                     model_id=model_id,
                     decision_executed=False,
+                    predictions=predictions,
                 ),
                 state=updated_state,
                 state_path=state_path,
                 report_path=report_path,
             )
+            self.logger.info(
+                "live cycle monitoring only",
+                extra={
+                    "timestamp": latest_timestamp,
+                    "dataset_id": dataset_id,
+                    "model_id": model_id,
+                },
+            )
+            return summary
 
         if account.open_orders:
             try:
@@ -305,6 +321,7 @@ class LiveExecutionService:
                     open_orders=account.open_orders,
                     holdings=self._holdings(account.positions),
                     model_id=model_id,
+                    predictions=predictions,
                 )
 
         portfolio = PortfolioState(
@@ -335,6 +352,17 @@ class LiveExecutionService:
                 model_id=model_id,
                 regime_state=strategy_decision.regime_state,
                 risk_state=strategy_decision.risk_state,
+                portfolio_drawdown=strategy_decision.portfolio_drawdown,
+                target_weights=strategy_decision.target_weights,
+                decision_actions={
+                    asset: asset_decision.action
+                    for asset, asset_decision in strategy_decision.asset_decisions.items()
+                },
+                decision_reasons={
+                    asset: asset_decision.reason
+                    for asset, asset_decision in strategy_decision.asset_decisions.items()
+                },
+                predictions=predictions,
             )
 
         decision_snapshot = DecisionSnapshot(
@@ -418,6 +446,11 @@ class LiveExecutionService:
                 model_id=model_id,
                 regime_state=strategy_decision.regime_state,
                 risk_state=strategy_decision.risk_state,
+                portfolio_drawdown=strategy_decision.portfolio_drawdown,
+                target_weights=decision_snapshot.target_weights,
+                decision_actions=decision_snapshot.asset_actions,
+                decision_reasons=decision_snapshot.asset_reasons,
+                predictions=predictions,
             )
         if self._balances_mismatch(account.positions, account_after.positions, fills):
             failures += 1
@@ -468,13 +501,30 @@ class LiveExecutionService:
             freeze_reason=freeze_reason,
             model_id=model_id,
             decision_executed=True,
+            portfolio_drawdown=strategy_decision.portfolio_drawdown,
+            target_weights=decision_snapshot.target_weights,
+            decision_actions=decision_snapshot.asset_actions,
+            decision_reasons=decision_snapshot.asset_reasons,
+            predictions=predictions,
         )
-        return self._persist_summary(
+        persisted = self._persist_summary(
             summary=summary,
             state=updated_state,
             state_path=state_path,
             report_path=report_path,
         )
+        self.logger.info(
+            "live cycle completed",
+            extra={
+                "timestamp": latest_timestamp,
+                "dataset_id": dataset_id,
+                "status": persisted.status,
+                "fill_count": len(fills),
+                "freeze_reason": freeze_reason,
+                "model_id": model_id,
+            },
+        )
+        return persisted
 
     def _pair_metadata_for_assets(self, assets: tuple[str, ...]) -> dict[str, PairMetadata]:
         pair_names = [self._kraken_rest_pair(asset) for asset in assets]
@@ -602,6 +652,11 @@ class LiveExecutionService:
         model_id: str | None = None,
         regime_state: str | None = None,
         risk_state: str | None = None,
+        portfolio_drawdown: float | None = None,
+        target_weights: dict[str, float] | None = None,
+        decision_actions: dict[str, str] | None = None,
+        decision_reasons: dict[str, str] | None = None,
+        predictions: dict[str, dict[str, float]] | None = None,
     ) -> LiveCycleSummary:
         frozen_state = LiveState(
             cash_usd=state.cash_usd if cash_usd is None else cash_usd,
@@ -637,6 +692,20 @@ class LiveExecutionService:
             freeze_reason=freeze_reason,
             model_id=model_id,
             decision_executed=False,
+            portfolio_drawdown=portfolio_drawdown,
+            target_weights=target_weights or {},
+            decision_actions=decision_actions or {},
+            decision_reasons=decision_reasons or {},
+            predictions=predictions or {},
+        )
+        self.logger.warning(
+            "live cycle frozen",
+            extra={
+                "freeze_reason": freeze_reason,
+                "system_status": system_status,
+                "timestamp": timestamp,
+                "dataset_id": dataset_id,
+            },
         )
         return self._persist_summary(
             summary=summary,
@@ -732,6 +801,25 @@ class LiveExecutionService:
     @staticmethod
     def _holdings(positions: dict[str, PositionState]) -> dict[str, float]:
         return {asset: position.quantity for asset, position in positions.items()}
+
+    @staticmethod
+    def _prediction_summary(
+        rows_by_asset: dict[str, dict[str, object]],
+    ) -> dict[str, dict[str, float]]:
+        summary: dict[str, dict[str, float]] = {}
+        for asset, row in sorted(rows_by_asset.items()):
+            prediction_keys = (
+                "expected_return_score",
+                "downside_risk_score",
+                "sell_risk_score",
+            )
+            if not all(key in row for key in prediction_keys):
+                continue
+            summary[asset] = {
+                key: float(row[key])  # type: ignore[arg-type]
+                for key in prediction_keys
+            }
+        return summary
 
     @staticmethod
     def _portfolio_equity(

@@ -66,12 +66,22 @@ def test_status_command_reads_runtime_state(tmp_path: Path, monkeypatch) -> None
         json.dumps({"status": "ok", "holdings": {"BTC": 0.5}}),
         encoding="utf-8",
     )
+    (tmp_path / "runtime" / "state" / "runtime_context.json").write_text(
+        json.dumps({"status": "finished", "mode": "live"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "artifacts" / "reports" / "runtime" / "latest_alerts.json").write_text(
+        json.dumps({"recent_events": [{"event_class": "freeze_triggered"}]}),
+        encoding="utf-8",
+    )
 
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
     assert '"managed_process":' in result.stdout
     assert '"running": true' in result.stdout
+    assert '"runtime_context":' in result.stdout
+    assert '"latest_alerts":' in result.stdout
     assert '"live_status":' in result.stdout
 
 

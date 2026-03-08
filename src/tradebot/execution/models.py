@@ -119,6 +119,11 @@ class LiveCycleSummary:
     freeze_reason: str | None = None
     model_id: str | None = None
     decision_executed: bool = False
+    portfolio_drawdown: float | None = None
+    target_weights: dict[str, float] = field(default_factory=dict)
+    decision_actions: dict[str, str] = field(default_factory=dict)
+    decision_reasons: dict[str, str] = field(default_factory=dict)
+    predictions: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -140,4 +145,9 @@ class LiveCycleSummary:
             "freeze_reason": self.freeze_reason,
             "model_id": self.model_id,
             "decision_executed": self.decision_executed,
+            "portfolio_drawdown": self.portfolio_drawdown,
+            "target_weights": self.target_weights,
+            "decision_actions": self.decision_actions,
+            "decision_reasons": self.decision_reasons,
+            "predictions": self.predictions,
         }

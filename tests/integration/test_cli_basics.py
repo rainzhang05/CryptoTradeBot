@@ -122,7 +122,14 @@ paths: {}
             def __init__(self, config):
                 self.config = config
 
-            def run(self, mode: str, max_cycles: int | None = None, *, on_cycle=None):
+            def run(
+                self,
+                mode: str,
+                max_cycles: int | None = None,
+                *,
+                on_cycle=None,
+                on_alert=None,
+            ):
                 snapshot = RuntimeSnapshot(
                     mode=mode,
                     cycle=1,
@@ -143,6 +150,20 @@ paths: {}
                 )
                 if on_cycle is not None:
                     on_cycle(snapshot)
+                if on_alert is not None:
+                    alert = type(
+                        "Alert",
+                        (),
+                        {
+                            "severity": "critical",
+                            "event_class": "freeze_triggered",
+                            "mode": mode,
+                            "message": "freeze",
+                            "email_sent": False,
+                            "email_error": "email_recipient_not_configured",
+                        },
+                    )()
+                    on_alert(alert)
                 return [snapshot]
 
         monkeypatch.setattr(cli_module, "RuntimeService", FakeRuntimeService)
@@ -151,6 +172,7 @@ paths: {}
 
         assert result.exit_code == 0
         assert "mode=live" in result.stdout
+        assert "ALERT | severity=critical | class=freeze_triggered" in result.stdout
         assert "system=online" in result.stdout
         assert "holdings=BTC:0.50000000" in result.stdout
         assert "Completed 1 cycle(s) in live mode." in result.stdout

@@ -74,7 +74,26 @@ def write_candles(path: Path, candles: Iterable[Candle]) -> int:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     """Write JSON payload to disk in a stable format."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    serialized = json.dumps(payload, indent=2, sort_keys=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write(serialized)
+
+        if temp_path is None:
+            raise RuntimeError(f"failed to create temporary json file for {path}")
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
 
 
 def dataclass_json_payload(value: Any) -> dict[str, Any]:
