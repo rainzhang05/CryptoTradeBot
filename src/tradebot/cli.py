@@ -88,7 +88,7 @@ def config_validate() -> None:
 def run(
     mode: str | None = typer.Option(
         default=None,
-        help="Runtime mode. `live` is reserved for Phase 7 and later.",
+        help="Runtime mode to execute.",
     ),
     max_cycles: int | None = typer.Option(
         default=None,
@@ -96,18 +96,20 @@ def run(
         help="Optional cycle count override for testing or short runs.",
     ),
 ) -> None:
-    """Start the runtime skeleton for simulate or live mode."""
+    """Start the shared simulate or live runtime loop."""
     config = load_config()
     configure_logging(config)
     runtime = RuntimeService(config)
     effective_mode = mode or config.runtime.default_mode
-    if effective_mode == "live":
-        typer.echo(
-            "Live mode is scheduled for Phase 7 and is not implemented in the Phase 6 repository.",
-            err=True,
+    try:
+        snapshots = runtime.run(
+            mode=effective_mode,
+            max_cycles=max_cycles,
+            on_cycle=lambda snapshot: typer.echo(render_runtime_snapshot(snapshot)),
         )
-        raise typer.Exit(code=1)
-    snapshots = runtime.run(mode=effective_mode, max_cycles=max_cycles)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(f"Completed {len(snapshots)} cycle(s) in {effective_mode} mode.")
 
 
@@ -123,6 +125,39 @@ def sanitized_config(config: Any) -> dict[str, Any]:
         "smtp_password": bool(config.secrets.smtp_password),
     }
     return payload
+
+
+def render_runtime_snapshot(snapshot: Any) -> str:
+    """Render one runtime-cycle summary for terminal monitoring output."""
+    timestamp = "n/a" if snapshot.timestamp is None else str(snapshot.timestamp)
+    equity = "n/a" if snapshot.equity_usd is None else f"{snapshot.equity_usd:.2f}"
+    cash = "n/a" if snapshot.cash_usd is None else f"{snapshot.cash_usd:.2f}"
+    holdings = ", ".join(
+        f"{asset}:{quantity:.8f}"
+        for asset, quantity in sorted(snapshot.holdings.items())
+    )
+    incidents = ", ".join(snapshot.incidents)
+    return " | ".join(
+        [
+            f"mode={snapshot.mode}",
+            f"cycle={snapshot.cycle}",
+            f"status={snapshot.status}",
+            f"system={snapshot.system_status}",
+            f"connectivity={snapshot.connectivity_state}",
+            f"timestamp={timestamp}",
+            f"regime={snapshot.regime_state or 'n/a'}",
+            f"risk={snapshot.risk_state or 'n/a'}",
+            f"equity_usd={equity}",
+            f"cash_usd={cash}",
+            f"holdings={holdings or 'none'}",
+            f"fills={snapshot.fill_count}",
+            f"open_orders={snapshot.open_order_count}",
+            f"model={snapshot.model_id or 'n/a'}",
+            f"decision_executed={'yes' if snapshot.decision_executed else 'no'}",
+            f"freeze={snapshot.freeze_reason or 'none'}",
+            f"incidents={incidents or 'none'}",
+        ]
+    )
 
 
 @data_app.command("import")

@@ -1,10 +1,10 @@
 # Crypto Trading Bot for Spot Market
 
-Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 6 support for data preparation, research, backtesting, simulation, and ML-assisted portfolio decisions.
+Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 7 support for data preparation, research, backtesting, simulation, live execution, and ML-assisted portfolio decisions.
 
 ## Status
 
-The repository is in Phase 6 of the roadmap.
+The repository is in Phase 7 of the roadmap.
 The current implementation provides:
 
 - the Python project skeleton and toolchain foundation
@@ -31,8 +31,11 @@ The current implementation provides:
 - versioned model artifacts with manifests, metrics, predictions, and promotion metadata
 - hybrid rule-plus-ML portfolio decisions that consume promoted model predictions when available
 - CLI commands for model training, validation, and promotion
+- a Kraken-authenticated live execution service with account sync, order submission, dead-man switch refresh, fill reconciliation, and persisted live state
+- a shared runtime loop for simulate and live modes with continuous terminal monitoring output
+- freeze-on-failure safeguards for stale data, missing active models, order-management errors, and reconciliation anomalies
 
-Phase 7 and later work still cover Kraken live execution, continuous terminal monitoring, alert delivery, and the remaining operator workflows from the final CLI specification.
+Later phases still cover the broader CLI surface, email alert delivery, runbooks, and final production-hardening work from the roadmap.
 
 ## Quick Start
 
@@ -66,6 +69,10 @@ Useful Phase 6 model commands:
 - `uv run bot model train`
 - `uv run bot model validate`
 - `uv run bot model promote`
+
+Useful Phase 7 live-runtime command:
+
+- `uv run bot run --mode live --max-cycles 1`
 
 ## Docker
 

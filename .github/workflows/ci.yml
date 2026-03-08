@@ -149,3 +149,6 @@ jobs:
           BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot backtest run --assets BTC --assets ETH
           BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot backtest report
           BOT_CONFIG_PATH="$PWD/.ci-phase6/config/settings.yaml" uv run --python 3.12 bot run --mode simulate --max-cycles 1
+
+      - name: Phase 7 live-runtime smoke test
+        run: uv run --python 3.12 pytest --no-cov tests/unit/execution/test_service.py tests/unit/test_runtime.py tests/integration/test_cli_basics.py -k live

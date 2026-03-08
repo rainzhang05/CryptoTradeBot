@@ -33,6 +33,9 @@
 - continuously displays monitoring information in the terminal
 - sends alerts on important events
 
+Phase 7 implements the live terminal monitoring surface and persisted live-status report.
+Email alert delivery remains part of the later observability phase.
+
 ## Monitoring Requirements
 
 During long-running execution, the terminal monitoring surface must display at minimum:
@@ -102,6 +105,8 @@ When frozen, the system must:
 - clearly log and display the freeze reason
 - emit an alert
 - preserve enough state for investigation and recovery
+
+Phase 7 persists freeze and live-account state in `runtime/state/live_state.json` and writes the latest cycle summary to `artifacts/reports/runtime/latest_live_status.json`.
 
 ## Restart and Recovery Requirements
 

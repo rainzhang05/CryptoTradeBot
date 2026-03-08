@@ -150,6 +150,19 @@ This command must:
 Live trading and monitoring are intentionally one runtime surface in V1.
 The terminal during live mode must display monitoring information directly.
 
+### `bot run --mode live`
+
+This command must:
+
+- require Kraken API credentials through `.env`
+- refresh Kraken's dead-man switch before each live decision cycle
+- sync balances and open orders from Kraken before making a new decision
+- build point-in-time signal rows from canonical Kraken data without forward labels
+- require an active promoted model artifact for live inference and freeze if it is missing
+- place market orders only through the shared order-intent path used by simulate mode
+- persist live runtime state under `runtime/state/live_state.json`
+- update `artifacts/reports/runtime/latest_live_status.json` after each cycle
+
 ### Reporting and maintenance
 
 - `bot report list`: list generated reports and artifacts.

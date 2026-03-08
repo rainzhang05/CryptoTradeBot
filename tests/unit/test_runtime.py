@@ -1,12 +1,12 @@
-"""Unit tests for the runtime skeleton."""
+"""Unit tests for shared simulate and live runtime orchestration."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from tradebot.backtest.models import SimulationCycleSummary
 from tradebot.config import load_config
+from tradebot.execution.models import LiveCycleSummary
 from tradebot.runtime import RuntimeService
 
 
@@ -34,21 +34,42 @@ paths:
     )
     config = load_config(config_path=config_path, env_path=tmp_path / ".env")
 
-    runtime = RuntimeService(config)
+    class FakeBacktestService:
+        def simulate_latest_cycle(self) -> SimulationCycleSummary:
+            return SimulationCycleSummary(
+                dataset_id=None,
+                timestamp=None,
+                status="waiting_for_data",
+                regime_state=None,
+                risk_state=None,
+                equity_usd=config.backtest.initial_cash_usd,
+                cash_usd=config.backtest.initial_cash_usd,
+                fill_count=0,
+                fills=[],
+                state_file=str(tmp_path / "runtime" / "state" / "simulate_state.json"),
+            )
+
+    sleep_calls: list[float] = []
+    runtime = RuntimeService(
+        config,
+        backtest_service=FakeBacktestService(),
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
     snapshots = runtime.run(mode="simulate")
 
     assert len(snapshots) == 2
-    expected_statuses = {"ok", "waiting_for_data", "waiting_for_signals"}
-    assert all(snapshot.status in expected_statuses for snapshot in snapshots)
+    assert all(snapshot.status == "waiting_for_data" for snapshot in snapshots)
+    assert sleep_calls == [config.runtime.cycle_interval_seconds]
     assert (tmp_path / "data").exists()
     assert (tmp_path / "artifacts").exists()
     assert (tmp_path / "artifacts" / "models").exists()
     assert (tmp_path / "artifacts" / "reports" / "models").exists()
+    assert (tmp_path / "artifacts" / "reports" / "runtime").exists()
     assert (tmp_path / "runtime" / "logs").exists()
     assert (tmp_path / "runtime" / "state").exists()
 
 
-def test_runtime_rejects_live_mode_until_phase_7(tmp_path: Path) -> None:
+def test_runtime_runs_live_cycles_with_live_service(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / "settings.yaml"
@@ -56,7 +77,7 @@ def test_runtime_rejects_live_mode_until_phase_7(tmp_path: Path) -> None:
         """
 app: {}
 runtime:
-  default_mode: simulate
+  default_mode: live
   max_cycles: 1
 exchange: {}
 strategy:
@@ -66,9 +87,47 @@ paths: {}
 """,
         encoding="utf-8",
     )
-    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        """
+KRAKEN_API_KEY=test-key
+KRAKEN_API_SECRET=dGVzdA==
+""".strip(),
+        encoding="utf-8",
+    )
+    config = load_config(config_path=config_path, env_path=env_path)
 
-    runtime = RuntimeService(config)
+    class FakeLiveService:
+        def run_cycle(self) -> LiveCycleSummary:
+            return LiveCycleSummary(
+                dataset_id="dataset-1",
+                timestamp=1_705_000_000,
+                status="ok",
+                system_status="online",
+                connectivity_state="online",
+                regime_state="constructive",
+                risk_state="normal",
+                equity_usd=1_050.0,
+                cash_usd=900.0,
+                fill_count=1,
+                fills=[],
+                holdings={"BTC": 0.5},
+                open_order_count=0,
+                incidents=["trade_executed"],
+                state_file=str(tmp_path / "runtime" / "state" / "live_state.json"),
+                freeze_reason=None,
+                model_id="model-1",
+                decision_executed=True,
+            )
 
-    with pytest.raises(NotImplementedError):
-        runtime.run(mode="live")
+    runtime = RuntimeService(config, live_service=FakeLiveService(), sleep_fn=lambda _: None)
+    snapshots = runtime.run(mode="live")
+
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot.mode == "live"
+    assert snapshot.status == "ok"
+    assert snapshot.system_status == "online"
+    assert snapshot.connectivity_state == "online"
+    assert snapshot.holdings == {"BTC": 0.5}
+    assert snapshot.model_id == "model-1"

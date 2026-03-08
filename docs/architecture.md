@@ -117,6 +117,15 @@ Responsibilities:
 - reconcile order and balance state
 - detect execution anomalies and trigger freezes
 
+Phase 7 implements this through a Kraken-focused live execution service that:
+
+- authenticates private REST requests with API key, secret, and optional OTP
+- refreshes Kraken's dead-man switch before each live decision cycle
+- syncs USD cash, asset balances, and open orders before placing new orders
+- reuses the shared order-intent builder from simulate and backtest mode
+- persists restart-safe live state under `runtime/state/live_state.json`
+- writes the latest operator-facing live status report under `artifacts/reports/runtime/latest_live_status.json`
+
 ### 8. Backtest subsystem
 
 Responsibilities:
@@ -197,6 +206,9 @@ The current implementation reuses the backtest decision and simulated execution 
 - emits terminal monitoring and email alerts
 - freezes on critical integrity failures
 
+Phase 7 delivers the shared live runtime loop, live account sync, and terminal monitoring output.
+Email delivery remains part of the later observability and operations work.
+
 ## State Management
 
 The system must persist enough state to resume safely after restart.
@@ -214,6 +226,7 @@ The system must persist enough state to resume safely after restart.
 
 Phase 4 also persists simulate-mode portfolio state so repeated local runs can resume from the last simulated holdings and cash balance.
 Phase 6 also persists promoted-model reference state so the same active artifact is reused consistently across simulate and backtest runs until a newer model is promoted.
+Phase 7 also persists live-mode balances, holdings, open orders, fills, and freeze state so live runs can resume after restart with Kraken reconciliation.
 
 ## Storage Layout Expectations
 
