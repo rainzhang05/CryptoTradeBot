@@ -19,11 +19,13 @@ dependencies = [
   "python-json-logger>=2.0.7,<4.0",
   "pyyaml>=6.0.2,<7.0",
   "scikit-learn>=1.7,<2.0",
+  "textual>=0.76,<1.0",
   "typer>=0.16,<1.0"
 ]
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2,<2.0",
   "mypy>=1.16,<2.0",
   "pytest>=8.4,<9.0",
   "pytest-cov>=6.2,<7.0",
@@ -32,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-tradebot = "tradebot.cli:app"
+tradebot = "tradebot.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tradebot"]

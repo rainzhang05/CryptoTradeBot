@@ -5,6 +5,7 @@ services:
     image: crypto-spot-trading-bot:local
     environment:
       BOT_CONFIG_PATH: ${BOT_CONFIG_PATH:-config/settings.yaml}
+      TRADEBOT_HOME: ${TRADEBOT_HOME:-/app}
       KRAKEN_API_KEY: ${KRAKEN_API_KEY:-}
       KRAKEN_API_SECRET: ${KRAKEN_API_SECRET:-}
       KRAKEN_API_OTP: ${KRAKEN_API_OTP:-}

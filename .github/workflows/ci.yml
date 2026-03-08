@@ -36,11 +36,25 @@ jobs:
       - name: Test with coverage
         run: .venv/bin/pytest
 
+      - name: Build distribution packages
+        run: .venv/bin/python -m build
+
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
+
+      - name: Validate global-install smoke workflow
+        run: |
+          rm -rf .ci-install-home .ci-install-venv
+          python -m venv .ci-install-venv
+          .ci-install-venv/bin/python -m pip install dist/*.whl
+          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot --help
+          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot init
+          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot config validate
+          TRADEBOT_HOME="$PWD/.ci-install-home" .ci-install-venv/bin/tradebot > .ci-install-help.txt < /dev/null
+          grep -q "Usage: tradebot" .ci-install-help.txt
 
       - name: Validate release-readiness workflow
         run: .venv/bin/pytest --no-cov tests/integration/test_release_readiness.py
