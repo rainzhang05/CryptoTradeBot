@@ -27,6 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "build>=1.2,<2.0",
+  "hatchling>=1.27,<2.0",
   "mypy>=1.16,<2.0",
   "pytest>=8.4,<9.0",
   "pytest-cov>=6.2,<7.0",
@@ -39,6 +40,24 @@ Repository = "https://github.com/rainzhang05/CryptoTradeBot"
 
 [project.scripts]
 tradebot = "tradebot.cli:main"
+
+[tool.hatch.build]
+exclude = [
+  "/$PWD",
+  "/.ci-*",
+  "/.coverage*",
+  "/.mypy_cache",
+  "/.pytest_cache",
+  "/.ruff_cache",
+  "/.venv",
+  "/artifacts",
+  "/build",
+  "/coverage.xml",
+  "/data",
+  "/dist",
+  "/runtime",
+  "/shell-sample.heic",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tradebot"]

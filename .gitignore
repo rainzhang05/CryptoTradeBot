@@ -196,6 +196,8 @@ cython_debug/
 /data/
 /artifacts/
 /runtime/
+.ci-*/
+/$PWD/
 
 # Ruff stuff:
 .ruff_cache/
