@@ -8,6 +8,8 @@ For the full authoritative behavior, flags, and requirements, see [`cli.md`](./c
 - `tradebot`: open the interactive operator shell on an interactive terminal.
 - `tradebot shell`: open the interactive operator shell explicitly.
 - `tradebot init`: create or refresh the default application home under `~/.tradebot/`.
+- `tradebot version`: print the installed application version.
+- `tradebot config-path`: print the resolved active configuration path.
 
 ## Configuration
 
@@ -24,6 +26,7 @@ For the full authoritative behavior, flags, and requirements, see [`cli.md`](./c
 - `tradebot data check`: run integrity checks and generate a gap report.
 - `tradebot data complete`: repair historical gaps and extend data to the latest closed interval.
 - `tradebot data source`: show source coverage and fallback usage.
+- `tradebot data prune-raw`: delete raw Kraken CSV files that are outside the fixed V1 universe.
 
 ## Research And Models
 

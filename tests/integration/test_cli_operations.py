@@ -212,6 +212,30 @@ def test_doctor_validates_exchange_connectivity(tmp_path: Path, monkeypatch) -> 
     assert '"private_api": {' in result.stdout
 
 
+def test_doctor_fails_when_live_mode_requires_missing_private_credentials(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = _write_config(tmp_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "  default_mode: simulate",
+            "  default_mode: live",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.delenv("KRAKEN_API_KEY", raising=False)
+    monkeypatch.delenv("KRAKEN_API_SECRET", raising=False)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert '"ok": false' in result.stdout.lower()
+    assert '"required_for_mode": true' in result.stdout.lower()
+
+
 def test_stop_command_requests_runtime_termination(tmp_path: Path, monkeypatch) -> None:
     import tradebot.operations.service as operations_service
 

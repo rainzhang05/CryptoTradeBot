@@ -40,6 +40,8 @@ This preserves the concise style the project wants while keeping commands readab
 
 ### Core runtime
 
+- `tradebot version`: print the installed application version.
+- `tradebot config-path`: print the resolved active configuration path.
 - `tradebot run`: start continuous runtime.
 - `tradebot stop`: stop a managed runtime if process control is implemented.
 - `tradebot status`: show current runtime status, positions, balances, and health.
@@ -117,6 +119,7 @@ This command must:
 - `tradebot data check`: run integrity checks and gap reports.
 - `tradebot data complete`: repair historical gaps and extend canonical data to the latest closed interval.
 - `tradebot data source`: show source coverage and fallback usage.
+- `tradebot data prune-raw`: remove unsupported raw Kraken files outside the fixed V1 universe.
 
 ### Research and models
 

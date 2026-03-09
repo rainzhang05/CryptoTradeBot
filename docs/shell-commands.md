@@ -14,6 +14,8 @@ When a command needs more input, the shell opens a form so you can fill in the v
 ## Setup And Health
 
 - `init`: create or refresh the default Tradebot home under `~/.tradebot/`.
+- `version`: print the installed application version.
+- `config-path`: show the resolved active configuration path.
 - `doctor`: check your environment, configuration, and Kraken connectivity.
 - `status`: show the latest runtime, portfolio, and health status.
 
@@ -36,6 +38,7 @@ When a command needs more input, the shell opens a form so you can fill in the v
 - `data sync`: fetch newer or missing market data.
 - `data check`: run canonical data integrity checks.
 - `data complete`: repair gaps and extend canonical data to the latest closed interval.
+- `data prune-raw`: delete unsupported raw Kraken CSV files outside the fixed V1 universe.
 
 ## Research And Models
 
