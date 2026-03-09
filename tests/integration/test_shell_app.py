@@ -32,7 +32,7 @@ async def test_shell_first_run_auto_bootstraps_home(
     async with app.run_test() as pilot:
         await pilot.pause()
         assert (home / "config" / "settings.yaml").exists()
-        assert "Created default Tradebot home" in _transcript_text(app)
+        assert "Created your default Tradebot home" in _transcript_text(app)
 
 
 @pytest.mark.anyio
@@ -48,11 +48,14 @@ async def test_shell_shows_command_suggestions_and_guided_form(
     app = TradebotShellApp()
     async with app.run_test() as pilot:
         await pilot.pause()
+        suggestions = app.screen.query_one("#command-suggestions", OptionList)
+        assert suggestions.display is False
+
         input_widget = app.screen.query_one("#command-input", Input)
         input_widget.value = "model tr"
         await pilot.pause()
 
-        suggestions = app.screen.query_one("#command-suggestions", OptionList)
+        assert suggestions.display is True
         assert suggestions.option_count > 0
         assert str(suggestions.get_option_at_index(0).prompt).startswith("model train")
 
@@ -132,11 +135,11 @@ async def test_shell_ctrl_c_cancels_active_command(
                 break
 
         assert input_widget.disabled is False
-        assert "Cancellation requested" in _transcript_text(app)
+        assert "Stopping the active command" in _transcript_text(app)
 
 
 @pytest.mark.anyio
-async def test_shell_quick_action_click_runs_command(
+async def test_shell_clicked_suggestion_runs_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -165,9 +168,14 @@ async def test_shell_quick_action_click_runs_command(
     app = TradebotShellApp()
     async with app.run_test() as pilot:
         await pilot.pause()
-        doctor_button = app.screen.query_one("#quick-action-doctor", Button)
-        app.on_button_pressed(Button.Pressed(doctor_button))
+        input_widget = app.screen.query_one("#command-input", Input)
+        input_widget.value = "doctor"
+        await pilot.pause()
+
+        suggestions = app.screen.query_one("#command-suggestions", OptionList)
+        app.on_option_list_option_selected(OptionList.OptionSelected(suggestions, 0))
         await pilot.pause()
 
         assert "doctor" in observed_commands
-        assert "> doctor" in _transcript_text(app)
+        assert "Running command." in _transcript_text(app)
+        assert "doctor" in _transcript_text(app)

@@ -6,13 +6,13 @@ import asyncio
 import json
 from dataclasses import dataclass
 
+from rich.markup import escape as rich_escape
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     Button,
     Checkbox,
-    Footer,
     Input,
     OptionList,
     RichLog,
@@ -42,27 +42,27 @@ VIOLET_BORDER = "#8b5cf6"
 VIOLET_BORDER_FOCUS = "#a78bfa"
 VIOLET_BORDER_SUBTLE = "#6d28d9"
 
-QUICK_ACTIONS: tuple[tuple[str, str, str], ...] = (
-    ("quick-action-status", "Status", "status"),
-    ("quick-action-doctor", "Doctor", "doctor"),
-    ("quick-action-config-validate", "Config Validate", "config validate"),
-    ("quick-action-data-source", "Data Source", "data source"),
-    ("quick-action-report-list", "Report List", "report list"),
-)
-
-QUICK_ACTIONS_BY_ID = {
-    action_id: command_text for action_id, _label, command_text in QUICK_ACTIONS
-}
-
 ASCII_ROBOT = r"""
-   [ ] [ ]
-    |   |
-  .-=====-. 
-  |  o o  |
-  |   ^   |
-  | \___/ |
+      .-.
+   .-(o o)-.
+  /  | O |  \
+ |   |   |   |
+ |   '~~~'   |
+  \  _____  /
    '-----'
 """
+
+TRANSCRIPT_LIMIT = 160
+
+
+@dataclass(frozen=True)
+class TranscriptEntry:
+    """One operator-facing transcript entry."""
+
+    kind: str
+    title: str
+    lines: tuple[str, ...] = ()
+    action_id: int = 0
 
 
 def _stringify_prompt(prompt: object) -> str:
@@ -84,13 +84,14 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     CSS = """
     CommandFormScreen {
         align: center middle;
+        background: transparent;
     }
 
     #command-form {
         width: 96;
         height: 80%;
         border: round #8b5cf6;
-        background: $surface;
+        background: transparent;
         padding: 1 2;
     }
 
@@ -198,6 +199,15 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
                 yield Static(field_spec.help, classes="field-help")
 
     def on_mount(self) -> None:
+        form = self.query_one("#command-form", VerticalScroll)
+        form.show_vertical_scrollbar = False
+        form.show_horizontal_scrollbar = False
+        for option_list in self.query(OptionList):
+            option_list.show_vertical_scrollbar = False
+            option_list.show_horizontal_scrollbar = False
+        for selection_list in self.query(SelectionList):
+            selection_list.show_vertical_scrollbar = False
+            selection_list.show_horizontal_scrollbar = False
         for field_spec in self.spec.fields:
             if (
                 field_spec.resolved_choices()
@@ -289,6 +299,7 @@ class TradebotShellApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
+        background: transparent;
     }
 
     #brand {
@@ -297,70 +308,88 @@ class TradebotShellApp(App[None]):
         border: round #8b5cf6;
         padding: 1;
         margin: 1 1 0 1;
+        background: transparent;
     }
 
     #body {
         height: 1fr;
         margin: 0 1;
+        layout: vertical;
+    }
+
+    #status-panel {
+        height: auto;
+        margin-bottom: 1;
+        background: transparent;
+    }
+
+    .status-block {
+        border: round #6d28d9;
+        padding: 0 1;
+        margin-bottom: 1;
+        height: auto;
+        background: transparent;
     }
 
     #transcript {
-        width: 1fr;
-        border: round #6d28d9;
-    }
-
-    #sidebar {
-        width: 34;
+        height: 1fr;
         border: round #6d28d9;
         padding: 0 1;
-    }
-
-    #sidebar-actions {
-        height: auto;
-        border: round #6d28d9;
-        padding: 1;
-        margin-bottom: 1;
-    }
-
-    .sidebar-block {
-        margin-bottom: 1;
-        height: auto;
-    }
-
-    .sidebar-title {
-        text-style: bold;
+        background: transparent;
     }
 
     #input-region {
         height: auto;
         margin: 0 1 1 1;
-    }
-
-    #command-suggestions {
-        height: 8;
-        border: round #6d28d9;
-    }
-
-    #command-suggestions:focus {
-        border: round #a78bfa;
+        background: transparent;
     }
 
     #command-input {
-        dock: bottom;
         border: round #6d28d9;
+        background: transparent;
     }
 
     #command-input:focus {
         border: round #a78bfa;
     }
 
-    .quick-action-button {
-        width: 100%;
-        margin-bottom: 1;
+    #command-suggestions {
+        height: 8;
+        border: round #6d28d9;
+        margin-top: 1;
+        background: transparent;
+    }
+
+    #command-suggestions:focus {
+        border: round #a78bfa;
+    }
+
+    OptionList {
+        background: transparent;
+    }
+
+    Input {
+        background: transparent;
+    }
+
+    Checkbox {
+        background: transparent;
+    }
+
+    SelectionList {
+        background: transparent;
+    }
+
+    Static {
+        background: transparent;
+    }
+
+    Button {
+        background: transparent;
         border: round #6d28d9;
     }
 
-    .quick-action-button:focus {
+    Button:focus {
         border: round #a78bfa;
     }
     """
@@ -371,54 +400,63 @@ class TradebotShellApp(App[None]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.dark = False
         self.active_token: CancellationToken | None = None
         self.active_task: asyncio.Task[None] | None = None
         self.current_command: str = "idle"
+        self._active_action_id: int = 0
+        self._latest_action_id: int = 0
+        self._transcript_entries: list[TranscriptEntry] = []
 
     def _main_screen(self) -> Screen[object]:
         return self.screen_stack[0]
 
     def compose(self) -> ComposeResult:
         yield Static(
-            f"{ASCII_ROBOT}\nTradebot  v{__version__}\nInteractive operator shell",
+            f"{ASCII_ROBOT}\nCrypto Trade Bot\nv{__version__}\nInteractive operator shell",
             id="brand",
         )
-        with Horizontal(id="body"):
-            yield RichLog(id="transcript", wrap=True, markup=False)
-            with Vertical(id="sidebar"):
-                yield Static("", id="sidebar-home", classes="sidebar-block")
-                yield Static("", id="sidebar-config", classes="sidebar-block")
-                yield Static("", id="sidebar-runtime", classes="sidebar-block")
-                yield Static("", id="sidebar-context", classes="sidebar-block")
-                with Vertical(id="sidebar-actions", classes="sidebar-block"):
-                    yield Static("[Quick actions]")
-                    for action_id, label, _command in QUICK_ACTIONS:
-                        yield Button(label, id=action_id, classes="quick-action-button")
+        with Vertical(id="body"):
+            with Vertical(id="status-panel"):
+                yield Static("", id="sidebar-home", classes="status-block")
+                yield Static("", id="sidebar-config", classes="status-block")
+                yield Static("", id="sidebar-runtime", classes="status-block")
+                yield Static("", id="sidebar-context", classes="status-block")
                 yield Static(
-                    "[Shortcuts]\n"
-                    "help\n"
-                    "clear\n"
-                    "exit\n"
-                    "click a quick action or suggestion to run it\n"
-                    "ctrl+c cancel active command",
+                    "[Shell help]\n"
+                    "Type to see matching commands below.\n"
+                    "Press Enter to run the current command.\n"
+                    "Use Ctrl+C to stop the active command.\n"
+                    "Built-in commands: help, clear, exit",
                     id="sidebar-shortcuts",
-                    classes="sidebar-block",
+                    classes="status-block",
                 )
+            yield RichLog(id="transcript", wrap=True, markup=True)
         with Vertical(id="input-region"):
-            yield OptionList(id="command-suggestions")
             yield Input(
                 placeholder="Type a command like model train, data source, help, clear, or exit",
                 id="command-input",
             )
-        yield Footer()
+            yield OptionList(id="command-suggestions")
 
     def on_mount(self) -> None:
         bootstrap_summary = ensure_app_home_initialized()
-        self._write_line("Tradebot shell ready.")
+        transcript = self._main_screen().query_one("#transcript", RichLog)
+        suggestions = self._main_screen().query_one("#command-suggestions", OptionList)
+        transcript.show_vertical_scrollbar = False
+        transcript.show_horizontal_scrollbar = False
+        suggestions.show_vertical_scrollbar = False
+        suggestions.show_horizontal_scrollbar = False
+        suggestions.display = False
+        self._append_entry("system", "Crypto Trade Bot shell ready.")
         if bootstrap_summary is not None:
-            self._write_line(
-                "Created default Tradebot home at "
-                f"{bootstrap_summary['home']} with starter config and env files."
+            self._append_entry(
+                "system",
+                "Created your default Tradebot home.",
+                lines=(
+                    f"Home: {bootstrap_summary['home']}",
+                    "Starter config and environment files are now in place.",
+                ),
             )
         self._update_sidebar()
         self._refresh_command_suggestions("")
@@ -426,10 +464,19 @@ class TradebotShellApp(App[None]):
 
     def action_cancel(self) -> None:
         if self.active_token is None:
-            self._write_line("No active command to cancel.")
+            self._append_entry(
+                "system",
+                "Nothing is running right now.",
+                lines=("There is no active command to cancel.",),
+            )
             return
         self.active_token.cancel()
-        self._write_line("Cancellation requested. Waiting for the active command to stop...")
+        self._append_entry(
+            "warning",
+            "Stopping the active command.",
+            lines=("Waiting for the current task to stop safely.",),
+            action_id=self._active_action_id,
+        )
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "command-input":
@@ -460,44 +507,54 @@ class TradebotShellApp(App[None]):
         self._main_screen().query_one("#command-input", Input).value = ""
         self._handle_shell_input(text)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        button_id = event.button.id or ""
-        if button_id not in QUICK_ACTIONS_BY_ID:
-            return
-        if self.active_task is not None:
-            self._write_line("Another command is already running.")
-            return
-        self._handle_shell_input(QUICK_ACTIONS_BY_ID[button_id])
-
     def _handle_shell_input(self, text: str) -> None:
         normalized = text.strip()
         lowered = normalized.lower()
         if lowered == "help":
+            self._record_shell_command("help")
             self._render_help()
             return
         if lowered == "clear":
+            self._transcript_entries.clear()
             self._main_screen().query_one("#transcript", RichLog).clear()
-            self._write_line("Transcript cleared.")
+            self._append_entry(
+                "system",
+                "History cleared.",
+                lines=("Type a new command to continue.",),
+            )
             return
         if lowered == "exit":
             self.exit()
             return
 
+        action_id = self._record_shell_command(normalized)
+
         try:
             parsed = parse_shell_command(normalized)
         except Exception as exc:
-            self._write_line(str(exc))
+            self._append_entry(
+                "error",
+                "That command could not be understood.",
+                lines=(str(exc),),
+                action_id=action_id,
+            )
             return
 
         if parsed.spec.fields and not parsed.used_inline_arguments:
             self.push_screen(
                 CommandFormScreen(parsed.spec, default_form_values(parsed.spec)),
-                lambda params: self._run_form_submission(parsed.spec, normalized, params),
+                lambda params: self._run_form_submission(
+                    parsed.spec,
+                    normalized,
+                    params,
+                    action_id,
+                ),
             )
             return
 
         self._submit_command(
-            CommandSubmission(spec=parsed.spec, params=parsed.params, text=normalized)
+            CommandSubmission(spec=parsed.spec, params=parsed.params, text=normalized),
+            action_id,
         )
 
     def _run_form_submission(
@@ -505,21 +562,30 @@ class TradebotShellApp(App[None]):
         spec: CommandSpec,
         text: str,
         params: dict[str, object] | None,
+        action_id: int,
     ) -> None:
         if params is None:
-            self._write_line(f"Cancelled parameter entry for {' '.join(spec.tokens)}.")
+            self._append_entry(
+                "warning",
+                f"Stopped setting up {' '.join(spec.tokens)}.",
+                lines=("The guided form was closed before the command ran.",),
+                action_id=action_id,
+            )
             return
-        self._submit_command(CommandSubmission(spec=spec, params=params, text=text))
+        self._submit_command(
+            CommandSubmission(spec=spec, params=params, text=text),
+            action_id,
+        )
 
-    def _submit_command(self, submission: CommandSubmission) -> None:
-        self._write_line(f"> {submission.text}")
+    def _submit_command(self, submission: CommandSubmission, action_id: int) -> None:
         self.current_command = submission.text
+        self._active_action_id = action_id
         self._set_busy(True)
         self.active_token = CancellationToken()
-        self.active_task = asyncio.create_task(self._run_submission(submission))
+        self.active_task = asyncio.create_task(self._run_submission(submission, action_id))
         self._update_sidebar()
 
-    async def _run_submission(self, submission: CommandSubmission) -> None:
+    async def _run_submission(self, submission: CommandSubmission, action_id: int) -> None:
         try:
             result = await asyncio.to_thread(
                 execute_command,
@@ -528,69 +594,188 @@ class TradebotShellApp(App[None]):
                 emitter=lambda event: self.call_from_thread(self._handle_execution_event, event),
                 cancellation_token=self.active_token,
             )
-            self._render_command_result(submission.spec.id, result)
+            self._render_command_result(submission.spec.id, result, action_id)
         except Exception as exc:
-            self._write_line(str(exc))
+            self._append_entry(
+                "error",
+                "The command ended with a problem.",
+                lines=(str(exc),),
+                action_id=action_id,
+            )
         finally:
             self.active_task = None
             self.active_token = None
+            self._active_action_id = 0
             self.current_command = "idle"
             self._set_busy(False)
             self._update_sidebar()
 
     def _handle_execution_event(self, event: ExecutionEvent) -> None:
-        self._write_line(self._format_event(event))
+        entry_kind, title, lines = self._format_event_entry(event)
+        self._append_entry(
+            entry_kind,
+            title,
+            lines=tuple(lines),
+            action_id=self._active_action_id,
+        )
 
-    def _render_command_result(self, command_id: str, result: object) -> None:
+    def _render_command_result(self, command_id: str, result: object, action_id: int) -> None:
         if command_id == "logs_tail" and isinstance(result, list):
-            for line in result:
-                self._write_line(str(line))
+            self._append_entry(
+                "result",
+                "Recent durable logs.",
+                lines=tuple(str(line) for line in result),
+                action_id=action_id,
+            )
             return
         if command_id == "report_list" and isinstance(result, list):
+            lines: list[str] = []
             for entry in result[:25]:
                 path = entry.get("path", "")
                 category = entry.get("category", "")
-                self._write_line(f"[{category}] {path}")
+                lines.append(f"{category}: {path}")
             if len(result) > 25:
-                self._write_line(f"... {len(result) - 25} more entries")
+                lines.append(f"{len(result) - 25} more entries are available.")
+            self._append_entry(
+                "result",
+                "Saved reports and artifacts.",
+                lines=tuple(lines),
+                action_id=action_id,
+            )
             return
         if isinstance(result, str):
-            self._write_line(result)
+            self._append_entry(
+                "result",
+                "Command finished.",
+                lines=(result,),
+                action_id=action_id,
+            )
             return
         if isinstance(result, RuntimeRunResult):
-            self._write_line(
-                f"Completed {result.completed_cycles} cycle(s) in {result.mode} mode."
+            self._append_entry(
+                "result",
+                "Runtime finished.",
+                lines=(
+                    f"Mode: {result.mode}",
+                    f"Completed cycles: {result.completed_cycles}",
+                ),
+                action_id=action_id,
             )
             return
         if isinstance(result, dict):
-            self._write_line(self._format_mapping(result))
+            self._append_entry(
+                "result",
+                "Command finished.",
+                lines=tuple(self._format_mapping_lines(result)),
+                action_id=action_id,
+            )
             return
-        self._write_line(json.dumps(result, indent=2, sort_keys=True))
+        self._append_entry(
+            "result",
+            "Command finished.",
+            lines=tuple(json.dumps(result, indent=2, sort_keys=True).splitlines()),
+            action_id=action_id,
+        )
 
     def _render_help(self) -> None:
-        self._write_line("Available commands:")
+        lines = ["Available commands:"]
         for spec in all_command_specs():
-            self._write_line(f"  {' '.join(spec.tokens)}  - {spec.description}")
-        self._write_line("Shell commands: help, clear, exit")
+            lines.append(f"{' '.join(spec.tokens)}: {spec.description}")
+        lines.append("Shell commands: help, clear, exit")
+        self._append_entry("help", "How to use the shell.", lines=tuple(lines))
 
     def _refresh_command_suggestions(self, prefix: str) -> None:
         option_list = self._main_screen().query_one("#command-suggestions", OptionList)
         option_list.clear_options()
+        normalized = prefix.strip()
+        option_list.display = False
+        if not normalized:
+            return
         matches = command_choices(prefix)
+        if not matches:
+            return
         option_list.add_options([Option(match, id=match) for match in matches[:12]])
+        option_list.display = True
 
     def _set_busy(self, busy: bool) -> None:
         input_widget = self._main_screen().query_one("#command-input", Input)
         suggestions = self._main_screen().query_one("#command-suggestions", OptionList)
         input_widget.disabled = busy
         suggestions.disabled = busy
-        for button in self._main_screen().query(".quick-action-button"):
-            button.disabled = busy
+        suggestions.display = False if busy else suggestions.display
         if not busy:
             input_widget.focus()
 
-    def _write_line(self, line: str) -> None:
-        self._main_screen().query_one("#transcript", RichLog).write(line)
+    def _append_entry(
+        self,
+        kind: str,
+        title: str,
+        *,
+        lines: tuple[str, ...] = (),
+        action_id: int = 0,
+    ) -> None:
+        entry = TranscriptEntry(kind=kind, title=title, lines=lines, action_id=action_id)
+        self._transcript_entries.append(entry)
+        if len(self._transcript_entries) > TRANSCRIPT_LIMIT:
+            self._transcript_entries = self._transcript_entries[-TRANSCRIPT_LIMIT:]
+        if action_id > 0:
+            self._latest_action_id = action_id
+        self._rerender_transcript()
+
+    def _record_shell_command(self, text: str) -> int:
+        action_id = self._next_action_id()
+        self._append_entry(
+            "command",
+            "Running command.",
+            lines=(text,),
+            action_id=action_id,
+        )
+        return action_id
+
+    def _rerender_transcript(self) -> None:
+        transcript = self._main_screen().query_one("#transcript", RichLog)
+        transcript.clear()
+        visible_entries = self._transcript_entries[-TRANSCRIPT_LIMIT:]
+        for index, entry in enumerate(visible_entries):
+            title_style, body_style, label = self._entry_display(entry)
+            transcript.write(
+                f"[{title_style}]{rich_escape(label)}:[/] "
+                f"[{title_style}]{rich_escape(entry.title)}[/]"
+            )
+            for line in entry.lines:
+                transcript.write(f"[{body_style}]  {rich_escape(line)}[/]")
+            if index != len(visible_entries) - 1:
+                transcript.write("")
+
+    def _entry_display(self, entry: TranscriptEntry) -> tuple[str, str, str]:
+        is_latest = entry.action_id > 0 and entry.action_id == self._latest_action_id
+        if entry.kind == "command":
+            return self._entry_theme(is_latest, "Latest command", "Earlier command")
+        if entry.kind == "result":
+            return self._entry_theme(is_latest, "Latest result", "Earlier result")
+        if entry.kind == "warning":
+            return self._entry_theme(is_latest, "Latest note", "Earlier note")
+        if entry.kind == "error":
+            return self._entry_theme(is_latest, "Latest problem", "Earlier problem")
+        if entry.kind == "help":
+            return ("bold #ddd6fe", "#ede9fe", "Shell help")
+        if entry.kind == "system":
+            return ("bold #c4b5fd", "#ddd6fe", "Shell")
+        return self._entry_theme(is_latest, "Latest update", "Earlier update")
+
+    def _entry_theme(
+        self,
+        is_latest: bool,
+        latest_label: str,
+        earlier_label: str,
+    ) -> tuple[str, str, str]:
+        if is_latest:
+            return ("bold #c4b5fd", "#f5f3ff", latest_label)
+        return ("#7c6b9d", "#a99ac3", earlier_label)
+
+    def _next_action_id(self) -> int:
+        self._latest_action_id += 1
+        return self._latest_action_id
 
     def _update_sidebar(self) -> None:
         summary = safe_config_summary()
@@ -599,17 +784,17 @@ class TradebotShellApp(App[None]):
         runtime_mode = summary.get("runtime_mode", "n/a")
         active_model = self._active_model_id()
         self._main_screen().query_one("#sidebar-home", Static).update(
-            f"[Home]\n{home}"
+            f"[Home]\nLocation: {home}"
         )
         self._main_screen().query_one("#sidebar-config", Static).update(
-            f"[Config]\n{config_path}"
+            f"[Config]\nActive file: {config_path}"
         )
         self._main_screen().query_one("#sidebar-runtime", Static).update(
-            f"[Mode]\n{runtime_mode}\n\n[Active model]\n{active_model}"
+            f"[Runtime]\nMode: {runtime_mode}\nActive model: {active_model}"
         )
         self._main_screen().query_one("#sidebar-context", Static).update(
-            f"[Context]\n{self.current_command}\n\n[State]\n"
-            f"{'busy' if self.active_task else 'idle'}"
+            f"[Session]\nCurrent command: {self.current_command}\n"
+            f"State: {'running' if self.active_task else 'idle'}"
         )
 
     def _active_model_id(self) -> str:
@@ -626,27 +811,32 @@ class TradebotShellApp(App[None]):
                 return str(model_id)
         return "n/a"
 
-    def _format_event(self, event: ExecutionEvent) -> str:
+    def _format_event_entry(self, event: ExecutionEvent) -> tuple[str, str, list[str]]:
         if event.kind == "runtime_snapshot":
-            return self._format_runtime_snapshot(event.payload)
+            return (
+                "update",
+                "Runtime cycle completed.",
+                self._format_runtime_snapshot_lines(event.payload),
+            )
         if event.kind == "alert":
-            return self._format_alert(event.payload)
+            severity = str(event.payload.get("severity", "notice")).lower()
+            kind = "error" if severity in {"error", "critical", "high"} else "warning"
+            return (kind, "Trading alert.", self._format_alert_lines(event.payload))
         if event.kind == "status":
-            return f"STATUS  {event.message}  {self._format_mapping(event.payload)}"
+            return ("update", event.message, self._format_mapping_lines(event.payload))
         if event.kind == "artifact_written":
-            return f"SAVED   {event.message}  {self._format_mapping(event.payload)}"
+            return ("result", event.message, self._format_mapping_lines(event.payload))
         if event.kind == "summary":
-            suffix = self._format_mapping(event.payload)
-            return f"SUMMARY {event.message}{'' if not suffix else f'  {suffix}'}"
+            return ("result", event.message, self._format_mapping_lines(event.payload))
         if event.kind == "warning":
-            return f"WARNING {event.message}"
+            return ("warning", "Attention needed.", [event.message])
         if event.kind == "error":
-            return f"ERROR   {event.message}"
+            return ("error", "Command reported a problem.", [event.message])
         if event.kind == "step_completed":
-            return f"DONE    {event.message}"
-        return f"START   {event.message}"
+            return ("result", event.message, self._format_mapping_lines(event.payload))
+        return ("update", event.message, self._format_mapping_lines(event.payload))
 
-    def _format_runtime_snapshot(self, payload: dict[str, object]) -> str:
+    def _format_runtime_snapshot_lines(self, payload: dict[str, object]) -> list[str]:
         mode = payload.get("mode", "n/a")
         cycle = payload.get("cycle", "n/a")
         status = payload.get("status", "n/a")
@@ -659,23 +849,63 @@ class TradebotShellApp(App[None]):
             )
         else:
             holdings_value = "none"
-        return (
-            f"RUN     mode={mode} cycle={cycle} status={status} "
-            f"equity={equity} cash={cash} holdings={holdings_value}"
-        )
+        return [
+            f"Mode: {mode}",
+            f"Cycle: {cycle}",
+            f"Status: {status}",
+            f"Equity USD: {equity}",
+            f"Cash USD: {cash}",
+            f"Holdings: {holdings_value}",
+        ]
 
-    def _format_alert(self, payload: dict[str, object]) -> str:
-        return (
-            f"ALERT   severity={payload.get('severity', 'n/a')} "
-            f"class={payload.get('event_class', 'n/a')} "
-            f"message={payload.get('message', 'n/a')}"
-        )
+    def _format_alert_lines(self, payload: dict[str, object]) -> list[str]:
+        return [
+            f"Severity: {payload.get('severity', 'n/a')}",
+            f"Class: {payload.get('event_class', 'n/a')}",
+            f"Message: {payload.get('message', 'n/a')}",
+        ]
 
-    def _format_mapping(self, payload: dict[str, object]) -> str:
-        flat_parts: list[str] = []
+    def _format_mapping_lines(
+        self,
+        payload: dict[str, object],
+        *,
+        indent: str = "",
+    ) -> list[str]:
+        lines: list[str] = []
         for key, value in payload.items():
-            if isinstance(value, str | int | float | bool) or value is None:
-                flat_parts.append(f"{key}={value}")
-        if flat_parts:
-            return ", ".join(flat_parts)
-        return json.dumps(payload, sort_keys=True)
+            label = f"{indent}{key.replace('_', ' ').title()}"
+            if isinstance(value, dict):
+                if not value:
+                    lines.append(f"{label}: none")
+                    continue
+                lines.append(f"{label}:")
+                lines.extend(self._format_mapping_lines(value, indent=f"{indent}  "))
+                continue
+            if isinstance(value, list):
+                if not value:
+                    lines.append(f"{label}: none")
+                    continue
+                if all(not isinstance(item, dict | list | tuple | set) for item in value):
+                    rendered = ", ".join(self._format_scalar(item) for item in value)
+                    lines.append(f"{label}: {rendered}")
+                    continue
+                lines.append(f"{label}:")
+                for item in value[:5]:
+                    if isinstance(item, dict):
+                        lines.extend(self._format_mapping_lines(item, indent=f"{indent}    "))
+                    else:
+                        lines.append(f"{indent}  - {self._format_scalar(item)}")
+                if len(value) > 5:
+                    lines.append(f"{indent}  - {len(value) - 5} more")
+                continue
+            lines.append(f"{label}: {self._format_scalar(value)}")
+        if lines:
+            return lines
+        return json.dumps(payload, sort_keys=True).splitlines()
+
+    def _format_scalar(self, value: object) -> str:
+        if value is None:
+            return "none"
+        if isinstance(value, bool):
+            return "yes" if value else "no"
+        return str(value)

@@ -186,7 +186,7 @@ Phase 8 implements the documented CLI surface through operator-oriented services
 Phase 11 extends the CLI subsystem with:
 
 - a shared command registry used by both direct CLI entrypoints and the interactive shell
-- a Textual-based terminal shell with header, transcript, input bar, and operator side panels
+- a Textual-based terminal shell with a centered header, vertically stacked operator context panels, a readable transcript, and a bottom input bar with inline suggestions
 - guided field-selection and completion widgets for known-choice parameters
 - a structured command-event layer that presents readable shell output without replacing durable logs
 - cooperative cancellation support for long-running command execution

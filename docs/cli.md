@@ -265,16 +265,15 @@ This command must:
 
 The interactive shell must:
 
-- render a full-screen terminal UI with header, transcript, side panels, and bottom command input
+- render a full-screen terminal UI with a centered header, stacked operator context panels, a readable transcript, and a bottom command input
 - accept shell-native commands such as `help`, `clear`, and `exit`
 - accept direct command phrases such as `model train`, `data source`, and `run`
 - open guided parameter selection when a command requires or benefits from option inputs
-- show dropdown-style suggestions for matching commands and known-choice fields
+- show dropdown-style suggestions for matching commands and known-choice fields only after the operator starts typing, with the suggestion list rendered below the input box
 - execute a clicked suggested command immediately, opening guided parameter selection when required
-- expose clickable quick-action commands for common operator flows directly in the shell layout
 - disable new command entry while one command is executing
 - use `Ctrl-C` to cancel the active command and return the shell to idle instead of exiting the whole application
-- render structured execution updates in readable transcript form rather than raw JSON logs
+- render structured execution updates in readable transcript form rather than raw JSON logs, with the latest command and result visually distinguished from older history
 
 ### Shared command layer
 
