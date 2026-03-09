@@ -28,10 +28,9 @@ tradebot
 
 On first launch, `tradebot` creates the default application home under `~/.tradebot/`.
 
-## Documentation
+## Docs
 
-Start with the project source of truth in [`docs/README.md`](docs/README.md).
+- [Crypto Trade Bot Documentation](docs/README.md)
+- [Commands](docs/shell-commands.md)
 
-## Commands
-
-See [`docs/commands.md`](docs/commands.md) for the concise command reference, and [`docs/cli.md`](docs/cli.md) for the full CLI specification.
+This repository is licensed under the [MIT License](LICENSE).
