@@ -124,6 +124,8 @@ This command must:
 ### Research and models
 
 - `tradebot features build`: build derived features.
+- `tradebot research sweep`: run the staged research evaluation harness.
+- `tradebot research report`: inspect the latest or a specific research sweep report.
 - `tradebot model train`: train the ML model.
 - `tradebot model validate`: run validation for a model candidate.
 - `tradebot model promote`: promote a model artifact after validation gates pass.
@@ -167,6 +169,32 @@ This command must:
 - reuse cached datasets when the deterministic `dataset_id` already exists unless a force rebuild is requested
 - write the dataset and manifest under `artifacts/features/<dataset_id>/`
 - prepare a matching experiment root under `artifacts/experiments/<dataset_id>/`
+
+### `tradebot research sweep`
+
+This command must:
+
+- support the documented preset surface `tradebot research sweep --preset broad_staged [--resume] [--max-workers N] [--limit N]`
+- keep the research sweep separate from live and promoted-model behavior
+- compare the documented dataset tracks:
+  - `official_fixed_10`
+  - `subset_9_no_bnb`
+  - `subset_7_pre_2021`
+  - `dynamic_universe_kraken_only`
+- evaluate rule-only and hybrid candidates across staged ablations rather than one fixed configuration
+- use dynamic-universe rows without synthesizing pre-listing prices
+- write sweep artifacts under `artifacts/experiments/<sweep_id>/`
+- persist `manifest.json`, `results.csv`, `leaderboard.json`, and `comparisons/`
+- keep sweep identity deterministic from the preset and effective config so `--resume` continues the same sweep
+
+### `tradebot research report`
+
+This command must:
+
+- print the latest research sweep report by default
+- support loading a specific `sweep_id` when provided
+- surface the ranked rule-only, hybrid, and shortlist candidates
+- reference the stored comparison artifacts for yearly-return and benchmark detail
 
 ### Backtesting and simulation
 

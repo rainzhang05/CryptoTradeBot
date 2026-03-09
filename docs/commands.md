@@ -31,6 +31,8 @@ For the full authoritative behavior, flags, and requirements, see [`cli.md`](./c
 ## Research And Models
 
 - `tradebot features build`: build or reuse the deterministic feature dataset.
+- `tradebot research sweep [--preset broad_staged] [--resume] [--max-workers N] [--limit N]`: run the staged research evaluation harness.
+- `tradebot research report [sweep_id]`: show the latest or a specific research sweep report.
 - `tradebot model train`: train the expected-return, downside-risk, and sell-risk models.
 - `tradebot model validate`: evaluate whether a model artifact is eligible for promotion.
 - `tradebot model promote`: promote a validated model only after it beats the rule-only Kraken backtest baseline for the same dataset.

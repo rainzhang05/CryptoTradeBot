@@ -28,6 +28,7 @@ from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
 from tradebot.model.service import ModelService
 from tradebot.operations import OperationsService
+from tradebot.research.experiments import ResearchSweepService
 from tradebot.research.service import ResearchService
 from tradebot.runtime import RuntimeService, RuntimeSnapshot
 
@@ -141,6 +142,11 @@ def _artifacts_dir() -> Path:
     return root / "artifacts"
 
 
+def _experiments_dir() -> Path:
+    root = _command_root()
+    return root / "artifacts" / "experiments"
+
+
 def _list_model_ids() -> list[str]:
     directory = _models_dir()
     if not directory.exists():
@@ -164,6 +170,27 @@ def _list_report_sources() -> list[str]:
         for path in directory.rglob("*")
         if path.is_file()
     )
+
+
+def _list_research_sweep_ids() -> list[str]:
+    directory = _experiments_dir()
+    if not directory.exists():
+        return []
+    sweep_ids: list[str] = []
+    for path in sorted(directory.iterdir()):
+        if not path.is_dir():
+            continue
+        manifest_path = path / "manifest.json"
+        results_path = path / "results.csv"
+        if not manifest_path.exists() or not results_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if "sweep_id" in manifest:
+            sweep_ids.append(path.name)
+    return sweep_ids
 
 
 def _load_app_config() -> AppConfig:
@@ -648,6 +675,44 @@ def handle_features_build(
     return summary
 
 
+def handle_research_sweep(
+    params: dict[str, object],
+    *,
+    emitter: EventEmitter | None = None,
+    cancellation_token: CancellationToken | None = None,
+) -> dict[str, object]:
+    del cancellation_token
+    config = _load_app_config()
+    preset = str(params.get("preset", "broad_staged"))
+    resume = bool(params.get("resume", False))
+    max_workers = int(str(params.get("max_workers", 1)))
+    limit = params.get("limit")
+    summary = ResearchSweepService(config).run_sweep(
+        preset=preset,
+        resume=resume,
+        max_workers=max_workers,
+        limit=(None if limit in {None, ""} else int(str(limit))),
+    )
+    _emit(emitter, "summary", "Research sweep finished.", summary)
+    return summary
+
+
+def handle_research_report(
+    params: dict[str, object],
+    *,
+    emitter: EventEmitter | None = None,
+    cancellation_token: CancellationToken | None = None,
+) -> dict[str, object]:
+    del cancellation_token
+    config = _load_app_config()
+    sweep_id = params.get("sweep_id")
+    summary = ResearchSweepService(config).load_report(
+        sweep_id=(None if sweep_id in {None, ""} else str(sweep_id))
+    )
+    _emit(emitter, "summary", "Loaded research sweep report.", summary)
+    return summary
+
+
 def handle_model_train(
     params: dict[str, object],
     *,
@@ -957,6 +1022,53 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
+        "research_sweep",
+        ("research", "sweep"),
+        "Run a staged research sweep across datasets, rules, and ML variants.",
+        fields=(
+            CommandFieldSpec(
+                name="preset",
+                label="Preset",
+                flags=("--preset",),
+                default="broad_staged",
+                choices=("broad_staged",),
+            ),
+            CommandFieldSpec(
+                name="resume",
+                label="Resume",
+                flags=("--resume",),
+                value_type="bool",
+                default=False,
+            ),
+            CommandFieldSpec(
+                name="max_workers",
+                label="Max workers",
+                flags=("--max-workers",),
+                value_type="int",
+                default=1,
+            ),
+            CommandFieldSpec(
+                name="limit",
+                label="Experiment limit",
+                flags=("--limit",),
+                value_type="int",
+            ),
+        ),
+    ),
+    CommandSpec(
+        "research_report",
+        ("research", "report"),
+        "Print the latest or a specific research sweep report.",
+        fields=(
+            CommandFieldSpec(
+                name="sweep_id",
+                label="Sweep id",
+                kind="argument",
+                choice_provider=_list_research_sweep_ids,
+            ),
+        ),
+    ),
+    CommandSpec(
         "model_train",
         ("model", "train"),
         "Train the Phase 6 ML artifact with walk-forward validation.",
@@ -1062,6 +1174,8 @@ COMMAND_HANDLERS: dict[str, Callable[..., object]] = {
     "data_complete": handle_data_complete,
     "data_prune_raw": handle_data_prune_raw,
     "features_build": handle_features_build,
+    "research_sweep": handle_research_sweep,
+    "research_report": handle_research_report,
     "model_train": handle_model_train,
     "model_validate": handle_model_validate,
     "model_promote": handle_model_promote,

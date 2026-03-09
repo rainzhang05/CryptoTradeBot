@@ -70,6 +70,9 @@ Responsibilities:
 
 Phase 3 stores derived datasets under `artifacts/features/<dataset_id>/` and reserves `artifacts/experiments/<dataset_id>/` for experiments that consume that dataset.
 
+The research harness may also write staged sweep artifacts under `artifacts/experiments/<sweep_id>/`.
+That layer is research-only: it can vary dataset policy, rule-shell toggles, label settings, model families, and hybrid integration weights without changing live runtime behavior or the promoted-model pointer.
+
 ### 4. ML subsystem
 
 Responsibilities:
@@ -138,6 +141,7 @@ Responsibilities:
 Phase 4 implements this as a deterministic daily bar engine that:
 
 - consumes Phase 3 feature-store rows derived from canonical Kraken daily candles
+- supports research-only dataset-track and holdout-window overrides for staged evaluation sweeps
 - generates target weights from the shared strategy path
 - executes fills on the next aligned daily bar with configured fee and slippage assumptions
 - writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`

@@ -38,9 +38,10 @@ Required for:
 Required for:
 
 - deterministic strategy outputs on fixture datasets
+- dynamic-universe feature generation and active-universe breadth handling
 - simulate versus expected-fill behavior
 - model inference contract stability
-- report generation consistency
+- research sweep ranking, resume behavior, and report generation consistency
 
 ### End-to-end or smoke tests
 

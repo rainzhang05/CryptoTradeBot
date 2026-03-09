@@ -21,6 +21,7 @@ app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
+research_app = typer.Typer(help="Run staged research sweeps and inspect reports.")
 model_app = typer.Typer(help="Train, validate, and promote ML model artifacts.")
 backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
 email_app = typer.Typer(help="Manage alert email configuration and SMTP checks.")
@@ -31,6 +32,7 @@ ASSETS_OPTION = typer.Option(default=None)
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
+app.add_typer(research_app, name="research")
 app.add_typer(model_app, name="model")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(email_app, name="email")
@@ -315,6 +317,60 @@ def features_build(
         render_direct_output(
             "features_build",
             _invoke_direct("features_build", {"assets": assets, "force": force}),
+        )
+    )
+
+
+@research_app.command("sweep")
+def research_sweep(
+    preset: str = typer.Option(
+        default="broad_staged",
+        help="Named staged research sweep preset to execute.",
+    ),
+    resume: bool = typer.Option(
+        default=False,
+        help="Resume a previously started deterministic sweep id for this preset/config.",
+    ),
+    max_workers: int = typer.Option(
+        default=1,
+        min=1,
+        help="Requested research worker count.",
+    ),
+    limit: int | None = typer.Option(
+        default=None,
+        min=1,
+        help="Optional cap on the number of experiments to execute this run.",
+    ),
+) -> None:
+    """Execute a staged research sweep across dataset, rule, and ML combinations."""
+    typer.echo(
+        render_direct_output(
+            "research_sweep",
+            _invoke_direct(
+                "research_sweep",
+                {
+                    "preset": preset,
+                    "resume": resume,
+                    "max_workers": max_workers,
+                    "limit": limit,
+                },
+            ),
+        )
+    )
+
+
+@research_app.command("report")
+def research_report(
+    sweep_id: str | None = typer.Argument(
+        default=None,
+        help="Optional sweep identifier. Defaults to the latest generated sweep report.",
+    ),
+) -> None:
+    """Print a stored research sweep report."""
+    typer.echo(
+        render_direct_output(
+            "research_report",
+            _invoke_direct("research_report", {"sweep_id": sweep_id}),
         )
     )
 
