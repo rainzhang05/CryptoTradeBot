@@ -182,3 +182,39 @@ def test_model_promote_fails_cleanly_when_validation_gates_fail(
 
     assert promote_result.exit_code == 1
     assert "does not satisfy promotion rules" in promote_result.stderr
+
+
+def test_model_promote_fails_cleanly_when_hybrid_matches_rule_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+    monkeypatch.setattr(
+        ModelService,
+        "_promotion_backtest_comparison",
+        lambda self, *, model_id, assets: {
+            "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
+            "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.02),
+            "incremental_total_return": 0.0,
+        },
+    )
+
+    train_result = runner.invoke(app, ["model", "train", "--assets", "BTC", "--assets", "ETH"])
+    assert train_result.exit_code == 0
+
+    promote_result = runner.invoke(app, ["model", "promote"])
+
+    assert promote_result.exit_code == 1
+    assert "does not improve on the rule-only baseline" in promote_result.stderr

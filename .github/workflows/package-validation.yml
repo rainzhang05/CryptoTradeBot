@@ -192,7 +192,12 @@ jobs:
           PY
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model train --assets BTC --assets ETH
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model validate
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model promote
+          if ! BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model promote > .ci-release/model-promote.log 2>&1; then
+            cat .ci-release/model-promote.log
+            grep -q "does not improve on the rule-only baseline" .ci-release/model-promote.log
+          else
+            cat .ci-release/model-promote.log
+          fi
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest run --assets BTC --assets ETH
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest report
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot run --mode simulate --max-cycles 1
