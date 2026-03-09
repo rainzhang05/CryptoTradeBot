@@ -489,7 +489,7 @@ class TradebotShellApp(App[None]):
         if event.input.id != "command-input":
             return
         if self.active_task is not None:
-            self._write_line("Another command is already running.")
+            self._append_busy_warning()
             return
         text = event.value.strip()
         if not text:
@@ -501,7 +501,7 @@ class TradebotShellApp(App[None]):
         if event.option_list.id != "command-suggestions":
             return
         if self.active_task is not None:
-            self._write_line("Another command is already running.")
+            self._append_busy_warning()
             return
         text = _stringify_prompt(event.option.prompt)
         self._main_screen().query_one("#command-input", Input).value = ""
@@ -705,6 +705,14 @@ class TradebotShellApp(App[None]):
         suggestions.display = False if busy else suggestions.display
         if not busy:
             input_widget.focus()
+
+    def _append_busy_warning(self) -> None:
+        self._append_entry(
+            "warning",
+            "Another command is already running.",
+            lines=("Press Ctrl+C to stop the active command first.",),
+            action_id=self._active_action_id,
+        )
 
     def _append_entry(
         self,

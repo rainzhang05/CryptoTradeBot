@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -179,3 +181,57 @@ async def test_shell_clicked_suggestion_runs_command(
         assert "doctor" in observed_commands
         assert "Running command." in _transcript_text(app)
         assert "doctor" in _transcript_text(app)
+
+
+@pytest.mark.anyio
+async def test_shell_rejects_new_commands_while_busy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "tradebot-home"
+    initialize_app_home(home=home)
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+
+    observed_commands: list[str] = []
+
+    def fake_execute_command(
+        command_id: str,
+        params=None,
+        *,
+        emitter=None,
+        cancellation_token=None,
+    ):
+        del params, emitter, cancellation_token
+        observed_commands.append(command_id)
+        return {"ok": True}
+
+    monkeypatch.setattr(shell_module, "execute_command", fake_execute_command)
+
+    app = TradebotShellApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        input_widget = app.screen.query_one("#command-input", Input)
+        input_widget.value = "doctor"
+        await pilot.pause()
+        observed_commands.clear()
+
+        busy_task = asyncio.create_task(asyncio.sleep(60))
+        app.active_task = busy_task
+
+        app.on_input_submitted(Input.Submitted(input_widget, input_widget.value))
+        await pilot.pause()
+
+        suggestions = app.screen.query_one("#command-suggestions", OptionList)
+        app.on_option_list_option_selected(OptionList.OptionSelected(suggestions, 0))
+        await pilot.pause()
+
+        app.active_task = None
+        busy_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await busy_task
+
+        transcript = _transcript_text(app)
+        assert observed_commands == []
+        assert transcript.count("Another command is already running.") == 2
+        assert "Press Ctrl+C to stop the active command first." in transcript
