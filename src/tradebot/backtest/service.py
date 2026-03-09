@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -36,6 +37,7 @@ from tradebot.data.storage import canonical_candle_file, write_json
 from tradebot.logging_config import get_logger
 from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
+from tradebot.strategy.models import ResearchStrategyProfile
 from tradebot.strategy.service import StrategyEngine
 
 
@@ -57,6 +59,10 @@ class BacktestService:
         force_features: bool = False,
         model_id: str | None = None,
         use_active_model: bool = True,
+        dataset_track: str | None = None,
+        research_profile: ResearchStrategyProfile | None = None,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
         cancellation_token: CancellationToken | None = None,
         progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> BacktestRunSummary:
@@ -69,11 +75,15 @@ class BacktestService:
                 "force_features": force_features,
                 "model_id": model_id,
                 "use_active_model": use_active_model,
+                "dataset_track": dataset_track,
+                "start_timestamp": start_timestamp,
+                "end_timestamp": end_timestamp,
             },
         )
         feature_store = self.research_service.build_feature_store(
             assets=assets,
             force=force_features,
+            dataset_track=dataset_track,
             cancellation_token=cancellation_token,
         )
         if feature_store.row_count <= 0:
@@ -84,18 +94,23 @@ class BacktestService:
         applied_model_id: str | None = None
         selected_assets = tuple(feature_store.selected_assets)
         bars_by_asset = self._load_daily_bars(selected_assets)
-        aligned_timestamps = self._common_timestamps(bars_by_asset)
+        evaluation_timestamps = self._evaluation_timestamps(
+            rows_by_timestamp,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+        )
         next_timestamp_map = {
-            aligned_timestamps[index]: aligned_timestamps[index + 1]
-            for index in range(len(aligned_timestamps) - 1)
+            evaluation_timestamps[index]: evaluation_timestamps[index + 1]
+            for index in range(len(evaluation_timestamps) - 1)
         }
+        strategy_engine = StrategyEngine(self.config, research_profile)
 
         portfolio = PortfolioState(cash_usd=self.config.backtest.initial_cash_usd)
         fills: list[FillEvent] = []
         decisions: list[DecisionSnapshot] = []
         equity_curve: list[EquityPoint] = []
 
-        for timestamp in sorted(rows_by_timestamp):
+        for timestamp in evaluation_timestamps:
             if cancellation_token is not None:
                 cancellation_token.raise_if_cancelled()
             execution_timestamp = next_timestamp_map.get(timestamp)
@@ -121,13 +136,15 @@ class BacktestService:
                 )
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
-            if (
-                len(execution_bars) != len(selected_assets)
-                or len(signal_bars) != len(selected_assets)
+            if not self._has_required_bars(
+                rows_for_timestamp=rows_for_timestamp,
+                portfolio=portfolio,
+                signal_bars=signal_bars,
+                execution_bars=execution_bars,
             ):
                 continue
 
-            strategy_decision = self.strategy_engine.evaluate(
+            strategy_decision = strategy_engine.evaluate(
                 timestamp=timestamp,
                 rows_by_asset=rows_for_timestamp,
                 portfolio=portfolio,
@@ -180,7 +197,7 @@ class BacktestService:
         if not equity_curve:
             raise ValueError("Backtest did not produce any executable decision points")
 
-        run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+        run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
         report_path = backtest_report_file(self.paths.artifacts_dir, run_id)
         fills_path = backtest_fills_file(self.paths.artifacts_dir, run_id)
         equity_path = backtest_equity_curve_file(self.paths.artifacts_dir, run_id)
@@ -227,6 +244,17 @@ class BacktestService:
 
         max_drawdown = self._max_drawdown(equity_curve)
         final_equity = equity_curve[-1].equity_usd
+        metrics = self._performance_metrics(
+            initial_cash=self.config.backtest.initial_cash_usd,
+            equity_curve=equity_curve,
+            fills=fills,
+        )
+        yearly_returns = self._yearly_returns(equity_curve, decisions, fills)
+        benchmarks = self._benchmark_summary(
+            bars_by_asset=bars_by_asset,
+            start_timestamp=equity_curve[0].timestamp,
+            end_timestamp=equity_curve[-1].timestamp,
+        )
         summary = BacktestRunSummary(
             run_id=run_id,
             report_file=str(report_path),
@@ -240,11 +268,41 @@ class BacktestService:
             total_return=(final_equity / self.config.backtest.initial_cash_usd) - 1,
             max_drawdown=max_drawdown,
             total_fees_usd=portfolio.fees_paid_usd,
+            start_timestamp=equity_curve[0].timestamp,
+            end_timestamp=equity_curve[-1].timestamp,
+            cagr=cast(float | None, metrics["cagr"]),
+            calmar_ratio=cast(float | None, metrics["calmar_ratio"]),
+            annualized_volatility=cast(float | None, metrics["annualized_volatility"]),
+            daily_sharpe=cast(float | None, metrics["daily_sharpe"]),
+            turnover=cast(float | None, metrics["turnover"]),
+            fee_to_gross_pnl_ratio=cast(float | None, metrics["fee_to_gross_pnl_ratio"]),
+            days_invested=cast(int | None, metrics["days_invested"]),
+            trades_per_year=cast(float | None, metrics["trades_per_year"]),
         )
         payload = summary.to_dict() | {
             "portfolio": portfolio.to_dict(),
             "dataset_file": feature_store.dataset_file,
             "model_id": applied_model_id,
+            "dataset_track": feature_store.dataset_track,
+            "metrics": metrics,
+            "yearly_returns": yearly_returns,
+            "benchmarks": benchmarks,
+            "period": {
+                "start_timestamp": equity_curve[0].timestamp,
+                "end_timestamp": equity_curve[-1].timestamp,
+                "start_date": datetime.fromtimestamp(
+                    equity_curve[0].timestamp,
+                    tz=UTC,
+                ).date().isoformat(),
+                "end_date": datetime.fromtimestamp(
+                    equity_curve[-1].timestamp,
+                    tz=UTC,
+                ).date().isoformat(),
+                "years": metrics["period_years"],
+            },
+            "research_profile": (
+                None if research_profile is None else research_profile.to_dict()
+            ),
         }
         write_json(report_path, payload)
         write_json(latest_backtest_report_file(self.paths.artifacts_dir), payload)
@@ -467,6 +525,34 @@ class BacktestService:
             if timestamp in bars
         }
 
+    def _evaluation_timestamps(
+        self,
+        rows_by_timestamp: dict[int, dict[str, dict[str, object]]],
+        *,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> list[int]:
+        timestamps = sorted(rows_by_timestamp)
+        if start_timestamp is not None:
+            timestamps = [timestamp for timestamp in timestamps if timestamp >= start_timestamp]
+        if end_timestamp is not None:
+            timestamps = [timestamp for timestamp in timestamps if timestamp <= end_timestamp]
+        return timestamps
+
+    def _has_required_bars(
+        self,
+        *,
+        rows_for_timestamp: dict[str, dict[str, object]],
+        portfolio: PortfolioState,
+        signal_bars: dict[str, Candle],
+        execution_bars: dict[str, Candle],
+    ) -> bool:
+        required_assets = set(rows_for_timestamp) | set(portfolio.positions)
+        return all(
+            asset in signal_bars and asset in execution_bars
+            for asset in required_assets
+        )
+
     def _common_timestamps(self, bars_by_asset: dict[str, dict[int, Candle]]) -> list[int]:
         timestamp_sets = [set(bars) for bars in bars_by_asset.values() if bars]
         if not timestamp_sets:
@@ -497,6 +583,192 @@ class BacktestService:
             "asset_actions_json": json.dumps(decision.asset_actions, sort_keys=True),
             "asset_reasons_json": json.dumps(decision.asset_reasons, sort_keys=True),
         }
+
+    def _performance_metrics(
+        self,
+        *,
+        initial_cash: float,
+        equity_curve: list[EquityPoint],
+        fills: list[FillEvent],
+    ) -> dict[str, object]:
+        if not equity_curve:
+            return {
+                "period_years": None,
+                "cagr": None,
+                "calmar_ratio": None,
+                "annualized_volatility": None,
+                "daily_sharpe": None,
+                "turnover": None,
+                "fee_to_gross_pnl_ratio": None,
+                "days_invested": None,
+                "trades_per_year": None,
+            }
+
+        start_timestamp = equity_curve[0].timestamp
+        end_timestamp = equity_curve[-1].timestamp
+        elapsed_years = max((end_timestamp - start_timestamp) / 86_400 / 365.25, 0.0)
+        total_return = (equity_curve[-1].equity_usd / initial_cash) - 1
+        cagr = None
+        if elapsed_years > 0:
+            if equity_curve[-1].equity_usd > 0:
+                cagr = (equity_curve[-1].equity_usd / initial_cash) ** (1 / elapsed_years) - 1
+            else:
+                cagr = -1.0
+
+        daily_returns: list[float] = []
+        for previous, current in zip(equity_curve[:-1], equity_curve[1:], strict=True):
+            if previous.equity_usd <= 0:
+                continue
+            daily_returns.append((current.equity_usd / previous.equity_usd) - 1)
+
+        annualized_volatility = None
+        daily_sharpe = None
+        if daily_returns:
+            mean_return = sum(daily_returns) / len(daily_returns)
+            variance = sum((value - mean_return) ** 2 for value in daily_returns) / len(
+                daily_returns
+            )
+            standard_deviation = math.sqrt(variance)
+            annualized_volatility = standard_deviation * math.sqrt(365)
+            if standard_deviation > 0:
+                daily_sharpe = (mean_return / standard_deviation) * math.sqrt(365)
+
+        max_drawdown = self._max_drawdown(equity_curve)
+        calmar_ratio = None
+        if cagr is not None and max_drawdown < 0:
+            calmar_ratio = cagr / abs(max_drawdown)
+
+        gross_turnover = sum(fill.gross_notional_usd for fill in fills)
+        gross_pnl_before_fees = equity_curve[-1].equity_usd - initial_cash + sum(
+            fill.fee_paid_usd for fill in fills
+        )
+        fee_to_gross_pnl_ratio = None
+        if gross_pnl_before_fees > 0:
+            fee_to_gross_pnl_ratio = (
+                sum(fill.fee_paid_usd for fill in fills) / gross_pnl_before_fees
+            )
+
+        trades_per_year = None
+        if elapsed_years > 0:
+            trades_per_year = len(fills) / elapsed_years
+
+        return {
+            "period_years": elapsed_years,
+            "cagr": cagr,
+            "calmar_ratio": calmar_ratio,
+            "annualized_volatility": annualized_volatility,
+            "daily_sharpe": daily_sharpe,
+            "turnover": gross_turnover / initial_cash if initial_cash > 0 else None,
+            "fee_to_gross_pnl_ratio": fee_to_gross_pnl_ratio,
+            "days_invested": sum(1 for point in equity_curve if point.gross_exposure > 0),
+            "trades_per_year": trades_per_year,
+            "total_return": total_return,
+        }
+
+    def _yearly_returns(
+        self,
+        equity_curve: list[EquityPoint],
+        decisions: list[DecisionSnapshot],
+        fills: list[FillEvent],
+    ) -> dict[str, dict[str, object]]:
+        yearly: dict[int, dict[str, object]] = {}
+        decision_counts: dict[int, int] = defaultdict(int)
+        fill_counts: dict[int, int] = defaultdict(int)
+        for decision in decisions:
+            year = datetime.fromtimestamp(decision.timestamp, tz=UTC).year
+            decision_counts[year] += 1
+        for fill in fills:
+            year = datetime.fromtimestamp(fill.timestamp, tz=UTC).year
+            fill_counts[year] += 1
+        for point in equity_curve:
+            year = datetime.fromtimestamp(point.timestamp, tz=UTC).year
+            entry = yearly.setdefault(
+                year,
+                {
+                    "start_equity_usd": point.equity_usd,
+                    "end_equity_usd": point.equity_usd,
+                    "decision_count": 0,
+                    "fill_count": 0,
+                },
+            )
+            entry["end_equity_usd"] = point.equity_usd
+
+        payload: dict[str, dict[str, object]] = {}
+        for year, entry in sorted(yearly.items()):
+            start_equity = cast(float, entry["start_equity_usd"])
+            end_equity = cast(float, entry["end_equity_usd"])
+            profit_usd = end_equity - start_equity
+            payload[str(year)] = {
+                "start_equity_usd": start_equity,
+                "end_equity_usd": end_equity,
+                "profit_usd": profit_usd,
+                "total_return": 0.0 if start_equity <= 0 else (end_equity / start_equity) - 1,
+                "decision_count": decision_counts.get(year, 0),
+                "fill_count": fill_counts.get(year, 0),
+            }
+        return payload
+
+    def _benchmark_summary(
+        self,
+        *,
+        bars_by_asset: dict[str, dict[int, Candle]],
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> dict[str, dict[str, float | None]]:
+        benchmarks: dict[str, dict[str, float | None]] = {
+            "cash": {"total_return": 0.0, "cagr": 0.0},
+        }
+        period_years = max((end_timestamp - start_timestamp) / 86_400 / 365.25, 0.0)
+
+        btc_bars = bars_by_asset.get("BTC", {})
+        if (
+            start_timestamp in btc_bars
+            and end_timestamp in btc_bars
+            and btc_bars[start_timestamp].close > 0
+        ):
+            btc_total_return = (
+                btc_bars[end_timestamp].close / btc_bars[start_timestamp].close
+            ) - 1
+            benchmarks["btc_buy_and_hold"] = {
+                "total_return": btc_total_return,
+                "cagr": self._benchmark_cagr(btc_total_return, period_years),
+            }
+        else:
+            benchmarks["btc_buy_and_hold"] = {"total_return": None, "cagr": None}
+
+        start_assets = [
+            asset
+            for asset, bars in sorted(bars_by_asset.items())
+            if start_timestamp in bars and end_timestamp in bars and bars[start_timestamp].close > 0
+        ]
+        if start_assets:
+            total_return = sum(
+                (
+                    bars_by_asset[asset][end_timestamp].close
+                    / bars_by_asset[asset][start_timestamp].close
+                )
+                - 1
+                for asset in start_assets
+            ) / len(start_assets)
+            benchmarks["equal_weight_active_universe_buy_and_hold"] = {
+                "total_return": total_return,
+                "cagr": self._benchmark_cagr(total_return, period_years),
+            }
+        else:
+            benchmarks["equal_weight_active_universe_buy_and_hold"] = {
+                "total_return": None,
+                "cagr": None,
+            }
+        return benchmarks
+
+    @staticmethod
+    def _benchmark_cagr(total_return: float, period_years: float) -> float | None:
+        if period_years <= 0:
+            return None
+        base = 1 + total_return
+        if base <= 0:
+            return -1.0
+        return float(base ** (1 / period_years) - 1)
 
     def _load_simulation_state(self, path: Path) -> PortfolioState:
         if not path.exists():

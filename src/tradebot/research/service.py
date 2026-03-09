@@ -14,7 +14,13 @@ from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
 from tradebot.logging_config import get_logger
-from tradebot.research.features import build_feature_rows, build_signal_rows, feature_column_names
+from tradebot.research.features import (
+    build_dynamic_feature_rows,
+    build_dynamic_signal_rows,
+    build_feature_rows,
+    build_signal_rows,
+    feature_column_names,
+)
 from tradebot.research.models import AssetDatasetStats, FeatureBuildSummary
 from tradebot.research.storage import (
     feature_dataset_file,
@@ -36,14 +42,16 @@ class ResearchService:
         self,
         assets: tuple[str, ...] | None = None,
         force: bool = False,
+        dataset_track: str | None = None,
         cancellation_token: CancellationToken | None = None,
     ) -> FeatureBuildSummary:
         """Build or reuse a deterministic dataset for the selected assets."""
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
         selected_assets = self._select_assets(assets)
+        selected_track = dataset_track or self._default_dataset_track(selected_assets)
         candles_by_asset = self._load_daily_candles(selected_assets)
-        dataset_id = self._dataset_id(selected_assets, candles_by_asset)
+        dataset_id = self._dataset_id(selected_assets, candles_by_asset, selected_track)
         dataset_path = feature_dataset_file(self.paths.features_dir, dataset_id)
         manifest_path = feature_manifest_file(self.paths.features_dir, dataset_id)
         experiment_root = self.paths.experiments_dir / dataset_id
@@ -56,6 +64,7 @@ class ResearchService:
             )
             return self._summary_from_manifest(
                 dataset_id=dataset_id,
+                dataset_track=selected_track,
                 dataset_path=dataset_path,
                 manifest_path=manifest_path,
                 experiment_root=experiment_root,
@@ -65,8 +74,15 @@ class ResearchService:
 
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
-        rows, stats = build_feature_rows(candles_by_asset, self.config.research)
-        fieldnames = feature_column_names(self.config.research)
+        dynamic_track = selected_track == "dynamic_universe_kraken_only"
+        if dynamic_track:
+            rows, stats = build_dynamic_feature_rows(candles_by_asset, self.config.research)
+        else:
+            rows, stats = build_feature_rows(candles_by_asset, self.config.research)
+        fieldnames = feature_column_names(
+            self.config.research,
+            include_dynamic_fields=dynamic_track,
+        )
         row_count = write_dataset_rows(dataset_path, fieldnames, rows)
         experiment_root.mkdir(parents=True, exist_ok=True)
         if cancellation_token is not None:
@@ -75,6 +91,7 @@ class ResearchService:
         asset_stats = self._build_asset_stats(candles_by_asset, stats)
         manifest = {
             "dataset_id": dataset_id,
+            "dataset_track": selected_track,
             "selected_assets": list(selected_assets),
             "primary_interval": self.config.research.primary_interval,
             "row_count": row_count,
@@ -110,6 +127,7 @@ class ResearchService:
 
         return FeatureBuildSummary(
             dataset_id=dataset_id,
+            dataset_track=selected_track,
             dataset_file=str(dataset_path),
             manifest_file=str(manifest_path),
             experiment_root=str(experiment_root),
@@ -144,10 +162,12 @@ class ResearchService:
         self,
         selected_assets: tuple[str, ...],
         candles_by_asset: dict[str, list[Candle]],
+        dataset_track: str,
     ) -> str:
         digest = hashlib.sha256()
         settings_payload = self.config.research.model_dump(mode="json")
         digest.update(json.dumps(settings_payload, sort_keys=True).encode("utf-8"))
+        digest.update(dataset_track.encode("utf-8"))
         digest.update(json.dumps(selected_assets).encode("utf-8"))
         for asset in selected_assets:
             path = canonical_candle_file(
@@ -190,6 +210,7 @@ class ResearchService:
         self,
         *,
         dataset_id: str,
+        dataset_track: str,
         dataset_path: Path,
         manifest_path: Path,
         experiment_root: Path,
@@ -210,6 +231,7 @@ class ResearchService:
         ]
         return FeatureBuildSummary(
             dataset_id=dataset_id,
+            dataset_track=str(manifest.get("dataset_track", dataset_track)),
             dataset_file=str(dataset_path),
             manifest_file=str(manifest_path),
             experiment_root=str(experiment_root),
@@ -222,12 +244,17 @@ class ResearchService:
     def build_live_signal_rows(
         self,
         assets: tuple[str, ...] | None = None,
+        dataset_track: str | None = None,
     ) -> tuple[str, int, dict[str, dict[str, object]]]:
         """Build the latest point-in-time signal rows without forward labels."""
         selected_assets = self._select_assets(assets)
+        selected_track = dataset_track or self._default_dataset_track(selected_assets)
         candles_by_asset = self._load_daily_candles(selected_assets)
-        dataset_id = self._dataset_id(selected_assets, candles_by_asset)
-        rows, _ = build_signal_rows(candles_by_asset, self.config.research)
+        dataset_id = self._dataset_id(selected_assets, candles_by_asset, selected_track)
+        if selected_track == "dynamic_universe_kraken_only":
+            rows, _ = build_dynamic_signal_rows(candles_by_asset, self.config.research)
+        else:
+            rows, _ = build_signal_rows(candles_by_asset, self.config.research)
         if not rows:
             raise ValueError("No point-in-time live signal rows are available yet")
         latest_timestamp = max(cast(int, row["timestamp"]) for row in rows)
@@ -245,3 +272,8 @@ class ResearchService:
             },
         )
         return dataset_id, latest_timestamp, rows_by_asset
+
+    def _default_dataset_track(self, selected_assets: tuple[str, ...]) -> str:
+        if selected_assets == FIXED_UNIVERSE:
+            return "official_fixed_10"
+        return "custom_selection"

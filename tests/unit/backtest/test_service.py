@@ -16,7 +16,8 @@ def _write_config(root: Path) -> Path:
     config_path = config_dir / "settings.yaml"
     config_path.write_text(
         """
-app: {}
+app:
+  log_level: ERROR
 runtime: {}
 exchange: {}
 data:
@@ -74,8 +75,16 @@ def _write_daily_series(root: Path, asset: str, closes: list[float]) -> None:
 
 def test_run_backtest_writes_report_and_artifacts(tmp_path: Path) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
-    _write_daily_series(tmp_path, "BTC", [100, 101, 103, 105, 108, 110, 112, 114])
-    _write_daily_series(tmp_path, "ETH", [50, 50.5, 51, 52, 53, 54, 55, 56])
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+    )
 
     summary = BacktestService(config).run_backtest(assets=("BTC", "ETH"))
 
@@ -87,8 +96,16 @@ def test_run_backtest_writes_report_and_artifacts(tmp_path: Path) -> None:
 
 def test_simulate_latest_cycle_persists_state_when_data_exists(tmp_path: Path) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
-    _write_daily_series(tmp_path, "BTC", [100, 101, 103, 105, 108, 110, 112, 114])
-    _write_daily_series(tmp_path, "ETH", [50, 50.5, 51, 52, 53, 54, 55, 56])
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+    )
 
     summary = BacktestService(config).simulate_latest_cycle(assets=("BTC", "ETH"))
 

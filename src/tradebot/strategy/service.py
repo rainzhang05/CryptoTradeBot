@@ -6,17 +6,28 @@ from dataclasses import replace
 
 from tradebot.backtest.models import PortfolioState
 from tradebot.config import AppConfig
-from tradebot.strategy.models import AssetAction, AssetDecision, RiskState, StrategyDecision
+from tradebot.strategy.models import (
+    AssetAction,
+    AssetDecision,
+    ResearchStrategyProfile,
+    RiskState,
+    StrategyDecision,
+)
 
 
 class StrategyEngine:
     """Apply deterministic rule-based portfolio construction and risk controls."""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        research_profile: ResearchStrategyProfile | None = None,
+    ) -> None:
         self.config = config
         self.strategy_settings = config.strategy
         self.research_settings = config.research
         self.backtest_settings = config.backtest
+        self.research_profile = research_profile or ResearchStrategyProfile()
 
     def evaluate(
         self,
@@ -213,6 +224,7 @@ class StrategyEngine:
         if (
             held
             and severe_breakdown
+            and self.research_profile.sell_risk_head_enabled
             and sell_risk_score >= self.config.model.exit_sell_risk_threshold
         ):
             return self._asset_decision(
@@ -223,15 +235,27 @@ class StrategyEngine:
                 current_weight=current_weight,
             )
 
-        entry_eligible = (
-            regime_state != "defensive"
-            and short_momentum >= self.strategy_settings.entry_momentum_floor
-            and long_momentum >= self.strategy_settings.entry_momentum_floor
-            and short_trend >= self.strategy_settings.entry_trend_gap_floor
-            and long_trend >= self.strategy_settings.entry_trend_gap_floor
-            and volatility <= self.strategy_settings.max_realized_volatility
-            and downside_risk_score < self.config.model.entry_downside_threshold
-        )
+        entry_eligible = True
+        if self.research_profile.regime_layer_enabled:
+            entry_eligible = entry_eligible and regime_state != "defensive"
+        if self.research_profile.entry_filter_layer_enabled:
+            entry_eligible = (
+                entry_eligible
+                and short_momentum >= self.strategy_settings.entry_momentum_floor
+                and long_momentum >= self.strategy_settings.entry_momentum_floor
+                and short_trend >= self.strategy_settings.entry_trend_gap_floor
+                and long_trend >= self.strategy_settings.entry_trend_gap_floor
+            )
+            if self.research_profile.downside_risk_head_enabled:
+                entry_eligible = (
+                    entry_eligible
+                    and downside_risk_score < self.config.model.entry_downside_threshold
+                )
+        if self.research_profile.volatility_layer_enabled:
+            entry_eligible = (
+                entry_eligible
+                and volatility <= self.strategy_settings.max_realized_volatility
+            )
         hold_eligible = (
             long_momentum >= self.strategy_settings.hold_momentum_floor
             and long_trend >= self.strategy_settings.hold_trend_gap_floor
@@ -239,11 +263,23 @@ class StrategyEngine:
         reduction_signal = (
             short_momentum < 0
             or relative_strength <= self.strategy_settings.weak_relative_strength_floor
-            or volatility >= self.strategy_settings.reduction_volatility_threshold
             or breadth_above_trend < 0.5
-            or sell_risk_score >= self.config.model.reduce_sell_risk_threshold
-            or downside_risk_score >= self.config.model.entry_downside_threshold
         )
+        if self.research_profile.volatility_layer_enabled:
+            reduction_signal = (
+                reduction_signal
+                or volatility >= self.strategy_settings.reduction_volatility_threshold
+            )
+        if self.research_profile.sell_risk_head_enabled:
+            reduction_signal = (
+                reduction_signal
+                or sell_risk_score >= self.config.model.reduce_sell_risk_threshold
+            )
+        if self.research_profile.downside_risk_head_enabled:
+            reduction_signal = (
+                reduction_signal
+                or downside_risk_score >= self.config.model.entry_downside_threshold
+            )
 
         rule_score = self._score_asset(
             short_momentum=short_momentum,
@@ -251,22 +287,34 @@ class StrategyEngine:
             short_trend=short_trend,
             long_trend=long_trend,
             relative_strength=relative_strength,
-            volatility=volatility,
+            volatility=(
+                volatility if self.research_profile.volatility_layer_enabled else 0.0
+            ),
             breadth_positive=breadth_positive,
             breadth_above_trend=breadth_above_trend,
             held=held,
         )
         score = self._hybrid_score(
             rule_score=rule_score,
-            expected_return_rank=expected_return_rank,
-            downside_risk_score=downside_risk_score,
-            sell_risk_score=sell_risk_score,
+            expected_return_rank=(
+                expected_return_rank if self.research_profile.expected_return_head_enabled else 0.0
+            ),
+            downside_risk_score=(
+                downside_risk_score if self.research_profile.downside_risk_head_enabled else 0.0
+            ),
+            sell_risk_score=(
+                sell_risk_score if self.research_profile.sell_risk_head_enabled else 0.0
+            ),
         )
 
         if held and hold_eligible and regime_state in {"constructive", "neutral"}:
             score = max(score, self.strategy_settings.held_asset_score_bonus * 0.5)
 
-        if held and sell_risk_score >= self.config.model.exit_sell_risk_threshold:
+        if (
+            held
+            and self.research_profile.sell_risk_head_enabled
+            and sell_risk_score >= self.config.model.exit_sell_risk_threshold
+        ):
             return self._asset_decision(
                 asset=asset,
                 action="exit",
@@ -275,11 +323,21 @@ class StrategyEngine:
                 current_weight=current_weight,
             )
 
-        if held and (
-            regime_state == "defensive"
-            or not hold_eligible
-            or reduction_signal
-            or downside_risk_score >= self.config.model.exit_downside_threshold
+        if (
+            held
+            and self.research_profile.gradual_reduction_layer_enabled
+            and (
+                (
+                    self.research_profile.regime_layer_enabled
+                    and regime_state == "defensive"
+                )
+                or not hold_eligible
+                or reduction_signal
+                or (
+                    self.research_profile.downside_risk_head_enabled
+                    and downside_risk_score >= self.config.model.exit_downside_threshold
+                )
+            )
         ):
             reduced_weight = min(
                 current_weight * self.strategy_settings.reduction_target_fraction,
@@ -295,7 +353,11 @@ class StrategyEngine:
             )
 
         if not held and not entry_eligible:
-            reason = "defensive_regime" if regime_state == "defensive" else "entry_filter_failed"
+            reason = (
+                "defensive_regime"
+                if self.research_profile.regime_layer_enabled and regime_state == "defensive"
+                else "entry_filter_failed"
+            )
             return self._asset_decision(
                 asset=asset,
                 action="blocked",
@@ -481,19 +543,27 @@ class StrategyEngine:
         if portfolio_drawdown <= -self.strategy_settings.drawdown_catastrophe_threshold:
             return "catastrophe"
         if (
-            regime_state == "defensive"
+            (
+                self.research_profile.regime_layer_enabled
+                and regime_state == "defensive"
+            )
             or portfolio_drawdown <= -self.strategy_settings.drawdown_reduced_threshold
         ):
             return "reduced_aggressiveness"
         if (
-            regime_state == "neutral"
+            (
+                self.research_profile.regime_layer_enabled
+                and regime_state == "neutral"
+            )
             or portfolio_drawdown <= -self.strategy_settings.drawdown_caution_threshold
         ):
             return "elevated_caution"
         return "normal"
 
     def _target_exposure(self, *, regime_state: str, risk_state: RiskState) -> float:
-        if regime_state == "constructive":
+        if not self.research_profile.regime_layer_enabled:
+            regime_exposure = self.backtest_settings.constructive_exposure
+        elif regime_state == "constructive":
             regime_exposure = self.backtest_settings.constructive_exposure
         elif regime_state == "neutral":
             regime_exposure = self.backtest_settings.neutral_exposure

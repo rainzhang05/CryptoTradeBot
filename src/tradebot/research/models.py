@@ -26,6 +26,7 @@ class FeatureBuildSummary:
     """Summary for one feature-store build."""
 
     dataset_id: str
+    dataset_track: str
     dataset_file: str
     manifest_file: str
     experiment_root: str
@@ -37,6 +38,7 @@ class FeatureBuildSummary:
     def to_dict(self) -> dict[str, Any]:
         return {
             "dataset_id": self.dataset_id,
+            "dataset_track": self.dataset_track,
             "dataset_file": self.dataset_file,
             "manifest_file": self.manifest_file,
             "experiment_root": self.experiment_root,

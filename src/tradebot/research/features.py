@@ -13,9 +13,15 @@ from tradebot.data.models import Candle
 REGIME_STATES = ("constructive", "neutral", "defensive", "frozen")
 
 
-def feature_column_names(settings: ResearchSettings) -> list[str]:
+def feature_column_names(
+    settings: ResearchSettings,
+    *,
+    include_dynamic_fields: bool = False,
+) -> list[str]:
     """Return the stable feature column order for a derived dataset."""
     columns = ["asset", "timestamp"]
+    if include_dynamic_fields:
+        columns.extend(["asset_age_days", "active_universe_count"])
     columns.extend(f"momentum_{window}d" for window in settings.momentum_windows_days)
     columns.extend(f"trend_gap_{window}d" for window in settings.trend_windows_days)
     columns.extend(
@@ -69,6 +75,22 @@ def build_signal_rows(
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
     """Build point-in-time signal rows without requiring forward labels."""
     return _build_rows(candles_by_asset, settings, include_labels=False)
+
+
+def build_dynamic_feature_rows(
+    candles_by_asset: dict[str, list[Candle]],
+    settings: ResearchSettings,
+) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
+    """Build feature rows using a Kraken-only dynamic active universe."""
+    return _build_dynamic_rows(candles_by_asset, settings, include_labels=True)
+
+
+def build_dynamic_signal_rows(
+    candles_by_asset: dict[str, list[Candle]],
+    settings: ResearchSettings,
+) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
+    """Build point-in-time signal rows for the dynamic active universe."""
+    return _build_dynamic_rows(candles_by_asset, settings, include_labels=False)
 
 
 def _build_rows(
@@ -160,6 +182,142 @@ def _build_rows(
     return rows, stats
 
 
+def _build_dynamic_rows(
+    candles_by_asset: dict[str, list[Candle]],
+    settings: ResearchSettings,
+    *,
+    include_labels: bool,
+) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
+    series = {
+        asset: _AssetSeries(candles)
+        for asset, candles in candles_by_asset.items()
+        if candles
+    }
+    if not series:
+        raise ValueError("No canonical candles available for feature generation")
+
+    assets = tuple(series)
+    timestamps = sorted(
+        {
+            candle.timestamp
+            for asset_candles in candles_by_asset.values()
+            for candle in asset_candles
+        }
+    )
+    index_by_asset = {
+        asset: {candle.timestamp: index for index, candle in enumerate(candles_by_asset[asset])}
+        for asset in assets
+    }
+    if "BTC" not in series:
+        raise ValueError("Feature generation requires BTC for regime classification")
+
+    rows: list[dict[str, object]] = []
+    row_counts = {asset: 0 for asset in assets}
+    rs_window = settings.relative_strength_window_days
+    breadth_window = settings.breadth_window_days
+    shortest_trend_window = settings.trend_windows_days[0]
+    shortest_vol_window = settings.volatility_windows_days[0]
+    btc_series = series["BTC"]
+    btc_index_by_timestamp = index_by_asset["BTC"]
+
+    for timestamp in timestamps:
+        btc_index = btc_index_by_timestamp.get(timestamp)
+        if btc_index is None:
+            continue
+
+        active_assets = tuple(
+            asset for asset in assets if timestamp in index_by_asset[asset]
+        )
+        active_universe_count = len(active_assets)
+        if active_universe_count <= 0:
+            continue
+
+        momentum_by_asset = {
+            asset: series[asset].momentum(rs_window, index_by_asset[asset][timestamp])
+            for asset in active_assets
+        }
+        breadth_positive = _breadth_positive_available(momentum_by_asset)
+        breadth_above_trend = _breadth_above_trend_dynamic(
+            series,
+            index_by_asset,
+            active_assets,
+            shortest_trend_window,
+            timestamp,
+        )
+
+        btc_momentum = btc_series.momentum(breadth_window, btc_index)
+        btc_trend_gap = btc_series.trend_gap(shortest_trend_window, btc_index)
+        btc_volatility = btc_series.realized_volatility(shortest_vol_window, btc_index)
+        btc_source_confidence = btc_series.source_ratio(
+            "kraken",
+            settings.source_window_days,
+            btc_index,
+        )
+        regime_state = classify_regime(
+            btc_momentum=btc_momentum,
+            btc_trend_gap=btc_trend_gap,
+            breadth_positive=breadth_positive,
+            btc_source_confidence=btc_source_confidence,
+        )
+
+        universe_average_momentum = _average_available_or_none(momentum_by_asset.values())
+        if universe_average_momentum is None:
+            continue
+
+        for asset in active_assets:
+            asset_index = index_by_asset[asset][timestamp]
+            asset_series = series[asset]
+            asset_age_days = int(
+                (timestamp - asset_series.candles[0].timestamp) / 86_400
+            )
+            row = _build_asset_row(
+                asset=asset,
+                timestamp=timestamp,
+                asset_series=asset_series,
+                settings=settings,
+                index=asset_index,
+                regime_state=regime_state,
+                breadth_positive=breadth_positive,
+                breadth_above_trend=breadth_above_trend,
+                btc_momentum=btc_momentum,
+                btc_trend_gap=btc_trend_gap,
+                btc_volatility=btc_volatility,
+                universe_average_momentum=universe_average_momentum,
+                asset_momentum=momentum_by_asset[asset],
+                include_labels=include_labels,
+                asset_age_days=asset_age_days,
+                active_universe_count=active_universe_count,
+            )
+            if row is None:
+                continue
+            rows.append(row)
+            row_counts[asset] += 1
+
+    stats = {
+        asset: {
+            "first_timestamp": int(
+                next(
+                    (cast(int, row["timestamp"]) for row in rows if row["asset"] == asset),
+                    0,
+                )
+            ),
+            "last_timestamp": int(
+                next(
+                    (
+                        cast(int, row["timestamp"])
+                        for row in reversed(rows)
+                        if row["asset"] == asset
+                    ),
+                    0,
+                )
+            ),
+            "row_count": row_counts[asset],
+        }
+        for asset in assets
+    }
+    return rows, stats
+
+
 def classify_regime(
     *,
     btc_momentum: float | None,
@@ -202,6 +360,8 @@ def _build_asset_row(
     universe_average_momentum: float | None,
     asset_momentum: float | None,
     include_labels: bool,
+    asset_age_days: int | None = None,
+    active_universe_count: int | None = None,
 ) -> dict[str, object] | None:
     momentum_values = {
         window: asset_series.momentum(window, index) for window in settings.momentum_windows_days
@@ -312,6 +472,10 @@ def _build_asset_row(
         f"source_confidence_{settings.source_window_days}d": source_confidence,
         "regime_state": regime_state,
     }
+    if asset_age_days is not None:
+        row["asset_age_days"] = asset_age_days
+    if active_universe_count is not None:
+        row["active_universe_count"] = active_universe_count
     if include_labels:
         assert forward_return is not None
         assert downside_return is not None
@@ -371,6 +535,14 @@ def _breadth_positive(momentum_by_asset: dict[str, float | None]) -> float | Non
     return positives / len(values)
 
 
+def _breadth_positive_available(momentum_by_asset: dict[str, float | None]) -> float | None:
+    values = [value for value in momentum_by_asset.values() if value is not None]
+    if not values:
+        return None
+    positives = sum(1 for value in values if value > 0)
+    return positives / len(values)
+
+
 def _breadth_above_trend(
     series: dict[str, _AssetSeries],
     window: int,
@@ -385,12 +557,40 @@ def _breadth_above_trend(
     return sum(flags) / len(flags)
 
 
+def _breadth_above_trend_dynamic(
+    series: dict[str, _AssetSeries],
+    index_by_asset: dict[str, dict[int, int]],
+    active_assets: tuple[str, ...],
+    window: int,
+    timestamp: int,
+) -> float | None:
+    flags: list[float] = []
+    for asset in active_assets:
+        index = index_by_asset[asset].get(timestamp)
+        if index is None:
+            continue
+        trend_gap = series[asset].trend_gap(window, index)
+        if trend_gap is None:
+            continue
+        flags.append(1.0 if trend_gap > 0 else 0.0)
+    if not flags:
+        return None
+    return sum(flags) / len(flags)
+
+
 def _average_or_none(values: Iterable[float | None]) -> float | None:
     collected = list(values)
     numeric_values = [value for value in collected if value is not None]
     if not numeric_values:
         return None
     if len(numeric_values) != len(collected):
+        return None
+    return sum(numeric_values) / len(numeric_values)
+
+
+def _average_available_or_none(values: Iterable[float | None]) -> float | None:
+    numeric_values = [value for value in values if value is not None]
+    if not numeric_values:
         return None
     return sum(numeric_values) / len(numeric_values)
 

@@ -114,6 +114,16 @@ class BacktestRunSummary:
     total_return: float
     max_drawdown: float
     total_fees_usd: float
+    start_timestamp: int | None = None
+    end_timestamp: int | None = None
+    cagr: float | None = None
+    calmar_ratio: float | None = None
+    annualized_volatility: float | None = None
+    daily_sharpe: float | None = None
+    turnover: float | None = None
+    fee_to_gross_pnl_ratio: float | None = None
+    days_invested: int | None = None
+    trades_per_year: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

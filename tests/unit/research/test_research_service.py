@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from tradebot.config import load_config
 from tradebot.data.models import Candle
 from tradebot.data.storage import write_candles
-from tradebot.research.features import build_feature_rows
+from tradebot.research.features import build_dynamic_feature_rows, build_feature_rows
 from tradebot.research.service import ResearchService
 
 
@@ -156,3 +157,69 @@ def test_build_feature_store_writes_manifest_and_uses_cache(tmp_path: Path) -> N
     assert manifest["row_count"] == 2
     assert manifest["selected_assets"] == ["BTC", "ETH"]
     assert manifest["experiment_layout"]["dataset_reference_field"] == "dataset_id"
+
+
+def test_build_dynamic_feature_rows_respects_asset_activation_dates(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    btc = _daily_candles(
+        [100, 101, 103, 105, 107, 109, 111, 113, 115],
+        [99, 100, 102, 104, 106, 108, 110, 112, 114],
+    )
+    eth = _daily_candles(
+        [50, 51, 52, 53, 54, 55, 56],
+        [49, 50, 51, 52, 53, 54, 55],
+    )
+    delayed_eth = [
+        replace(candle, timestamp=candle.timestamp + (2 * 86_400))
+        for candle in eth
+    ]
+
+    rows, stats = build_dynamic_feature_rows(
+        {
+            "BTC": btc,
+            "ETH": delayed_eth,
+        },
+        config.research,
+    )
+
+    btc_rows = [row for row in rows if row["asset"] == "BTC"]
+    eth_rows = [row for row in rows if row["asset"] == "ETH"]
+
+    assert btc_rows
+    assert eth_rows
+    assert min(int(row["timestamp"]) for row in eth_rows) > min(
+        int(row["timestamp"]) for row in btc_rows
+    )
+    assert all(int(row["asset_age_days"]) >= 0 for row in rows)
+    assert all(int(row["active_universe_count"]) >= 1 for row in rows)
+    assert stats["ETH"]["first_timestamp"] == min(int(row["timestamp"]) for row in eth_rows)
+
+
+def test_build_feature_store_dynamic_track_persists_track_name(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_canonical_series(
+        tmp_path,
+        "BTC",
+        _daily_candles(
+            [100, 101, 103, 105, 107, 109, 111, 113, 115],
+            [99, 100, 102, 104, 106, 108, 110, 112, 114],
+        ),
+    )
+    eth = _daily_candles(
+        [50, 51, 52, 53, 54, 55, 56],
+        [49, 50, 51, 52, 53, 54, 55],
+    )
+    delayed_eth = [
+        replace(candle, timestamp=candle.timestamp + (2 * 86_400))
+        for candle in eth
+    ]
+    _write_canonical_series(tmp_path, "ETH", delayed_eth)
+
+    summary = ResearchService(config).build_feature_store(
+        assets=("BTC", "ETH"),
+        dataset_track="dynamic_universe_kraken_only",
+    )
+
+    manifest = json.loads(Path(summary.manifest_file).read_text(encoding="utf-8"))
+    assert summary.dataset_track == "dynamic_universe_kraken_only"
+    assert manifest["dataset_track"] == "dynamic_universe_kraken_only"

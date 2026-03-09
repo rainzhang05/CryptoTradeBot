@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 import pickle
@@ -13,8 +14,18 @@ from pathlib import Path
 from typing import Any, cast
 
 from sklearn.dummy import DummyClassifier, DummyRegressor  # type: ignore[import-untyped]
+from sklearn.ensemble import (  # type: ignore[import-untyped]  # type: ignore[import-untyped]
+    HistGradientBoostingClassifier,
+    HistGradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.feature_extraction import DictVectorizer  # type: ignore[import-untyped]
-from sklearn.linear_model import LogisticRegression, Ridge  # type: ignore[import-untyped]
+from sklearn.linear_model import (  # type: ignore[import-untyped]
+    ElasticNet,
+    LogisticRegression,
+    Ridge,
+)
 from sklearn.pipeline import Pipeline  # type: ignore[import-untyped]
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
@@ -62,6 +73,10 @@ class ModelService:
         force_features: bool = False,
         cancellation_token: CancellationToken | None = None,
         progress_callback: Callable[[dict[str, object]], None] | None = None,
+        *,
+        dataset_track: str | None = None,
+        family: str = "ridge_logistic",
+        hyperparameters: dict[str, object] | None = None,
     ) -> ModelTrainingSummary:
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
@@ -75,6 +90,7 @@ class ModelService:
         feature_store = self.research_service.build_feature_store(
             assets=assets,
             force=force_features,
+            dataset_track=dataset_track,
             cancellation_token=cancellation_token,
         )
         rows = self._load_dataset_rows(Path(feature_store.dataset_file))
@@ -89,6 +105,10 @@ class ModelService:
 
         predictions: list[PredictionRow] = []
         split_count = 0
+        training_profile = {
+            "family": family,
+            "hyperparameters": hyperparameters or {},
+        }
         for timestamp in timestamps[self.config.model.initial_train_timestamps :]:
             if cancellation_token is not None:
                 cancellation_token.raise_if_cancelled()
@@ -96,7 +116,11 @@ class ModelService:
             validation_rows = [
                 row for row in rows if self._coerce_int(row["timestamp"]) == timestamp
             ]
-            bundle = self._fit_bundle(train_rows)
+            bundle = self._fit_bundle(
+                train_rows,
+                family=family,
+                hyperparameters=hyperparameters,
+            )
             predictions.extend(self._predict_rows(bundle, validation_rows))
             split_count += 1
             if progress_callback is not None:
@@ -112,8 +136,18 @@ class ModelService:
 
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
-        final_bundle = self._fit_bundle(rows)
-        model_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}_{feature_store.dataset_id}"
+        final_bundle = self._fit_bundle(
+            rows,
+            family=family,
+            hyperparameters=hyperparameters,
+        )
+        profile_id = hashlib.sha256(
+            json.dumps(training_profile, sort_keys=True).encode("utf-8")
+        ).hexdigest()[:8]
+        model_id = (
+            f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
+            f"_{feature_store.dataset_id}_{profile_id}"
+        )
         manifest_path = model_manifest_file(self.paths.models_dir, model_id)
         metrics_path = model_metrics_file(self.paths.models_dir, model_id)
         predictions_path = model_predictions_file(self.paths.models_dir, model_id)
@@ -124,8 +158,10 @@ class ModelService:
             "dataset_id": feature_store.dataset_id,
             "created_at": datetime.now(tz=UTC).isoformat(),
             "selected_assets": list(feature_store.selected_assets),
+            "dataset_track": feature_store.dataset_track,
             "model_settings": self.config.model.model_dump(mode="json"),
             "research_settings": self.config.research.model_dump(mode="json"),
+            "training_profile": training_profile,
             "feature_dataset_file": feature_store.dataset_file,
             "feature_manifest_file": feature_store.manifest_file,
             "feature_columns": self._feature_columns(rows),
@@ -496,7 +532,13 @@ class ModelService:
     def _unique_timestamps(self, rows: list[ModelRow]) -> list[int]:
         return sorted({self._coerce_int(row["timestamp"]) for row in rows})
 
-    def _fit_bundle(self, rows: list[ModelRow]) -> dict[str, Any]:
+    def _fit_bundle(
+        self,
+        rows: list[ModelRow],
+        *,
+        family: str = "ridge_logistic",
+        hyperparameters: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
         features = [self._feature_payload(row) for row in rows]
         label_columns = self._label_columns()
         expected_targets = [
@@ -509,9 +551,24 @@ class ModelService:
             int(self._coerce_float(row[label_columns["sell_risk"]])) for row in rows
         ]
         return {
-            "expected_return": self._fit_regressor(features, expected_targets),
-            "downside_risk": self._fit_classifier(features, downside_targets),
-            "sell_risk": self._fit_classifier(features, sell_targets),
+            "expected_return": self._fit_regressor(
+                features,
+                expected_targets,
+                family=family,
+                hyperparameters=hyperparameters,
+            ),
+            "downside_risk": self._fit_classifier(
+                features,
+                downside_targets,
+                family=family,
+                hyperparameters=hyperparameters,
+            ),
+            "sell_risk": self._fit_classifier(
+                features,
+                sell_targets,
+                family=family,
+                hyperparameters=hyperparameters,
+            ),
         }
 
     def _predict_rows(
@@ -552,39 +609,122 @@ class ModelService:
             )
         return predictions
 
-    def _fit_regressor(self, features: list[dict[str, object]], targets: list[float]) -> Pipeline:
+    def _fit_regressor(
+        self,
+        features: list[dict[str, object]],
+        targets: list[float],
+        *,
+        family: str = "ridge_logistic",
+        hyperparameters: dict[str, object] | None = None,
+    ) -> Pipeline:
         if len(targets) <= 1:
             model = DummyRegressor(strategy="mean")
-        else:
+        elif family == "ridge_logistic":
             model = Ridge(alpha=1.0)
-        pipeline = Pipeline(
-            [
-                ("vectorizer", DictVectorizer(sparse=True)),
-                ("scaler", StandardScaler(with_mean=False)),
-                ("model", model),
-            ]
-        )
+        elif family == "elastic_net_logistic":
+            params = hyperparameters or {}
+            model = ElasticNet(
+                alpha=self._coerce_float(params.get("elastic_net_alpha", 1e-3)),
+                l1_ratio=self._coerce_float(params.get("elastic_net_l1_ratio", 0.5)),
+                random_state=0,
+                max_iter=10_000,
+            )
+        elif family == "random_forest":
+            params = hyperparameters or {}
+            model = RandomForestRegressor(
+                n_estimators=self._coerce_int(params.get("rf_n_estimators", 200)),
+                max_depth=self._optional_int(params.get("rf_max_depth")),
+                min_samples_leaf=self._coerce_int(params.get("rf_min_samples_leaf", 1)),
+                random_state=0,
+                n_jobs=1,
+            )
+        elif family == "hist_gradient_boosting":
+            params = hyperparameters or {}
+            model = HistGradientBoostingRegressor(
+                learning_rate=self._coerce_float(params.get("hgb_learning_rate", 0.1)),
+                max_depth=self._optional_int(params.get("hgb_max_depth")),
+                max_leaf_nodes=self._optional_int(params.get("hgb_max_leaf_nodes", 31)),
+                min_samples_leaf=self._coerce_int(params.get("hgb_min_samples_leaf", 20)),
+                random_state=0,
+            )
+        else:
+            raise ValueError(f"Unsupported model family: {family}")
+        pipeline = Pipeline(self._pipeline_steps(family=family, model=model))
         pipeline.fit(features, targets)
         return pipeline
 
-    def _fit_classifier(self, features: list[dict[str, object]], targets: list[int]) -> Pipeline:
+    def _fit_classifier(
+        self,
+        features: list[dict[str, object]],
+        targets: list[int],
+        *,
+        family: str = "ridge_logistic",
+        hyperparameters: dict[str, object] | None = None,
+    ) -> Pipeline:
         if len(set(targets)) < 2:
             model = DummyClassifier(strategy="constant", constant=targets[0])
-        else:
+        elif family == "ridge_logistic":
             model = LogisticRegression(
                 class_weight="balanced",
                 max_iter=1_000,
                 random_state=0,
             )
-        pipeline = Pipeline(
-            [
+        elif family == "elastic_net_logistic":
+            params = hyperparameters or {}
+            alpha = self._coerce_float(params.get("elastic_net_alpha", 1e-3))
+            model = LogisticRegression(
+                class_weight="balanced",
+                penalty="elasticnet",
+                solver="saga",
+                l1_ratio=self._coerce_float(params.get("elastic_net_l1_ratio", 0.5)),
+                C=max(1.0, 1.0 / alpha),
+                max_iter=2_000,
+                random_state=0,
+            )
+        elif family == "random_forest":
+            params = hyperparameters or {}
+            model = RandomForestClassifier(
+                n_estimators=self._coerce_int(params.get("rf_n_estimators", 200)),
+                max_depth=self._optional_int(params.get("rf_max_depth")),
+                min_samples_leaf=self._coerce_int(params.get("rf_min_samples_leaf", 1)),
+                class_weight="balanced",
+                random_state=0,
+                n_jobs=1,
+            )
+        elif family == "hist_gradient_boosting":
+            params = hyperparameters or {}
+            model = HistGradientBoostingClassifier(
+                learning_rate=self._coerce_float(params.get("hgb_learning_rate", 0.1)),
+                max_depth=self._optional_int(params.get("hgb_max_depth")),
+                max_leaf_nodes=self._optional_int(params.get("hgb_max_leaf_nodes", 31)),
+                min_samples_leaf=self._coerce_int(params.get("hgb_min_samples_leaf", 20)),
+                random_state=0,
+            )
+        else:
+            raise ValueError(f"Unsupported model family: {family}")
+        pipeline = Pipeline(self._pipeline_steps(family=family, model=model))
+        pipeline.fit(features, targets)
+        return pipeline
+
+    def _pipeline_steps(self, *, family: str, model: Any) -> list[tuple[str, Any]]:
+        if family == "ridge_logistic":
+            return [
                 ("vectorizer", DictVectorizer(sparse=True)),
                 ("scaler", StandardScaler(with_mean=False)),
                 ("model", model),
             ]
-        )
-        pipeline.fit(features, targets)
-        return pipeline
+        if family == "elastic_net_logistic":
+            return [
+                ("vectorizer", DictVectorizer(sparse=False)),
+                ("scaler", StandardScaler()),
+                ("model", model),
+            ]
+        if family in {"random_forest", "hist_gradient_boosting"}:
+            return [
+                ("vectorizer", DictVectorizer(sparse=False)),
+                ("model", model),
+            ]
+        raise ValueError(f"Unsupported model family: {family}")
 
     def _feature_payload(self, row: ModelRow) -> dict[str, object]:
         return {
@@ -746,3 +886,8 @@ class ModelService:
         if isinstance(value, str):
             return float(value)
         raise TypeError(f"Expected float-compatible value, got {type(value).__name__}")
+
+    def _optional_int(self, value: object) -> int | None:
+        if value in {None, "", "None"}:
+            return None
+        return self._coerce_int(value)

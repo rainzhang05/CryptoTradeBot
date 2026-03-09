@@ -19,7 +19,8 @@ def _write_config(root: Path) -> Path:
     config_path = config_dir / "settings.yaml"
     config_path.write_text(
         """
-app: {}
+app:
+  log_level: ERROR
 runtime: {}
 exchange: {}
 data:
@@ -77,8 +78,16 @@ def _write_daily_series(root: Path, asset: str, closes: list[float]) -> None:
 def test_backtest_run_and_report_commands(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
     monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
-    _write_daily_series(tmp_path, "BTC", [100, 101, 103, 105, 108, 110, 112, 114])
-    _write_daily_series(tmp_path, "ETH", [50, 50.5, 51, 52, 53, 54, 55, 56])
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+    )
 
     run_result = runner.invoke(app, ["backtest", "run", "--assets", "BTC", "--assets", "ETH"])
     report_result = runner.invoke(app, ["backtest", "report"])
