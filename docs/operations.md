@@ -102,7 +102,7 @@ The shell must:
 - present operator context such as active home, config path, runtime mode, and active model
 - render structured command progress and summaries in readable transcript form
 - keep the input surface locked while a long-running command is active
-- allow `Ctrl-C` to cancel the current command and return the shell to idle
+- treat `Ctrl-C` as a shell-exit shortcut with a confirmation guard: the first press must log an instruction to press `Ctrl-C` again, and the second press within 5 seconds must exit the shell
 - keep durable JSON logs and operator-facing reports as the system of record beneath the hood
 
 The direct command mode remains required for automation and scripts.

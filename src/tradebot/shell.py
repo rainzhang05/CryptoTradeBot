@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from time import monotonic
 
 from rich.markup import escape as rich_escape
 from textual.app import App, ComposeResult
@@ -43,6 +44,7 @@ VIOLET_BORDER_FOCUS = "#a78bfa"
 VIOLET_BORDER_SUBTLE = "#6d28d9"
 
 TRANSCRIPT_LIMIT = 160
+EXIT_CONFIRMATION_WINDOW_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     CommandFormScreen {
         align: center middle;
         background: ansi_default;
+        color: #111827;
     }
 
     #command-form {
@@ -82,20 +85,26 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
         height: 80%;
         border: round #8b5cf6;
         background: ansi_default;
+        color: #111827;
         padding: 1 2;
+        scrollbar-size: 0 0;
     }
 
     Input {
         border: round #6d28d9;
+        color: #111827;
     }
 
     Input:focus {
         border: round #a78bfa;
+        background-tint: #ddd6fe 10%;
     }
 
     OptionList,
     SelectionList {
         border: round #6d28d9;
+        color: #111827;
+        scrollbar-size: 0 0;
     }
 
     OptionList:focus,
@@ -153,7 +162,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
             yield Static("", id="form-error")
             with Horizontal(id="form-actions"):
                 yield Button("Run", id="form-run", variant="success")
-                yield Button("Cancel", id="form-cancel")
+                yield Button("Cancel", id="form-cancel", variant="error")
 
     def _compose_field(self, field_spec: CommandFieldSpec) -> ComposeResult:
         with Vertical(classes="field-block"):
@@ -289,11 +298,13 @@ class TradebotShellApp(App[None]):
     CSS = """
     App {
         background: ansi_default;
+        color: #111827;
     }
 
     Screen {
         layout: vertical;
         background: ansi_default;
+        color: #111827;
     }
 
     #brand {
@@ -304,6 +315,7 @@ class TradebotShellApp(App[None]):
         padding: 1 2;
         margin: 1 1 0 1;
         background: ansi_default;
+        color: #111827;
     }
 
     #body {
@@ -318,6 +330,8 @@ class TradebotShellApp(App[None]):
         border: round #6d28d9;
         padding: 1 2;
         background: ansi_default;
+        color: #111827;
+        scrollbar-size: 0 0;
     }
 
     #input-region {
@@ -329,11 +343,17 @@ class TradebotShellApp(App[None]):
     #command-input {
         border: round #6d28d9;
         background: ansi_default;
+        color: #111827;
     }
 
     #command-input:focus {
         border: round #a78bfa;
-        background-tint: #f5f3ff 4%;
+        background-tint: #ddd6fe 10%;
+    }
+
+    #command-input > .input--placeholder,
+    #command-input > .input--suggestion {
+        color: #6b7280;
     }
 
     #command-suggestions {
@@ -341,6 +361,8 @@ class TradebotShellApp(App[None]):
         border: round #6d28d9;
         margin-top: 1;
         background: ansi_default;
+        color: #111827;
+        scrollbar-size: 0 0;
     }
 
     #command-suggestions:focus {
@@ -349,58 +371,92 @@ class TradebotShellApp(App[None]):
 
     OptionList {
         background: ansi_default;
+        color: #111827;
+        scrollbar-size: 0 0;
+    }
+
+    OptionList > .option-list--option-highlighted {
+        color: #312e81;
+        background: #ede9fe;
+        text-style: bold;
+    }
+
+    OptionList:focus > .option-list--option-highlighted {
+        color: #312e81;
+        background: #ddd6fe;
+        text-style: bold;
+    }
+
+    OptionList > .option-list--option-hover {
+        color: #312e81;
+        background: #f5f3ff;
     }
 
     Input {
         background: ansi_default;
+        color: #111827;
     }
 
     Checkbox {
         background: ansi_default;
+        color: #111827;
     }
 
     SelectionList {
         background: ansi_default;
+        color: #111827;
+        scrollbar-size: 0 0;
     }
 
     Static {
         background: ansi_default;
+        color: #111827;
     }
 
     Button {
-        background: ansi_default;
-        border: round #6d28d9;
-        color: #ede9fe;
+        background: #5b21b6;
+        border: none;
+        color: #faf5ff;
         text-style: bold;
     }
 
     Button:focus {
-        border: round #a78bfa;
-        background: #312e81;
+        background: #6d28d9;
         color: #faf5ff;
+        tint: #ffffff 6%;
     }
 
     Button:hover {
-        border: round #c4b5fd;
-        background: #312e81;
+        background: #6d28d9;
         color: #faf5ff;
+        tint: #ffffff 6%;
     }
 
     Button.-success {
-        border: round #16a34a;
-        color: #dcfce7;
+        background: #16a34a;
+        color: #f0fdf4;
     }
 
     Button.-success:hover,
     Button.-success:focus {
-        border: round #4ade80;
-        background: #14532d;
+        background: #15803d;
         color: #f0fdf4;
+    }
+
+    Button.-error {
+        background: #dc2626;
+        color: #fef2f2;
+    }
+
+    Button.-error:hover,
+    Button.-error:focus {
+        background: #b91c1c;
+        color: #fef2f2;
     }
     """
 
     BINDINGS = [
-        ("ctrl+c", "cancel", "Cancel command"),
+        ("ctrl+c", "confirm_exit", "Exit shell"),
     ]
 
     def __init__(self) -> None:
@@ -412,6 +468,7 @@ class TradebotShellApp(App[None]):
         self._latest_action_id: int = 0
         self._active_model_label: str = "n/a"
         self._context_entry_index: int | None = None
+        self._pending_exit_deadline: float | None = None
         self._transcript_entries: list[TranscriptEntry] = []
 
     def _main_screen(self) -> Screen[object]:
@@ -454,25 +511,25 @@ class TradebotShellApp(App[None]):
         self._refresh_command_suggestions("")
         self._main_screen().query_one("#command-input", Input).focus()
 
-    def action_cancel(self) -> None:
-        if self.active_token is None:
-            self._append_entry(
-                "system",
-                "Nothing is running right now.",
-                lines=("There is no active command to cancel.",),
-            )
+    def action_confirm_exit(self) -> None:
+        now = monotonic()
+        if self._pending_exit_deadline is not None and now <= self._pending_exit_deadline:
+            if self.active_token is not None:
+                self.active_token.cancel()
+            self.exit()
             return
-        self.active_token.cancel()
+        self._pending_exit_deadline = now + EXIT_CONFIRMATION_WINDOW_SECONDS
         self._append_entry(
             "warning",
-            "Stopping the active command.",
-            lines=("Waiting for the current task to stop safely.",),
+            "Press Ctrl+C again to exit the shell.",
+            lines=("Repeat the same shortcut within 5 seconds to close Tradebot shell.",),
             action_id=self._active_action_id,
         )
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "command-input":
             return
+        self._clear_exit_confirmation()
         self.current_command = event.value.strip() or "idle"
         self._refresh_command_suggestions(event.value)
         self._refresh_context_entry()
@@ -483,6 +540,7 @@ class TradebotShellApp(App[None]):
         if self.active_task is not None:
             self._append_busy_warning()
             return
+        self._clear_exit_confirmation()
         text = event.value.strip()
         if not text:
             return
@@ -495,6 +553,7 @@ class TradebotShellApp(App[None]):
         if self.active_task is not None:
             self._append_busy_warning()
             return
+        self._clear_exit_confirmation()
         text = _stringify_prompt(event.option.prompt)
         self._main_screen().query_one("#command-input", Input).value = ""
         self._handle_shell_input(text)
@@ -676,6 +735,7 @@ class TradebotShellApp(App[None]):
         for spec in all_command_specs():
             lines.append(f"{' '.join(spec.tokens)}: {spec.description}")
         lines.append("Shell commands: help, clear, exit")
+        lines.append("Press Ctrl+C twice within 5 seconds to exit the shell.")
         self._append_entry("help", "How to use the shell.", lines=tuple(lines))
 
     def _refresh_command_suggestions(self, prefix: str) -> None:
@@ -704,7 +764,9 @@ class TradebotShellApp(App[None]):
         self._append_entry(
             "warning",
             "Another command is already running.",
-            lines=("Press Ctrl+C to stop the active command first.",),
+            lines=(
+                "Wait for it to finish, or press Ctrl+C twice within 5 seconds to exit the shell.",
+            ),
             action_id=self._active_action_id,
         )
 
@@ -751,7 +813,7 @@ class TradebotShellApp(App[None]):
     def _entry_display(self, entry: TranscriptEntry) -> tuple[str, str, str]:
         is_latest = entry.action_id > 0 and entry.action_id == self._latest_action_id
         if entry.kind == "context":
-            return ("bold #ddd6fe", "#ede9fe", "Context")
+            return ("bold #374151", "#4b5563", "Context")
         if entry.kind == "command":
             return self._entry_theme(is_latest, "Latest command", "Earlier command")
         if entry.kind == "result":
@@ -761,9 +823,9 @@ class TradebotShellApp(App[None]):
         if entry.kind == "error":
             return self._entry_theme(is_latest, "Latest problem", "Earlier problem")
         if entry.kind == "help":
-            return ("bold #ddd6fe", "#ede9fe", "Shell help")
+            return ("bold #1f2937", "#4b5563", "Shell help")
         if entry.kind == "system":
-            return ("bold #c4b5fd", "#ddd6fe", "Shell")
+            return ("bold #1f2937", "#4b5563", "Shell")
         return self._entry_theme(is_latest, "Latest update", "Earlier update")
 
     def _entry_theme(
@@ -773,8 +835,8 @@ class TradebotShellApp(App[None]):
         earlier_label: str,
     ) -> tuple[str, str, str]:
         if is_latest:
-            return ("bold #c4b5fd", "#f5f3ff", latest_label)
-        return ("#7c6b9d", "#a99ac3", earlier_label)
+            return ("bold #111827", "#374151", latest_label)
+        return ("#6b7280", "#4b5563", earlier_label)
 
     def _next_action_id(self) -> int:
         self._latest_action_id += 1
@@ -798,6 +860,9 @@ class TradebotShellApp(App[None]):
                 f"state={'running' if self.active_task else 'idle'}",
             ),
         )
+
+    def _clear_exit_confirmation(self) -> None:
+        self._pending_exit_deadline = None
 
     def _active_model_id(self) -> str:
         try:

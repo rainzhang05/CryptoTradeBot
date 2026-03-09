@@ -272,7 +272,7 @@ The interactive shell must:
 - show dropdown-style suggestions for matching commands and known-choice fields only after the operator starts typing, with the suggestion list rendered below the input box
 - execute a clicked suggested command immediately, opening guided parameter selection when required
 - disable new command entry while one command is executing
-- use `Ctrl-C` to cancel the active command and return the shell to idle instead of exiting the whole application
+- use `Ctrl-C` as a guarded shell-exit shortcut: the first press logs an exit-confirmation hint, and a second press within 5 seconds exits the shell
 - render structured execution updates in readable transcript form rather than raw JSON logs, with the latest command and result visually distinguished from older history
 
 ### Shared command layer

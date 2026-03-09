@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from contextlib import suppress
 from pathlib import Path
 
@@ -11,7 +10,6 @@ import pytest
 from textual.widgets import Button, Input, OptionList, RichLog
 
 import tradebot.shell as shell_module
-from tradebot.cancellation import CommandCancelledError
 from tradebot.config import initialize_app_home
 from tradebot.shell import TradebotShellApp
 
@@ -35,12 +33,18 @@ async def test_shell_first_run_auto_bootstraps_home(
         await pilot.pause()
         assert (home / "config" / "settings.yaml").exists()
         transcript = _transcript_text(app)
+        transcript_widget = app.screen.query_one("#transcript", RichLog)
+        suggestions = app.screen.query_one("#command-suggestions", OptionList)
         assert "Home:" in transcript
         assert "Config:" in transcript
         assert "Runtime:" in transcript
         assert "Session:" in transcript
         assert "Created your default Tradebot home" in transcript
         assert "Shell help" not in transcript
+        assert transcript_widget.styles.scrollbar_size_vertical == 0
+        assert transcript_widget.styles.scrollbar_size_horizontal == 0
+        assert suggestions.styles.scrollbar_size_vertical == 0
+        assert suggestions.styles.scrollbar_size_horizontal == 0
 
 
 @pytest.mark.anyio
@@ -99,7 +103,7 @@ async def test_shell_dynamic_choice_provider_lists_model_ids(
 
 
 @pytest.mark.anyio
-async def test_shell_ctrl_c_cancels_active_command(
+async def test_shell_ctrl_c_requires_double_press_to_exit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -107,43 +111,28 @@ async def test_shell_ctrl_c_cancels_active_command(
     initialize_app_home(home=home)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
     monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    times = iter((100.0, 106.0, 106.5))
+    exit_calls: list[bool] = []
 
-    def fake_execute_command(
-        command_id: str,
-        params=None,
-        *,
-        emitter=None,
-        cancellation_token=None,
-    ):
-        assert command_id == "data_source"
-        del params
-        if emitter is not None:
-            emitter(shell_module.ExecutionEvent("step_started", "Starting fake command."))
-        while True:
-            if cancellation_token is not None and cancellation_token.is_cancelled:
-                raise CommandCancelledError("Command cancelled")
-            time.sleep(0.01)
-
-    monkeypatch.setattr(shell_module, "execute_command", fake_execute_command)
+    monkeypatch.setattr(shell_module, "monotonic", lambda: next(times))
 
     app = TradebotShellApp()
+    monkeypatch.setattr(app, "exit", lambda *args, **kwargs: exit_calls.append(True))
     async with app.run_test() as pilot:
         await pilot.pause()
-        input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "data source"
-        await pilot.press("enter")
-        await pilot.pause()
-
-        assert input_widget.disabled is True
 
         await pilot.press("ctrl+c")
-        for _ in range(20):
-            await pilot.pause()
-            if not input_widget.disabled:
-                break
+        await pilot.pause()
+        assert exit_calls == []
+        assert "Press Ctrl+C again to exit the shell." in _transcript_text(app)
 
-        assert input_widget.disabled is False
-        assert "Stopping the active command" in _transcript_text(app)
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert exit_calls == []
+
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert exit_calls == [True]
 
 
 @pytest.mark.anyio
@@ -238,6 +227,7 @@ async def test_shell_rejects_new_commands_while_busy(
             await busy_task
 
         transcript = _transcript_text(app)
+        normalized_transcript = " ".join(transcript.split())
         assert observed_commands == []
         assert transcript.count("Another command is already running.") == 2
-        assert "Press Ctrl+C to stop the active command first." in transcript
+        assert "press Ctrl+C twice within 5 seconds to exit the shell" in normalized_transcript
