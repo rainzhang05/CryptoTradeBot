@@ -20,6 +20,7 @@ If any future implementation, discussion, or legacy note conflicts with these do
 
 - `architecture.md`: Software architecture, runtime components, persistence model, Docker target, and environment assumptions.
 - `cli.md`: CLI command groups, command naming rules, operator workflows, and mode behavior.
+- `commands.md`: Concise operator-facing command reference for the installed `tradebot` CLI.
 
 ### Quality and operations documents
 

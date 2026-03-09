@@ -1,125 +1,28 @@
-# CryptoTradeBot
+# Crypto Trade Bot
 
-Systematic crypto spot trading bot for Kraken spot markets with a CLI-first operator workflow, hybrid rule-based plus ML strategy design, and current Phase 11 support for data preparation, research, backtesting, simulation, live execution, observability, alerting, interactive terminal operations, and global installation.
+CLI-first Kraken spot trading bot with an interactive operator shell for research, simulation, and live operations.
 
-## Status
+![Crypto Trade Bot shell sample](docs/assets/tradebot-shell-sample.svg)
 
-The repository is in Phase 11 of the roadmap.
-The current implementation provides:
+Crypto Trade Bot packages the repository’s documented Kraken-only workflow into a single `tradebot` command. On interactive terminals it opens the operator shell by default, while the full direct command surface remains available for automation, data preparation, backtesting, simulation, and live runtime tasks.
 
-- the Python project skeleton and toolchain foundation
-- typed configuration loading from YAML and `.env`
-- structured logging
-- CLI scaffolding and runtime bootstrap commands
-- Docker and GitHub Actions CI validation
-- raw Kraken trade-data ingestion for the fixed V1 universe
-- canonical 1-hour and 1-day candle generation
-- canonical data integrity reports
-- source coverage reporting
-- incremental Kraken sync with Binance and Coinbase fallback support when needed
-- deterministic daily feature generation from canonical Kraken data
-- BTC-led regime features, breadth metrics, liquidity features, and source-confidence features
-- label generation for forward return, downside risk, and sell-risk modeling
-- cached experiment-ready datasets with manifests and experiment directory conventions
-- a deterministic daily backtest engine with conservative fee and slippage assumptions
-- backtest artifacts including report, fills, equity curve, and decision logs
-- a simulate-mode runtime path that reuses the backtest decision and execution flow
-- persisted simulate portfolio state for restart-safe local iteration
-- a deterministic rule engine with universe enforcement, regime-aware cash allocation, hard data-quality vetoes, freeze handling, and gradual reduction/full-exit rules
-- drawdown-aware risk states that reduce aggressiveness before catastrophe conditions
-- a walk-forward ML training and validation pipeline built on deterministic Phase 3 feature datasets
-- versioned model artifacts with manifests, metrics, predictions, and promotion metadata
-- hybrid rule-plus-ML portfolio decisions that consume promoted model predictions when available
-- CLI commands for model training, validation, and promotion
-- a Kraken-authenticated live execution service with account sync, order submission, dead-man switch refresh, fill reconciliation, and persisted live state
-- a shared runtime loop for simulate and live modes with continuous terminal monitoring output
-- freeze-on-failure safeguards for stale data, missing active models, order-management errors, and reconciliation anomalies
-- the full documented CLI groups for runtime, status, report export, email configuration, and log inspection
-- durable JSON log files and tracked runtime-process metadata for operator workflows
-- SMTP-backed email alerts with per-condition deduplication and terminal alert rendering during runtime
-- persisted runtime context and alert history for restart-safe diagnostics
-- operator runbooks for setup, data workflows, simulate mode, live mode, freeze recovery, incident handling, and release validation
-- an end-to-end release-readiness validation workflow from fixture data through simulate mode and operator inspection
-- a final release checklist covering validation, Docker, reproducibility, and live preflight gates
-- a global-installable `tradebot` command with a default application home under `~/.tradebot/`
-- an interactive terminal shell with guided command entry, structured transcript output, and shell-native help/clear/exit flows
+## Quickstart
 
-## Quick Start
+Install `pipx`, install the package, and launch the shell:
 
-### Published install
+```bash
+python3 -m pip install --user pipx
+pipx ensurepath
+pipx install CryptoTradeBot
+tradebot
+```
 
-1. Install `pipx`.
-2. Run `pipx install CryptoTradeBot`.
-3. Launch the shell: `tradebot`
+On first launch, `tradebot` creates the default application home under `~/.tradebot/`.
 
-Notes:
+## Documentation
 
-- The published install command works only after a release has been published to PyPI.
-- On first use, `tradebot` automatically creates the default application home under `~/.tradebot/`.
-- `tradebot init` remains available if you want to precreate or reset starter files manually.
+Start with the project source of truth in [`docs/README.md`](docs/README.md).
 
-### Repository development
+## Commands
 
-1. Install `uv`.
-2. Sync dependencies: `uv sync --python 3.12 --extra dev`
-3. Activate the local environment: `source .venv/bin/activate`
-4. Set `BOT_CONFIG_PATH=config/settings.yaml` for repo-local workflows.
-5. Copy `.env.example` to `.env` and adjust values as needed.
-6. Run the CLI: `tradebot --help`
-
-Useful Phase 2 data commands:
-
-- `tradebot data source`
-- `tradebot data import`
-- `tradebot data check`
-- `tradebot data sync`
-- `tradebot data complete`
-- `tradebot data prune-raw`
-
-Useful Phase 3 research command:
-
-- `tradebot features build`
-
-Useful Phase 4 backtest and simulation commands:
-
-- `tradebot backtest run`
-- `tradebot backtest report`
-- `tradebot run --mode simulate --max-cycles 1`
-
-Useful Phase 6 model commands:
-
-- `tradebot model train`
-- `tradebot model validate`
-- `tradebot model promote`
-
-Useful Phase 7 live-runtime command:
-
-- `tradebot run --mode live --max-cycles 1`
-
-Useful final operator commands:
-
-- `tradebot doctor`
-- `tradebot status`
-- `tradebot email set trader@example.com`
-- `tradebot report list`
-- `tradebot logs tail --lines 20`
-
-## Docker
-
-Build the container:
-
-- `docker build -t cryptotradebot .`
-
-Run a preflight check in the container:
-
-- `docker run --rm cryptotradebot doctor`
-
-Use the local compose workflow:
-
-- `docker compose run --rm tradebot`
-- `docker compose run --rm tradebot run --mode simulate`
-
-## Source of Truth
-
-Project requirements and implementation phases are defined in the docs folder.
-Start with [docs/README.md](docs/README.md).
+See [`docs/commands.md`](docs/commands.md) for the concise command reference, and [`docs/cli.md`](docs/cli.md) for the full CLI specification.
