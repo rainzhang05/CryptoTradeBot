@@ -3,7 +3,7 @@
 CLI-first Kraken spot trading bot with an interactive operator shell for research, simulation, and live operations.
 
 <p align="center">
-  <img src="docs/assets/tradebot-shell-sample.png" alt="Crypto Trade Bot shell sample" width="760">
+  <img src="docs/assets/tradebot-shell-sample.png" alt="Crypto Trade Bot shell sample" width="620">
 </p>
 
 Crypto Trade Bot packages the repository’s documented Kraken-only workflow into a single `tradebot` command. On interactive terminals it opens the operator shell by default, while the full direct command surface remains available for automation, data preparation, backtesting, simulation, and live runtime tasks.
