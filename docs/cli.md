@@ -153,6 +153,7 @@ This command must:
 This command must:
 
 - refuse promotion when validation gates fail
+- rerun Kraken-based backtest comparison for the candidate dataset and refuse promotion unless the hybrid result improves on the rule-only baseline
 - record the promoted model reference used by runtime and backtests
 - update `artifacts/reports/models/latest_promotion_summary.json`
 - make the promoted model immediately available to the shared hybrid strategy path

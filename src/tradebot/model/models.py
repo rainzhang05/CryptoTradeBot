@@ -55,6 +55,11 @@ class ModelPromotionSummary:
     manifest_file: str
     previous_model_id: str | None
     promoted_at: str
+    hybrid_backtest_run_id: str | None = None
+    hybrid_total_return: float | None = None
+    rule_only_backtest_run_id: str | None = None
+    rule_only_total_return: float | None = None
+    incremental_total_return: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

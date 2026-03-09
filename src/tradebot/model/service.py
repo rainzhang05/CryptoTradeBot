@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from numbers import Real
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sklearn.dummy import DummyClassifier, DummyRegressor  # type: ignore[import-untyped]
 from sklearn.feature_extraction import DictVectorizer  # type: ignore[import-untyped]
@@ -44,6 +44,7 @@ from tradebot.research.service import ResearchService
 type ModelRow = dict[str, object]
 type PredictionRow = dict[str, object]
 type MetricPayload = dict[str, object]
+type PromotionBacktestComparison = dict[str, object]
 
 
 class ModelService:
@@ -211,6 +212,20 @@ class ModelService:
         validation = self.validate_model(model_id=model_id)
         if not validation.promotion_eligible:
             raise ValueError(f"Model {validation.model_id} does not satisfy promotion rules")
+        comparison = self._promotion_backtest_comparison(
+            model_id=validation.model_id,
+            assets=validation.selected_assets,
+        )
+        hybrid = cast(Any, comparison["hybrid"])
+        rule_only = cast(Any, comparison["rule_only"])
+        incremental_total_return = self._coerce_float(comparison["incremental_total_return"])
+        if incremental_total_return <= 0:
+            raise ValueError(
+                "Model "
+                f"{validation.model_id} does not improve on the rule-only baseline "
+                f"(hybrid_total_return={hybrid.total_return:.6f}, "
+                f"rule_only_total_return={rule_only.total_return:.6f})"
+            )
 
         pointer_path = active_model_pointer_file(self.paths.models_dir)
         previous_model_id: str | None = None
@@ -238,6 +253,11 @@ class ModelService:
             manifest_file=str(manifest_path),
             previous_model_id=previous_model_id,
             promoted_at=str(payload["promoted_at"]),
+            hybrid_backtest_run_id=hybrid.run_id,
+            hybrid_total_return=hybrid.total_return,
+            rule_only_backtest_run_id=rule_only.run_id,
+            rule_only_total_return=rule_only.total_return,
+            incremental_total_return=incremental_total_return,
         )
         write_json(
             latest_promotion_summary_file(self.paths.model_reports_dir),
@@ -258,6 +278,26 @@ class ModelService:
 
     def load_latest_active_reference(self) -> ActiveModelReference | None:
         return self._load_active_reference(dataset_id=None)
+
+    def load_model_reference(self, model_id: str) -> ActiveModelReference:
+        manifest_path = model_manifest_file(self.paths.models_dir, model_id)
+        metrics_path = model_metrics_file(self.paths.models_dir, model_id)
+        predictions_path = model_predictions_file(self.paths.models_dir, model_id)
+        bundle_path = model_bundle_file(self.paths.models_dir, model_id)
+        required_paths = (manifest_path, metrics_path, predictions_path, bundle_path)
+        if any(not path.exists() for path in required_paths):
+            raise FileNotFoundError(f"Model artifact does not exist: {model_id}")
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return ActiveModelReference(
+            model_id=str(manifest["model_id"]),
+            dataset_id=str(manifest["dataset_id"]),
+            manifest_file=str(manifest_path),
+            metrics_file=str(metrics_path),
+            predictions_file=str(predictions_path),
+            bundle_file=str(bundle_path),
+            selected_assets=tuple(str(asset) for asset in manifest["selected_assets"]),
+        )
 
     def _load_active_reference(self, *, dataset_id: str | None) -> ActiveModelReference | None:
         pointer_path = active_model_pointer_file(self.paths.models_dir)
@@ -297,6 +337,33 @@ class ModelService:
         reference = self.load_active_reference(dataset_id=dataset_id)
         if reference is None:
             return rows_by_asset, None
+
+        prediction_index = self._load_prediction_index(Path(reference.predictions_file))
+        enriched: dict[str, dict[str, object]] = {}
+        for asset, row in rows_by_asset.items():
+            enriched_row = dict(row)
+            prediction_row = prediction_index.get((timestamp, asset))
+            if prediction_row is not None:
+                enriched_row["expected_return_score"] = prediction_row["expected_return_score"]
+                enriched_row["downside_risk_score"] = prediction_row["downside_risk_score"]
+                enriched_row["sell_risk_score"] = prediction_row["sell_risk_score"]
+            enriched[asset] = enriched_row
+        return enriched, reference.model_id
+
+    def enrich_rows_with_model_predictions(
+        self,
+        *,
+        model_id: str,
+        dataset_id: str,
+        rows_by_asset: dict[str, dict[str, object]],
+        timestamp: int,
+    ) -> tuple[dict[str, dict[str, object]], str]:
+        reference = self.load_model_reference(model_id)
+        if reference.dataset_id != dataset_id:
+            raise ValueError(
+                f"Model {model_id} was trained on dataset {reference.dataset_id}, "
+                f"but the active backtest dataset is {dataset_id}"
+            )
 
         prediction_index = self._load_prediction_index(Path(reference.predictions_file))
         enriched: dict[str, dict[str, object]] = {}
@@ -357,6 +424,32 @@ class ModelService:
             raise FileNotFoundError("No model training summary exists yet")
         payload = json.loads(summary_path.read_text(encoding="utf-8"))
         return str(payload["model_id"])
+
+    def _promotion_backtest_comparison(
+        self,
+        *,
+        model_id: str,
+        assets: tuple[str, ...],
+    ) -> PromotionBacktestComparison:
+        from tradebot.backtest.service import BacktestService
+
+        backtest_service = BacktestService(self.config)
+        hybrid = backtest_service.run_backtest(
+            assets=assets,
+            force_features=False,
+            model_id=model_id,
+            use_active_model=False,
+        )
+        rule_only = backtest_service.run_backtest(
+            assets=assets,
+            force_features=False,
+            use_active_model=False,
+        )
+        return {
+            "hybrid": hybrid,
+            "rule_only": rule_only,
+            "incremental_total_return": hybrid.total_return - rule_only.total_return,
+        }
 
     def _insufficient_training_data_message(
         self,

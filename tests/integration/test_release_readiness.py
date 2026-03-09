@@ -4,14 +4,30 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from tradebot.cli import app
 from tradebot.data.models import Candle
 from tradebot.data.storage import write_candles
+from tradebot.model.service import ModelService
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        ModelService,
+        "_promotion_backtest_comparison",
+        lambda self, *, model_id, assets: {
+            "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
+            "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
+            "incremental_total_return": 0.01,
+        },
+    )
 
 
 def _write_config(root: Path) -> Path:

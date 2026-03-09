@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,19 @@ from tradebot.config import load_config
 from tradebot.data.models import Candle
 from tradebot.data.storage import write_candles
 from tradebot.model.service import ModelService
+
+
+@pytest.fixture(autouse=True)
+def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        ModelService,
+        "_promotion_backtest_comparison",
+        lambda self, *, model_id, assets: {
+            "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
+            "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
+            "incremental_total_return": 0.01,
+        },
+    )
 
 
 def _write_config(root: Path) -> Path:
@@ -102,6 +116,8 @@ def test_train_validate_and_promote_model(tmp_path: Path) -> None:
     assert validation.model_id == training.model_id
     assert validation.promotion_eligible is True
     assert Path(promotion.pointer_file).exists()
+    assert promotion.hybrid_total_return == pytest.approx(0.02)
+    assert promotion.rule_only_total_return == pytest.approx(0.01)
     promotion_summary = (
         tmp_path / "artifacts" / "reports" / "models" / "latest_promotion_summary.json"
     )
@@ -237,6 +253,40 @@ def test_positive_class_probabilities_handle_single_class_outputs(tmp_path: Path
 
     assert service._positive_class_probabilities(all_negative, features) == [0.0, 0.0]
     assert service._positive_class_probabilities(all_positive, features) == [1.0, 1.0]
+
+
+def test_promote_model_rejects_when_hybrid_underperforms_rule_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+    monkeypatch.setattr(
+        ModelService,
+        "_promotion_backtest_comparison",
+        lambda self, *, model_id, assets: {
+            "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.01),
+            "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.02),
+            "incremental_total_return": -0.01,
+        },
+    )
+
+    service = ModelService(config)
+    training = service.train_model(assets=("BTC", "ETH"))
+
+    with pytest.raises(ValueError, match="does not improve on the rule-only baseline"):
+        service.promote_model(training.model_id)
 
 
 def test_load_active_reference_ignores_missing_artifact_files(tmp_path: Path) -> None:

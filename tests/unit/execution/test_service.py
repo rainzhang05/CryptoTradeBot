@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from tradebot.config import load_config
 from tradebot.data.models import Candle
@@ -15,6 +18,19 @@ from tradebot.research.service import ResearchService
 from tradebot.strategy.service import StrategyEngine
 
 LATEST_TEST_TIMESTAMP = 1_704_067_200 + 11 * 86_400
+
+
+@pytest.fixture(autouse=True)
+def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        ModelService,
+        "_promotion_backtest_comparison",
+        lambda self, *, model_id, assets: {
+            "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
+            "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
+            "incremental_total_return": 0.01,
+        },
+    )
 
 
 def _write_config(root: Path) -> Path:

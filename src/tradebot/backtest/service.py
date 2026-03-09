@@ -55,6 +55,8 @@ class BacktestService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
+        model_id: str | None = None,
+        use_active_model: bool = True,
         cancellation_token: CancellationToken | None = None,
         progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> BacktestRunSummary:
@@ -62,7 +64,12 @@ class BacktestService:
             cancellation_token.raise_if_cancelled()
         self.logger.info(
             "backtest started",
-            extra={"assets": list(assets or ()), "force_features": force_features},
+            extra={
+                "assets": list(assets or ()),
+                "force_features": force_features,
+                "model_id": model_id,
+                "use_active_model": use_active_model,
+            },
         )
         feature_store = self.research_service.build_feature_store(
             assets=assets,
@@ -74,7 +81,7 @@ class BacktestService:
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
         rows_by_timestamp = self._rows_by_timestamp(rows)
-        active_model_id: str | None = None
+        applied_model_id: str | None = None
         selected_assets = tuple(feature_store.selected_assets)
         bars_by_asset = self._load_daily_bars(selected_assets)
         aligned_timestamps = self._common_timestamps(bars_by_asset)
@@ -95,13 +102,23 @@ class BacktestService:
             if execution_timestamp is None:
                 continue
             rows_for_timestamp = rows_by_timestamp[timestamp]
-            rows_for_timestamp, active_model_id = (
-                self.model_service.enrich_rows_with_active_predictions(
-                dataset_id=feature_store.dataset_id,
-                rows_by_asset=rows_for_timestamp,
-                timestamp=timestamp,
+            if model_id is not None:
+                rows_for_timestamp, applied_model_id = (
+                    self.model_service.enrich_rows_with_model_predictions(
+                        model_id=model_id,
+                        dataset_id=feature_store.dataset_id,
+                        rows_by_asset=rows_for_timestamp,
+                        timestamp=timestamp,
+                    )
                 )
-            )
+            elif use_active_model:
+                rows_for_timestamp, applied_model_id = (
+                    self.model_service.enrich_rows_with_active_predictions(
+                        dataset_id=feature_store.dataset_id,
+                        rows_by_asset=rows_for_timestamp,
+                        timestamp=timestamp,
+                    )
+                )
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
             if (
@@ -227,7 +244,7 @@ class BacktestService:
         payload = summary.to_dict() | {
             "portfolio": portfolio.to_dict(),
             "dataset_file": feature_store.dataset_file,
-            "model_id": active_model_id,
+            "model_id": applied_model_id,
         }
         write_json(report_path, payload)
         write_json(latest_backtest_report_file(self.paths.artifacts_dir), payload)

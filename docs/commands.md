@@ -33,7 +33,7 @@ For the full authoritative behavior, flags, and requirements, see [`cli.md`](./c
 - `tradebot features build`: build or reuse the deterministic feature dataset.
 - `tradebot model train`: train the expected-return, downside-risk, and sell-risk models.
 - `tradebot model validate`: evaluate whether a model artifact is eligible for promotion.
-- `tradebot model promote`: promote a validated model for shared runtime and backtest use.
+- `tradebot model promote`: promote a validated model only after it beats the rule-only Kraken backtest baseline for the same dataset.
 
 ## Backtesting And Runtime
 

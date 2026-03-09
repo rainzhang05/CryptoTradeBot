@@ -55,6 +55,7 @@ Expected artifacts:
    - `tradebot model train`
    - `tradebot model validate`
    - `tradebot model promote`
+     This promotion step rechecks Kraken backtest uplift against the rule-only baseline and refuses promotion if the hybrid candidate does not improve on it.
 3. Start simulation with `tradebot run --mode simulate`.
 4. Inspect status with `tradebot status`.
 5. Tail logs with `tradebot logs tail --lines 50`.
