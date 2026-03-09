@@ -141,6 +141,11 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
         height: auto;
         content-align: center middle;
     }
+
+    #form-actions Button {
+        min-width: 18;
+        height: 3;
+    }
     """
 
     def __init__(self, spec: CommandSpec, initial_values: dict[str, object]) -> None:
