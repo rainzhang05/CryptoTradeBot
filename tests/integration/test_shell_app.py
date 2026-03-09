@@ -34,7 +34,13 @@ async def test_shell_first_run_auto_bootstraps_home(
     async with app.run_test() as pilot:
         await pilot.pause()
         assert (home / "config" / "settings.yaml").exists()
-        assert "Created your default Tradebot home" in _transcript_text(app)
+        transcript = _transcript_text(app)
+        assert "Home:" in transcript
+        assert "Config:" in transcript
+        assert "Runtime:" in transcript
+        assert "Session:" in transcript
+        assert "Created your default Tradebot home" in transcript
+        assert "Shell help" not in transcript
 
 
 @pytest.mark.anyio

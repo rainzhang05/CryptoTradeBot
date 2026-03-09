@@ -42,16 +42,6 @@ VIOLET_BORDER = "#8b5cf6"
 VIOLET_BORDER_FOCUS = "#a78bfa"
 VIOLET_BORDER_SUBTLE = "#6d28d9"
 
-ASCII_ROBOT = r"""
-      .-.
-   .-(o o)-.
-  /  | O |  \
- |   |   |   |
- |   '~~~'   |
-  \  _____  /
-   '-----'
-"""
-
 TRANSCRIPT_LIMIT = 160
 
 
@@ -84,14 +74,14 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     CSS = """
     CommandFormScreen {
         align: center middle;
-        background: transparent;
+        background: ansi_default;
     }
 
     #command-form {
         width: 96;
         height: 80%;
         border: round #8b5cf6;
-        background: transparent;
+        background: ansi_default;
         padding: 1 2;
     }
 
@@ -297,67 +287,60 @@ class TradebotShellApp(App[None]):
     """Interactive operator shell for the Tradebot command surface."""
 
     CSS = """
+    App {
+        background: ansi_default;
+    }
+
     Screen {
         layout: vertical;
-        background: transparent;
+        background: ansi_default;
     }
 
     #brand {
         height: auto;
         content-align: center middle;
+        text-align: center;
         border: round #8b5cf6;
-        padding: 1;
+        padding: 1 2;
         margin: 1 1 0 1;
-        background: transparent;
+        background: ansi_default;
     }
 
     #body {
         height: 1fr;
         margin: 0 1;
         layout: vertical;
-    }
-
-    #status-panel {
-        height: auto;
-        margin-bottom: 1;
-        background: transparent;
-    }
-
-    .status-block {
-        border: round #6d28d9;
-        padding: 0 1;
-        margin-bottom: 1;
-        height: auto;
-        background: transparent;
+        background: ansi_default;
     }
 
     #transcript {
         height: 1fr;
         border: round #6d28d9;
-        padding: 0 1;
-        background: transparent;
+        padding: 1 2;
+        background: ansi_default;
     }
 
     #input-region {
         height: auto;
         margin: 0 1 1 1;
-        background: transparent;
+        background: ansi_default;
     }
 
     #command-input {
         border: round #6d28d9;
-        background: transparent;
+        background: ansi_default;
     }
 
     #command-input:focus {
         border: round #a78bfa;
+        background-tint: #f5f3ff 4%;
     }
 
     #command-suggestions {
         height: 8;
         border: round #6d28d9;
         margin-top: 1;
-        background: transparent;
+        background: ansi_default;
     }
 
     #command-suggestions:focus {
@@ -365,32 +348,54 @@ class TradebotShellApp(App[None]):
     }
 
     OptionList {
-        background: transparent;
+        background: ansi_default;
     }
 
     Input {
-        background: transparent;
+        background: ansi_default;
     }
 
     Checkbox {
-        background: transparent;
+        background: ansi_default;
     }
 
     SelectionList {
-        background: transparent;
+        background: ansi_default;
     }
 
     Static {
-        background: transparent;
+        background: ansi_default;
     }
 
     Button {
-        background: transparent;
+        background: ansi_default;
         border: round #6d28d9;
+        color: #ede9fe;
+        text-style: bold;
     }
 
     Button:focus {
         border: round #a78bfa;
+        background: #312e81;
+        color: #faf5ff;
+    }
+
+    Button:hover {
+        border: round #c4b5fd;
+        background: #312e81;
+        color: #faf5ff;
+    }
+
+    Button.-success {
+        border: round #16a34a;
+        color: #dcfce7;
+    }
+
+    Button.-success:hover,
+    Button.-success:focus {
+        border: round #4ade80;
+        background: #14532d;
+        color: #f0fdf4;
     }
     """
 
@@ -399,13 +404,14 @@ class TradebotShellApp(App[None]):
     ]
 
     def __init__(self) -> None:
-        super().__init__()
-        self.dark = False
+        super().__init__(ansi_color=True)
         self.active_token: CancellationToken | None = None
         self.active_task: asyncio.Task[None] | None = None
         self.current_command: str = "idle"
         self._active_action_id: int = 0
         self._latest_action_id: int = 0
+        self._active_model_label: str = "n/a"
+        self._context_entry_index: int | None = None
         self._transcript_entries: list[TranscriptEntry] = []
 
     def _main_screen(self) -> Screen[object]:
@@ -413,24 +419,10 @@ class TradebotShellApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Static(
-            f"{ASCII_ROBOT}\nCrypto Trade Bot\nv{__version__}\nInteractive operator shell",
+            f"Crypto Trade Bot  v{__version__}\nInteractive operator shell",
             id="brand",
         )
         with Vertical(id="body"):
-            with Vertical(id="status-panel"):
-                yield Static("", id="sidebar-home", classes="status-block")
-                yield Static("", id="sidebar-config", classes="status-block")
-                yield Static("", id="sidebar-runtime", classes="status-block")
-                yield Static("", id="sidebar-context", classes="status-block")
-                yield Static(
-                    "[Shell help]\n"
-                    "Type to see matching commands below.\n"
-                    "Press Enter to run the current command.\n"
-                    "Use Ctrl+C to stop the active command.\n"
-                    "Built-in commands: help, clear, exit",
-                    id="sidebar-shortcuts",
-                    classes="status-block",
-                )
             yield RichLog(id="transcript", wrap=True, markup=True)
         with Vertical(id="input-region"):
             yield Input(
@@ -448,6 +440,7 @@ class TradebotShellApp(App[None]):
         suggestions.show_vertical_scrollbar = False
         suggestions.show_horizontal_scrollbar = False
         suggestions.display = False
+        self._refresh_context_entry(resolve_status=True)
         self._append_entry("system", "Crypto Trade Bot shell ready.")
         if bootstrap_summary is not None:
             self._append_entry(
@@ -458,7 +451,6 @@ class TradebotShellApp(App[None]):
                     "Starter config and environment files are now in place.",
                 ),
             )
-        self._update_sidebar()
         self._refresh_command_suggestions("")
         self._main_screen().query_one("#command-input", Input).focus()
 
@@ -483,7 +475,7 @@ class TradebotShellApp(App[None]):
             return
         self.current_command = event.value.strip() or "idle"
         self._refresh_command_suggestions(event.value)
-        self._update_sidebar()
+        self._refresh_context_entry()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "command-input":
@@ -516,7 +508,9 @@ class TradebotShellApp(App[None]):
             return
         if lowered == "clear":
             self._transcript_entries.clear()
+            self._context_entry_index = None
             self._main_screen().query_one("#transcript", RichLog).clear()
+            self._refresh_context_entry()
             self._append_entry(
                 "system",
                 "History cleared.",
@@ -583,7 +577,7 @@ class TradebotShellApp(App[None]):
         self._set_busy(True)
         self.active_token = CancellationToken()
         self.active_task = asyncio.create_task(self._run_submission(submission, action_id))
-        self._update_sidebar()
+        self._refresh_context_entry()
 
     async def _run_submission(self, submission: CommandSubmission, action_id: int) -> None:
         try:
@@ -608,7 +602,7 @@ class TradebotShellApp(App[None]):
             self._active_action_id = 0
             self.current_command = "idle"
             self._set_busy(False)
-            self._update_sidebar()
+            self._refresh_context_entry(resolve_status=True)
 
     def _handle_execution_event(self, event: ExecutionEvent) -> None:
         entry_kind, title, lines = self._format_event_entry(event)
@@ -724,8 +718,7 @@ class TradebotShellApp(App[None]):
     ) -> None:
         entry = TranscriptEntry(kind=kind, title=title, lines=lines, action_id=action_id)
         self._transcript_entries.append(entry)
-        if len(self._transcript_entries) > TRANSCRIPT_LIMIT:
-            self._transcript_entries = self._transcript_entries[-TRANSCRIPT_LIMIT:]
+        self._trim_transcript_entries()
         if action_id > 0:
             self._latest_action_id = action_id
         self._rerender_transcript()
@@ -757,6 +750,8 @@ class TradebotShellApp(App[None]):
 
     def _entry_display(self, entry: TranscriptEntry) -> tuple[str, str, str]:
         is_latest = entry.action_id > 0 and entry.action_id == self._latest_action_id
+        if entry.kind == "context":
+            return ("bold #ddd6fe", "#ede9fe", "Context")
         if entry.kind == "command":
             return self._entry_theme(is_latest, "Latest command", "Earlier command")
         if entry.kind == "result":
@@ -785,24 +780,23 @@ class TradebotShellApp(App[None]):
         self._latest_action_id += 1
         return self._latest_action_id
 
-    def _update_sidebar(self) -> None:
+    def _refresh_context_entry(self, *, resolve_status: bool = False) -> None:
         summary = safe_config_summary()
         home = summary.get("home", "n/a")
         config_path = summary.get("resolved_config_path", str(default_config_path()))
         runtime_mode = summary.get("runtime_mode", "n/a")
-        active_model = self._active_model_id()
-        self._main_screen().query_one("#sidebar-home", Static).update(
-            f"[Home]\nLocation: {home}"
-        )
-        self._main_screen().query_one("#sidebar-config", Static).update(
-            f"[Config]\nActive file: {config_path}"
-        )
-        self._main_screen().query_one("#sidebar-runtime", Static).update(
-            f"[Runtime]\nMode: {runtime_mode}\nActive model: {active_model}"
-        )
-        self._main_screen().query_one("#sidebar-context", Static).update(
-            f"[Session]\nCurrent command: {self.current_command}\n"
-            f"State: {'running' if self.active_task else 'idle'}"
+        if resolve_status:
+            self._active_model_label = self._active_model_id()
+        self._set_context_entry(
+            "Current shell context.",
+            lines=(
+                f"Home: {home}",
+                f"Config: {config_path}",
+                f"Runtime: mode={runtime_mode} | active model={self._active_model_label}",
+                "Session: "
+                f"command={self.current_command} | "
+                f"state={'running' if self.active_task else 'idle'}",
+            ),
         )
 
     def _active_model_id(self) -> str:
@@ -818,6 +812,35 @@ class TradebotShellApp(App[None]):
             if model_id is not None:
                 return str(model_id)
         return "n/a"
+
+    def _set_context_entry(self, title: str, *, lines: tuple[str, ...]) -> None:
+        entry = TranscriptEntry(kind="context", title=title, lines=lines)
+        if self._context_entry_index is None or self._context_entry_index >= len(
+            self._transcript_entries
+        ):
+            self._transcript_entries.insert(0, entry)
+            self._context_entry_index = 0
+        else:
+            self._transcript_entries[self._context_entry_index] = entry
+        self._trim_transcript_entries()
+        self._rerender_transcript()
+
+    def _trim_transcript_entries(self) -> None:
+        if len(self._transcript_entries) <= TRANSCRIPT_LIMIT:
+            return
+        if (
+            self._context_entry_index == 0
+            and self._transcript_entries
+            and self._transcript_entries[0].kind == "context"
+        ):
+            self._transcript_entries = [
+                self._transcript_entries[0],
+                *self._transcript_entries[1:][-(TRANSCRIPT_LIMIT - 1) :],
+            ]
+            self._context_entry_index = 0
+            return
+        self._transcript_entries = self._transcript_entries[-TRANSCRIPT_LIMIT:]
+        self._context_entry_index = None
 
     def _format_event_entry(self, event: ExecutionEvent) -> tuple[str, str, list[str]]:
         if event.kind == "runtime_snapshot":
