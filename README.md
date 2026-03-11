@@ -30,7 +30,7 @@ On first launch, `tradebot` creates the default application home under `~/.trade
 
 ## Docs
 
-- [Crypto Trade Bot Documentation](docs/README.md)
+- [Crypto Trade Bot Documentation](docs/)
 - [Commands](docs/shell-commands.md)
 
 This repository is licensed under the [MIT License](LICENSE).
