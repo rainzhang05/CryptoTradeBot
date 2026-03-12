@@ -30,10 +30,6 @@ If any implementation, discussion, or legacy note conflicts with these documents
 - `runbooks.md`: operator procedures for setup, data import, simulate mode, live preflight, live operations, freeze recovery, incident investigation, and release validation
 - `release-checklist.md`: final production-readiness checklist for validation, Docker, reproducibility, and live preflight gates
 
-### Release documents
-
-- `releases/v0.2.0.md`: release notes for the first rule-only `cryptotradebot` operator release, including setup flow, preset changes, and backtest-accounting corrections
-
 ## Project Summary
 
 This project is a production-grade crypto spot trading bot with these fixed V1 properties:
