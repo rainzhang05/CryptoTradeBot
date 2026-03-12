@@ -81,6 +81,28 @@ paths:
     assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
 
 
+def test_load_config_defaults_to_continuous_runtime_when_cycle_limit_is_omitted(
+    tmp_path: Path,
+) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app: {}
+runtime:
+  default_mode: simulate
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+    )
+
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+    assert config.runtime.max_cycles is None
+
+
 def test_apply_strategy_preset_can_switch_to_max_profit_profile(tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path,
