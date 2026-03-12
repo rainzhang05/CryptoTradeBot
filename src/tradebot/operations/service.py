@@ -107,6 +107,7 @@ class OperationsService:
                 "error": "Kraken private API key and secret are not configured",
                 "required_for_mode": self.config.runtime.default_mode == "live",
             }
+        active_model_pointer = active_model_pointer_file(self.paths.models_dir)
 
         return {
             "ok": ok,
@@ -120,6 +121,11 @@ class OperationsService:
             },
             "default_mode": self.config.runtime.default_mode,
             "email_configured": bool(self.config.alerts.email_recipient),
+            "active_model": {
+                "pointer_file": str(active_model_pointer),
+                "exists": active_model_pointer.exists(),
+                "payload": self._read_json_file(active_model_pointer),
+            },
             "paths": path_entries,
         }
 
