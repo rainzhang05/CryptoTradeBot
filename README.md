@@ -37,6 +37,13 @@ kraken auth set YOUR_API_KEY --secret YOUR_API_SECRET
 run --mode live
 ```
 
+## Disclaimer
+Crypto asset trading involves substantial financial risk, including the possible loss of all capital. This software does not guarantee profitability, capital preservation, or suitability for any particular purpose.
+
+Any historical performance information, including backtests, simulations, or paper-trading results, is provided for informational purposes only and does not guarantee future results. Market conditions, liquidity, execution quality, exchange behavior, and other real-world factors may cause live outcomes to differ materially from prior evaluations.
+
+Users should trade only with assets they can afford to lose. Each user is solely responsible for properly configuring, testing, validating, and operating the software, and for any financial outcomes arising from its use. Use of this software is entirely at the user’s own risk.
+
 ## Docs
 
 - [Crypto Trade Bot Documentation](docs/)
