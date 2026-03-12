@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import pytest
 
+from tradebot.backtest.models import EquityPoint, PortfolioState, PositionState
 from tradebot.backtest.service import BacktestService
 from tradebot.config import load_config
 from tradebot.data.models import Candle
@@ -92,7 +94,12 @@ def test_run_backtest_writes_report_and_artifacts(tmp_path: Path) -> None:
     report_payload = Path(summary.report_file).read_text(encoding="utf-8")
     assert '"diagnostics"' in report_payload
     assert '"dataset_track"' in report_payload
+    assert '"liquidation"' in report_payload
     assert '"strategy_preset"' in report_payload
+    with Path(summary.equity_curve_file).open("r", encoding="utf-8", newline="") as handle:
+        first_row = next(csv.DictReader(handle))
+    assert float(first_row["equity_usd"]) == pytest.approx(1_000.0)
+    assert float(first_row["gross_exposure"]) == pytest.approx(0.0)
 
 
 def test_simulate_latest_cycle_persists_state_when_data_exists(tmp_path: Path) -> None:
@@ -144,3 +151,65 @@ def test_dynamic_equal_weight_benchmark_adds_assets_when_they_list_later(tmp_pat
     )
 
     assert total_return == pytest.approx(0.705)
+
+
+def test_yearly_returns_use_previous_year_end_equity_as_the_base(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    service = BacktestService(config)
+    points = [
+        EquityPoint(
+            timestamp=1_735_603_200,
+            equity_usd=1_000.0,
+            cash_usd=1_000.0,
+            gross_exposure=0.0,
+        ),
+        EquityPoint(
+            timestamp=1_735_689_600,
+            equity_usd=1_100.0,
+            cash_usd=200.0,
+            gross_exposure=900.0,
+        ),
+        EquityPoint(
+            timestamp=1_767_139_200,
+            equity_usd=1_210.0,
+            cash_usd=300.0,
+            gross_exposure=910.0,
+        ),
+    ]
+
+    yearly = service._yearly_returns(points, decisions=[], fills=[])
+
+    assert yearly["2024"]["total_return"] == pytest.approx(0.0)
+    assert yearly["2025"]["start_equity_usd"] == pytest.approx(1_000.0)
+    assert yearly["2025"]["total_return"] == pytest.approx(0.21)
+
+
+def test_liquidation_metrics_estimate_terminal_exit_costs(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    object.__setattr__(config.backtest, "fee_rate_bps", 100.0)
+    object.__setattr__(config.backtest, "slippage_bps", 100.0)
+    service = BacktestService(config)
+    portfolio = PortfolioState(
+        cash_usd=200.0,
+        positions={"BTC": PositionState(asset="BTC", quantity=2.0, average_entry_price=90.0)},
+    )
+    timestamp = 1_704_067_200
+    mark_bars = {
+        "BTC": Candle(
+            timestamp=timestamp,
+            open=100.0,
+            high=100.0,
+            low=100.0,
+            close=100.0,
+            volume=1_000.0,
+            trade_count=100,
+            source="kraken_api",
+        )
+    }
+
+    liquidation = service._liquidation_metrics(portfolio=portfolio, mark_bars=mark_bars)
+
+    assert liquidation["estimated_liquidation_slippage_usd"] == pytest.approx(2.0)
+    assert liquidation["estimated_liquidation_fee_usd"] == pytest.approx(1.98)
+    assert liquidation["net_liquidation_equity_usd"] == pytest.approx(396.02)
+    assert liquidation["net_liquidation_total_return"] == pytest.approx(-0.60398)
