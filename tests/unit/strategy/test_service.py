@@ -219,7 +219,9 @@ def test_strategy_engine_exits_on_low_source_confidence(tmp_path: Path) -> None:
     assert decision.target_weights == {}
 
 
-def test_strategy_engine_blocks_entry_on_high_downside_prediction(tmp_path: Path) -> None:
+def test_strategy_engine_blocks_high_volatility_entry_when_volatility_layer_enabled(
+    tmp_path: Path,
+) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
     engine = StrategyEngine(config)
     portfolio = PortfolioState(cash_usd=1_000.0, peak_equity_usd=1_000.0)
@@ -232,12 +234,8 @@ def test_strategy_engine_blocks_entry_on_high_downside_prediction(tmp_path: Path
                 regime_state="constructive",
                 breadth_positive=0.8,
                 breadth_above_trend=0.8,
+                volatility=0.4,
             )
-            | {
-                "expected_return_score": 0.08,
-                "downside_risk_score": 0.9,
-                "sell_risk_score": 0.1,
-            }
         },
         portfolio=portfolio,
         prices_by_asset={"BTC": 100.0},
@@ -248,14 +246,15 @@ def test_strategy_engine_blocks_entry_on_high_downside_prediction(tmp_path: Path
     assert decision.target_weights == {}
 
 
-def test_strategy_engine_ignores_disabled_downside_head_in_research_profile(
+def test_strategy_engine_ignores_disabled_volatility_layer_in_research_profile(
     tmp_path: Path,
 ) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
     profile = ResearchStrategyProfile(
-        expected_return_head_enabled=True,
-        downside_risk_head_enabled=False,
-        sell_risk_head_enabled=True,
+        regime_layer_enabled=True,
+        entry_filter_layer_enabled=True,
+        volatility_layer_enabled=False,
+        gradual_reduction_layer_enabled=True,
     )
     engine = StrategyEngine(config, research_profile=profile)
     portfolio = PortfolioState(cash_usd=1_000.0, peak_equity_usd=1_000.0)
@@ -268,12 +267,8 @@ def test_strategy_engine_ignores_disabled_downside_head_in_research_profile(
                 regime_state="constructive",
                 breadth_positive=0.8,
                 breadth_above_trend=0.8,
+                volatility=0.4,
             )
-            | {
-                "expected_return_score": 0.08,
-                "downside_risk_score": 0.95,
-                "sell_risk_score": 0.1,
-            }
         },
         portfolio=portfolio,
         prices_by_asset={"BTC": 100.0},
