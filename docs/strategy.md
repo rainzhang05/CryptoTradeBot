@@ -2,65 +2,48 @@
 
 ## Strategy Identity
 
-The V1 strategy is a hybrid long-only spot allocation system for Kraken.
-It combines a deterministic rule-based shell with an ML prediction layer.
+The V1 strategy is a deterministic long-only spot allocation system for Kraken.
+It is rule-only.
 
-The rule-based shell exists to provide market structure awareness, admissibility rules, portfolio constraints, and safety boundaries.
-The ML layer exists to improve ranking quality and to make downside handling more selective so the system does not exit losing positions prematurely without strong evidence.
+The strategy uses point-in-time market-structure features, a BTC-led regime model, bounded portfolio construction, and layered drawdown-aware risk scaling.
+There is no ML ranking, inference, promotion, or prediction layer in V1.
 
 ## Design Principles
 
 - Trade only the fixed V1 universe.
 - Hold cash in USD when not allocated.
-- Use rule-based logic for hard constraints and market structure.
-- Use ML for probabilistic forecasting and sell-quality refinement.
-- Optimize for aggressive after-fee return rather than preserving the current ultra-low-drawdown profile as a primary goal.
-- Bias toward holding losing positions longer when the forward outlook remains acceptable.
-- Avoid naive forced selling purely because a position is red versus entry.
-- Allow the strategy to de-risk when both market structure and predictive evidence deteriorate materially.
+- Use deterministic rules for admissibility, ranking, scaling, and exits.
+- Optimize for aggressive after-fee return rather than ultra-low drawdown.
+- Bias toward holding supported positions through ordinary crypto volatility.
+- Avoid naive forced selling purely because a position is below entry.
+- Allow the strategy to de-risk progressively when market structure weakens.
 
 ## Strategy Architecture
 
-### Layer 1: Deterministic rule shell
+The strategy is a single deterministic rule shell.
+It provides:
 
-The rule shell provides:
-
-- Universe enforcement.
-- Signal windows and feature derivation boundaries.
-- Market regime classification.
-- Position-count and concentration limits.
-- Cash-allocation policy.
-- Emergency freeze conditions.
-- Hard vetoes on trades when market-data or execution integrity is compromised.
-
-### Layer 2: ML prediction layer
-
-The ML layer provides per-asset predictive outputs that refine portfolio decisions.
-The initial ML scope is explicitly limited to improving decision quality within the rule shell, not replacing it.
-
-The ML layer must produce at least these outputs for each eligible asset:
-
-- `expected_return_score`: estimated forward return attractiveness over the configured holding horizon.
-- `downside_risk_score`: estimated probability or severity of adverse move over the configured downside horizon.
-- `sell_risk_score`: estimated confidence that continuing to hold is materially worse than exiting or reducing.
-
-The ML layer may later add uncertainty estimates, but V1 must remain auditable and bounded by the rule shell.
+- universe enforcement
+- signal windows and point-in-time feature derivation
+- BTC-led market regime classification
+- position-count and concentration limits
+- cash-allocation policy
+- layered portfolio drawdown scaling
+- emergency freeze conditions
+- hard trade vetoes when data or execution integrity is compromised
 
 ## Data Frequency and Decision Rhythm
 
 The strategy operates primarily on end-of-day data and makes portfolio decisions at a fixed daily decision point.
-Intraday monitoring exists for execution and severe deterioration handling, not for high-frequency trading.
+Intraday monitoring exists for execution and freeze handling, not for high-frequency trading.
 
-### Initial decision cadence
+### Decision cadence
 
-- Primary strategy evaluation: once per day.
-- Portfolio rebalance consideration: once per day.
-- Execution monitoring: continuous while the bot is running.
-- Retraining cadence: scheduled, versioned, and separate from live trading.
-- Walk-forward model validation retrains on the configured cadence instead of refitting on every
-  daily timestamp.
+- Primary strategy evaluation: once per day
+- Portfolio rebalance consideration: once per day
+- Execution monitoring: continuous while the bot is running
 
-The exact clock times may be adjusted during implementation, but they must remain fixed, documented, and consistent across backtest, simulate, and live modes.
+The exact clock times may be adjusted during implementation, but they must remain fixed and consistent across backtest, simulate, and live modes.
 
 ## Universe and Eligibility
 
@@ -79,188 +62,193 @@ The strategy only considers these assets:
 
 Eligibility for a trading decision requires:
 
-- The asset is tradable on Kraken for the configured USD pair.
-- Canonical Kraken data is present and passes data-integrity checks.
-- The latest feature set is complete.
-- The asset is not blocked by exchange, runtime, or data-quality safeguards.
+- the asset is tradable on Kraken for the configured USD pair
+- canonical Kraken data is present and passes integrity checks
+- the latest point-in-time feature set is complete
+- the asset is not blocked by exchange, runtime, or data-quality safeguards
 
-## Rule-Based Feature Set
+## Deterministic Feature Set
 
-The deterministic feature layer must include, at minimum:
+The feature layer must include, at minimum:
 
-- Multi-horizon price momentum.
-- Long-horizon trend state.
-- Realized volatility.
-- Relative strength versus the fixed universe.
-- Breadth across the universe.
-- BTC-led market regime features.
-- Volume and liquidity sanity checks where available.
+- multi-horizon price momentum
+- long-horizon trend state
+- realized volatility
+- relative strength versus the tracked universe
+- breadth across the tracked universe
+- BTC-led market regime features
+- volume and liquidity sanity checks where available
+- source-confidence ratios for Kraken versus fallback inputs
 
 These features must be computed entirely from the canonical Kraken dataset for strategy decisions.
-Supplementary exchange data must not replace Kraken values in the primary signal set.
+Supplementary exchange data may inform source confidence and validation but must not replace Kraken values in the primary signal set.
 
-## Phase 3 Research Defaults
+Derived datasets are feature-only.
+They do not include forward labels, model targets, or prediction columns.
 
-The Phase 3 implementation uses these deterministic daily research defaults:
+## Research Defaults
+
+The implementation uses these daily research defaults:
 
 - primary feature interval: 1 day
 - default full-universe research and backtest dataset track: `dynamic_universe_kraken_only`
 - default runtime preset: `live_default`
-- default shell layers: regime filter on, entry filter on, volatility veto off, gradual
-  reduction off
-- default concentration posture: maximum 3 positions, maximum 35% per asset, 5% rebalance
-  threshold, and a 2-point held-asset score bonus
-- default live risk posture: neutral exposure 78%, defensive exposure 45%, elevated-caution
-  multiplier 96%, reduced-aggressiveness multiplier 78%, catastrophe multiplier 32%
-- default live entry and hold floors: entry momentum 0.0, entry trend gap 0.0, hold momentum
-  -3%, hold trend gap -3%, max realized volatility 30%, reduction volatility threshold 16%
+- default shell layers: regime filter on, entry filter on, volatility veto off, gradual reduction off
 - momentum windows: 7, 30, and 90 trading days
 - trend-gap windows: 50 and 200 trading days
 - realized-volatility windows: 20 and 60 trading days
-- relative-strength window: 30 trading days versus the fixed universe average
-- breadth windows: 30 trading days for positive-momentum breadth and above-trend breadth
-- liquidity window: 20 trading days using average dollar volume and trade count
-- source-confidence window: 30 trading days using Kraken-versus-fallback source ratios
+- relative-strength window: 30 trading days
+- breadth windows: 30 trading days
+- liquidity window: 20 trading days
+- source-confidence window: 30 trading days
 
-The initial Phase 3 labels are:
-
-- forward-return label: 5-day close-to-close return
-- downside label: minimum forward low over 10 days, plus a downside-risk flag at -8%
-- sell-risk label: minimum forward low over 20 days combined with a 20-day return filter, flagged when drawdown is at least -12% and the 20-day return is at most -2%
-
-The initial BTC-led regime classification is:
+The BTC-led regime classification is:
 
 - `frozen` when recent BTC source confidence is below 80% or required BTC regime inputs are incomplete
-- `constructive` when BTC momentum and BTC trend gap are positive and fixed-universe breadth is at least 60%
-- `defensive` when BTC momentum is below -5%, BTC trend gap is below -3%, or fixed-universe breadth is at most 35%
+- `constructive` when BTC momentum and BTC trend gap are positive and tracked-universe breadth is at least 60%
+- `defensive` when BTC momentum is below -5%, BTC trend gap is below -3%, or tracked-universe breadth is at most 35%
 - `neutral` otherwise
-
-## ML Feature Policy
-
-The ML layer may use:
-
-- Canonical Kraken market features.
-- Derived market-structure features.
-- Regime features.
-- Cross-checked data-quality indicators from Binance and Coinbase.
-
-The ML layer must not use future information, blended future data, or non-point-in-time availability assumptions.
-
-Phase 6 currently implements three supervised outputs from the deterministic feature store:
-
-- expected-return regression for ranking support
-- downside-risk classification for entry gating and defensive scaling
-- sell-risk classification for stronger reduction and exit confirmation
-
-Only predictions from the active promoted model that matches the current dataset may be consumed by the strategy engine.
-When no compatible promoted model is available, the runtime may continue in rule-only mode by
-default instead of freezing solely because ML is absent. Operators may still enable strict
-live-mode model requirements in configuration.
 
 ## Portfolio Construction
 
 ### Asset count
 
-- Maximum concurrent holdings in V1: 10.
-- The strategy may hold fewer than 10 assets when evidence is weak.
+- Maximum concurrent holdings in V1: 10
+- The strategy may hold fewer than 10 assets when evidence is weak
 
 ### Weighting approach
 
-Portfolio weights must be generated through a bounded scoring process that combines:
+Portfolio weights are generated through a bounded rule-based scoring process that combines:
 
-- Rule-based eligibility.
-- Rule-based regime filter.
-- ML expected return ranking.
-- ML downside adjustment.
-- Concentration limits.
+- rule-based eligibility
+- rule-based regime filter
+- rule-based trend and momentum strength
+- breadth support
+- relative strength
+- volatility penalty
+- concentration limits
+- drawdown-aware exposure scaling
 
-The implementation should prefer normalized score-based allocation over equal weight because the project goal is to maximize expected return, but the final weights must remain capped for concentration control.
-
-The implemented allocation path combines rule-based scores, normalized expected-return ranking when promoted predictions are available, downside penalties, regime scaling, and drawdown-aware risk-state scaling before final concentration and cash normalization.
+The final weights must remain capped for concentration control.
 
 ## Runtime Presets
 
 The implementation keeps two named runtime presets:
 
-- `live_default`: the hardened runtime preset intended for simulate and live mode by default
-- `max_profit`: the more aggressive research and backtest preset used to inspect the upside limit
+- `live_default`: the hardened preset intended for simulate and live mode by default
+- `max_profit`: the more aggressive preset used to inspect the upside limit
 
-### Concentration rule
+### `live_default`
 
-- Maximum single-asset target weight in V1: 35%.
+- regime filter: on
+- entry filter: on
+- volatility veto: off
+- gradual reduction: off
+- max positions: 3
+- max asset weight: 35%
+- rebalance threshold: 5%
+- neutral exposure: 78%
+- defensive exposure: 45%
+- entry momentum floor: 0.0
+- entry trend-gap floor: 0.0
+- hold momentum floor: -3%
+- hold trend-gap floor: -3%
+- max realized volatility: 30%
+- reduction volatility threshold: 16%
+- held-asset score bonus: 2 points
+- risk-state multipliers: 96%, 78%, 32%
 
-### Cash behavior
+### `max_profit`
+
+- regime filter: on
+- entry filter: on
+- volatility veto: off
+- gradual reduction: off
+- max positions: 3
+- max asset weight: 35%
+- rebalance threshold: 5%
+- neutral exposure: 85%
+- defensive exposure: 55%
+- entry momentum floor: -2%
+- entry trend-gap floor: -1%
+- hold momentum floor: -8%
+- hold trend-gap floor: -6%
+- max realized volatility: 45%
+- reduction volatility threshold: 22%
+- held-asset score bonus: 3 points
+- risk-state multipliers: 100%, 85%, 40%
+
+## Cash Behavior
 
 - The bot may hold partial or full USD cash when the strategy is insufficiently constructive.
 - Going to cash is permitted and expected when market-wide evidence is poor.
-- Cash is not treated as alpha generation; it is a defensive state.
+- Cash is a defensive state, not an alpha source.
 
 ## Entry Logic
 
 An asset becomes a candidate for purchase or increased weight when:
 
-- The rule shell marks the asset as eligible.
-- The market regime is not blocked.
-- The ML expected return score is positive enough to rank inside the desired portfolio set.
-- The downside-risk score is below the configured exclusion threshold.
+- the rule shell marks the asset as eligible
+- the market regime is not blocked
+- source confidence and liquidity checks pass
+- trend and momentum clear the configured floors
+- the asset ranks high enough on the deterministic score to enter the bounded portfolio
 
-Entries are driven by relative attractiveness, not by dip-buying logic alone.
-
-The current implementation also blocks new entries when predicted downside risk breaches the configured entry threshold even if the broader rule shell remains constructive.
-When the regime is defensive, the rule shell may still admit top-ranked entries if source confidence, liquidity, and long-horizon structure remain acceptable. Any such entries remain capped by the defensive exposure policy.
+When the regime is defensive, the rule shell may still admit top-ranked entries if long-horizon structure, relative strength, liquidity, and source confidence remain acceptable.
 
 ## Exit and Sell Logic
 
 The sell policy is intentionally not a standard tight-stop momentum approach.
-It is designed to bias toward holding losers longer when the predictive outlook still supports recovery.
+It is designed to tolerate normal crypto volatility while still reacting to material deterioration.
 
 ### Sell principles
 
 - Do not exit solely because unrealized PnL is negative.
-- Do not use a fixed percentage stop-loss from entry as a primary decision rule.
-- Use combined evidence from market structure and ML downside prediction.
-- Favor reduction over full liquidation when the asset weakens but the broader market remains constructive.
-- Allow full exits when downside evidence becomes strong enough.
+- Do not use a fixed percentage stop-loss from entry as the primary decision rule.
+- Prefer rule-based reductions or lower exposure before routine full liquidation.
+- Allow full exits when market structure or integrity conditions become unacceptable.
 
 ### Mandatory full exit conditions
 
 The system must fully exit a position when any of the following are true:
 
-- The asset becomes non-tradable or unsupported on Kraken.
-- Data integrity is insufficient to continue holding responsibly.
-- The runtime enters a system freeze state.
-- A severe market-structure breakdown occurs and the ML sell-risk score confirms elevated downside.
+- the asset becomes non-tradable or unsupported on Kraken
+- data integrity is insufficient to continue holding responsibly
+- the runtime enters a system freeze state
+- source confidence fails
+- liquidity validity fails
+- a severe market-structure breakdown occurs
 
-### Gradual reduction conditions
+### Reduction conditions
 
-The system should reduce but not necessarily fully exit when:
+The system may reduce but not necessarily fully exit when:
 
-- Relative ranking weakens materially.
-- Expected return score falls toward neutral.
-- Downside risk rises but not enough to justify a full exit.
-- Market breadth weakens while BTC remains constructive.
+- the regime is defensive
+- hold-support conditions fail without a hard exit condition
+- short momentum weakens materially
+- relative strength weakens materially
+- breadth support deteriorates
 
-The implemented Phase 6 path also reduces positions when sell-risk or downside-risk predictions deteriorate before a hard forced-exit condition is reached.
-The implementation should keep reductions above a practical floor so positions are not repeatedly halved into operationally meaningless dust weights.
+When gradual reduction is enabled for research, reductions must remain above a practical floor so positions are not repeatedly halved into meaningless dust weights.
 
 ### Loss-handling policy
 
 The strategy explicitly allows a losing position to remain open when:
 
-- The asset remains eligible.
-- The broader regime is not decisively hostile.
-- The ML expected return score remains supportive.
-- The sell-risk score stays below the forced-exit threshold.
+- the asset remains eligible
+- the broader regime is not decisively hostile
+- long-horizon structure remains acceptable
+- no hard exit condition has been reached
 
 ## Market Regime Logic
 
 BTC acts as the primary market regime anchor in V1.
-Regime logic must incorporate:
+Regime logic incorporates:
 
-- BTC trend direction.
-- BTC volatility state.
-- Breadth across the fixed universe.
-- Aggregate deterioration versus improvement signals.
+- BTC trend direction
+- BTC volatility state
+- breadth across the tracked universe
+- source-confidence health
 
 The regime engine must classify the environment into at least these states:
 
@@ -269,78 +257,37 @@ The regime engine must classify the environment into at least these states:
 - defensive
 - frozen
 
-These states control position scaling, new entries, and sell strictness.
+These states control position scaling, new entries, and freeze behavior.
 
 ## Risk Framework
 
-The risk framework must fit the stated objective of maximizing return while tolerating normal crypto drawdowns better than a tight-stop trend system.
+The risk framework is designed to maximize return while tolerating normal crypto drawdowns better than a tight-stop trend system.
 
 ### Risk philosophy
 
-- Avoid overreacting to ordinary volatility.
-- Keep catastrophic-risk protection.
-- Use de-risking in layers rather than relying on a single hard stop.
+- avoid overreacting to ordinary volatility
+- keep catastrophic-risk protection
+- use de-risking in layers rather than relying on one hard stop
 
 ### Required risk controls
 
-- Position concentration cap.
-- USD cash fallback.
-- Market regime scaling.
-- Data-integrity freeze.
-- Execution-integrity freeze.
-- Portfolio-level drawdown monitoring.
-- Catastrophe protection rules for extreme market failure scenarios.
+- position concentration cap
+- USD cash fallback
+- market-regime scaling
+- data-integrity freeze
+- execution-integrity freeze
+- portfolio-level drawdown monitoring
+- catastrophe protection rules for extreme market failure scenarios
 
 ### Portfolio drawdown policy
 
 The system must monitor drawdown continuously.
 V1 should not use a low-threshold forced liquidation rule that frequently ejects the portfolio during ordinary crypto drawdowns.
-Instead, drawdown should feed a layered defense process:
+Instead, drawdown feeds a layered defense process:
 
-- elevated caution state
-- reduced aggressiveness state
-- catastrophe state
+- `elevated_caution`
+- `reduced_aggressiveness`
+- `catastrophe`
+- `frozen`
 
-The current implementation maps these layers to the explicit portfolio risk states `normal`, `elevated_caution`, `reduced_aggressiveness`, `catastrophe`, and `frozen` so exposure can be reduced progressively before a full freeze or catastrophe response is required.
-
-The exact thresholds must be declared in implementation docs and validated by backtest evidence before live deployment, but the governing principle is fixed: drawdown alone should not trigger routine selling of otherwise supported positions.
-
-## ML Modeling Requirements
-
-### Modeling objectives
-
-The ML subsystem must improve decisions in these areas:
-
-- better relative ranking among the fixed universe
-- better identification of weak entries to avoid
-- better distinction between normal drawdown and truly deteriorating positions
-- better timing for partial reduction or full exit when downside evidence is strong
-
-### Validation requirements
-
-- Walk-forward evaluation only.
-- No leakage across train and test windows.
-- Clear versioning of datasets, features, models, and results.
-- Performance must be assessed on Kraken-based evaluation data.
-- The ML layer must demonstrate incremental benefit over the rule-only baseline before promotion.
-- Full-universe promotion work should use the dynamic-universe research track as the primary benchmark path.
-
-The current validation summaries track expected-return MAE, expected-return correlation, directional accuracy, downside Brier score, sell-risk Brier score, validation row count, and walk-forward split count.
-
-## Strategy Promotion Rules
-
-No strategy change, model change, or parameter change can be promoted to live use unless:
-
-- It is documented.
-- It is backtested on Kraken evaluation data.
-- It is compared with the previous baseline.
-- It passes simulation validation.
-- It passes release gates in `testing-and-quality.md`.
-
-## Explicit V1 Constraints
-
-- No high-frequency trading.
-- No blended cross-exchange execution logic.
-- No discretionary manual overrides during normal live operation.
-- No silent substitution of assets outside the fixed universe.
-- No treating Binance or Coinbase as equal primary signal sources.
+The governing principle is fixed: drawdown alone should not trigger routine selling of otherwise supported positions, but it should reduce portfolio aggression progressively.
