@@ -706,3 +706,72 @@ paths: {}
     assert interval_summary["total_ranges_completed"] == 1
     assert interval_summary["eta_seconds"] == 0.0
     assert interval_summary["elapsed_seconds"] >= 0.0
+
+
+def test_complete_canonical_bootstraps_recent_history_when_canonical_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "settings.yaml"
+    config_path.write_text(
+        """
+app: {}
+runtime: {}
+exchange: {}
+data:
+  raw_kraken_dir: data/kraken_data
+  canonical_dir: data/canonical
+  reports_dir: artifacts/reports/data
+  intervals: [1d]
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+    class FakeKrakenClient:
+        def fetch_ohlc_range(
+            self,
+            pair: str,
+            interval: str,
+            start_ts: int,
+            end_ts: int,
+        ) -> list[Candle]:
+            del pair, interval, start_ts, end_ts
+            return [
+                Candle(1704067200, 100, 101, 99, 100, 10, 5, "kraken_api"),
+                Candle(1704153600, 101, 102, 100, 101, 11, 6, "kraken_api"),
+                Candle(1704240000, 102, 103, 101, 102, 12, 7, "kraken_api"),
+            ]
+
+    service = DataService(
+        config,
+        kraken_client=FakeKrakenClient(),
+        binance_client=BinancePublicClient(
+            client=httpx.Client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[])),
+                base_url="https://api.binance.com",
+            )
+        ),
+        coinbase_client=CoinbasePublicClient(
+            client=httpx.Client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[])),
+                base_url="https://api.exchange.coinbase.com",
+            )
+        ),
+    )
+    monkeypatch.setattr(service, "_latest_closed_timestamp", lambda interval: 1704240000)
+
+    summary = service.complete_canonical(assets=("BTC",), allow_synthetic=False)
+
+    candle_path = tmp_path / "data" / "canonical" / "kraken" / "BTC" / "candles_1d.csv"
+    manifest_path = tmp_path / "data" / "canonical" / "kraken" / "BTC" / "manifest.json"
+
+    assert candle_path.exists()
+    assert manifest_path.exists()
+    assert summary["assets"][0]["intervals"][0]["status"] == "continuous"
+    assert summary["assets"][0]["intervals"][0]["missing_intervals_after"] == 0
