@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 from collections import defaultdict
@@ -88,11 +89,21 @@ class BacktestService:
         )
         if feature_store.row_count <= 0:
             raise ValueError("Feature store does not contain enough rows for backtesting")
+        feature_manifest = cast(
+            dict[str, object],
+            json.loads(Path(feature_store.manifest_file).read_text(encoding="utf-8")),
+        )
+        selected_assets = tuple(feature_store.selected_assets)
+        dataset_context = {
+            "dataset_track": feature_store.dataset_track,
+            "selected_assets": selected_assets,
+            "research_settings_signature": self._manifest_research_signature(feature_manifest),
+            "feature_column_signature": self._manifest_feature_signature(feature_manifest),
+        }
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
         rows_by_timestamp = self._rows_by_timestamp(rows)
         applied_model_id: str | None = None
-        selected_assets = tuple(feature_store.selected_assets)
         bars_by_asset = self._load_daily_bars(selected_assets)
         evaluation_timestamps = self._evaluation_timestamps(
             rows_by_timestamp,
@@ -124,6 +135,14 @@ class BacktestService:
                         dataset_id=feature_store.dataset_id,
                         rows_by_asset=rows_for_timestamp,
                         timestamp=timestamp,
+                        dataset_track=str(dataset_context["dataset_track"]),
+                        selected_assets=selected_assets,
+                        research_settings_signature=str(
+                            dataset_context["research_settings_signature"]
+                        ),
+                        feature_column_signature=str(
+                            dataset_context["feature_column_signature"]
+                        ),
                     )
                 )
             elif use_active_model:
@@ -132,6 +151,14 @@ class BacktestService:
                         dataset_id=feature_store.dataset_id,
                         rows_by_asset=rows_for_timestamp,
                         timestamp=timestamp,
+                        dataset_track=str(dataset_context["dataset_track"]),
+                        selected_assets=selected_assets,
+                        research_settings_signature=str(
+                            dataset_context["research_settings_signature"]
+                        ),
+                        feature_column_signature=str(
+                            dataset_context["feature_column_signature"]
+                        ),
                     )
                 )
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
@@ -255,6 +282,12 @@ class BacktestService:
             start_timestamp=equity_curve[0].timestamp,
             end_timestamp=equity_curve[-1].timestamp,
         )
+        diagnostics = self._decision_diagnostics(decisions)
+        applied_model_family = None
+        if applied_model_id is not None:
+            applied_model_family = self.model_service.load_model_reference(
+                applied_model_id
+            ).model_family
         summary = BacktestRunSummary(
             run_id=run_id,
             report_file=str(report_path),
@@ -283,10 +316,12 @@ class BacktestService:
             "portfolio": portfolio.to_dict(),
             "dataset_file": feature_store.dataset_file,
             "model_id": applied_model_id,
+            "model_family": applied_model_family,
             "dataset_track": feature_store.dataset_track,
             "metrics": metrics,
             "yearly_returns": yearly_returns,
             "benchmarks": benchmarks,
+            "diagnostics": diagnostics,
             "period": {
                 "start_timestamp": equity_curve[0].timestamp,
                 "end_timestamp": equity_curve[-1].timestamp,
@@ -300,9 +335,7 @@ class BacktestService:
                 ).date().isoformat(),
                 "years": metrics["period_years"],
             },
-            "research_profile": (
-                None if research_profile is None else research_profile.to_dict()
-            ),
+            "research_profile": strategy_engine.research_profile.to_dict(),
         }
         write_json(report_path, payload)
         write_json(latest_backtest_report_file(self.paths.artifacts_dir), payload)
@@ -331,6 +364,7 @@ class BacktestService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
+        dataset_track: str | None = None,
     ) -> SimulationCycleSummary:
         state_path = simulate_state_file(self.paths.state_dir)
         portfolio = self._load_simulation_state(state_path)
@@ -339,6 +373,7 @@ class BacktestService:
             feature_store = self.research_service.build_feature_store(
                 assets=assets,
                 force=force_features,
+                dataset_track=dataset_track,
             )
         except (FileNotFoundError, ValueError):
             self._write_simulation_state(state_path, portfolio)
@@ -380,17 +415,26 @@ class BacktestService:
             return summary
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
+        feature_manifest = cast(
+            dict[str, object],
+            json.loads(Path(feature_store.manifest_file).read_text(encoding="utf-8")),
+        )
         latest_timestamp = max(cast(int, row["timestamp"]) for row in rows)
         rows_for_timestamp = {
             str(row["asset"]): row
             for row in rows
             if cast(int, row["timestamp"]) == latest_timestamp
         }
+        selected_assets = tuple(feature_store.selected_assets)
         rows_for_timestamp, active_model_id = (
             self.model_service.enrich_rows_with_active_predictions(
-            dataset_id=feature_store.dataset_id,
-            rows_by_asset=rows_for_timestamp,
-            timestamp=latest_timestamp,
+                dataset_id=feature_store.dataset_id,
+                rows_by_asset=rows_for_timestamp,
+                timestamp=latest_timestamp,
+                dataset_track=feature_store.dataset_track,
+                selected_assets=selected_assets,
+                research_settings_signature=self._manifest_research_signature(feature_manifest),
+                feature_column_signature=self._manifest_feature_signature(feature_manifest),
             )
         )
         bars_by_asset = self._load_daily_bars(tuple(rows_for_timestamp))
@@ -736,23 +780,15 @@ class BacktestService:
         else:
             benchmarks["btc_buy_and_hold"] = {"total_return": None, "cagr": None}
 
-        start_assets = [
-            asset
-            for asset, bars in sorted(bars_by_asset.items())
-            if start_timestamp in bars and end_timestamp in bars and bars[start_timestamp].close > 0
-        ]
-        if start_assets:
-            total_return = sum(
-                (
-                    bars_by_asset[asset][end_timestamp].close
-                    / bars_by_asset[asset][start_timestamp].close
-                )
-                - 1
-                for asset in start_assets
-            ) / len(start_assets)
+        dynamic_equal_weight_total_return = self._dynamic_equal_weight_total_return(
+            bars_by_asset=bars_by_asset,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+        )
+        if dynamic_equal_weight_total_return is not None:
             benchmarks["equal_weight_active_universe_buy_and_hold"] = {
-                "total_return": total_return,
-                "cagr": self._benchmark_cagr(total_return, period_years),
+                "total_return": dynamic_equal_weight_total_return,
+                "cagr": self._benchmark_cagr(dynamic_equal_weight_total_return, period_years),
             }
         else:
             benchmarks["equal_weight_active_universe_buy_and_hold"] = {
@@ -760,6 +796,101 @@ class BacktestService:
                 "cagr": None,
             }
         return benchmarks
+
+    def _dynamic_equal_weight_total_return(
+        self,
+        *,
+        bars_by_asset: dict[str, dict[int, Candle]],
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> float | None:
+        timestamps = sorted(
+            {
+                timestamp
+                for bars in bars_by_asset.values()
+                for timestamp in bars
+                if start_timestamp <= timestamp <= end_timestamp
+            }
+        )
+        if len(timestamps) < 2:
+            return None
+        equity = 1.0
+        for previous_timestamp, current_timestamp in zip(timestamps[:-1], timestamps[1:], strict=True):
+            asset_returns: list[float] = []
+            for bars in bars_by_asset.values():
+                previous_bar = bars.get(previous_timestamp)
+                current_bar = bars.get(current_timestamp)
+                if previous_bar is None or current_bar is None or previous_bar.close <= 0:
+                    continue
+                asset_returns.append((current_bar.close / previous_bar.close) - 1)
+            if not asset_returns:
+                continue
+            equity *= 1 + (sum(asset_returns) / len(asset_returns))
+        return equity - 1
+
+    def _decision_diagnostics(
+        self,
+        decisions: list[DecisionSnapshot],
+    ) -> dict[str, object]:
+        regime_counts: dict[str, int] = defaultdict(int)
+        risk_counts: dict[str, int] = defaultdict(int)
+        action_counts: dict[str, int] = defaultdict(int)
+        reason_counts: dict[str, int] = defaultdict(int)
+        targeted_asset_frequency: dict[str, int] = defaultdict(int)
+        average_exposure_fraction = 0.0
+        for decision in decisions:
+            regime_counts[decision.regime_state] += 1
+            risk_counts[decision.risk_state] += 1
+            average_exposure_fraction += decision.exposure_fraction
+            for action in decision.asset_actions.values():
+                action_counts[action] += 1
+            for reason in decision.asset_reasons.values():
+                reason_counts[reason] += 1
+            for asset, weight in decision.target_weights.items():
+                if weight > 0:
+                    targeted_asset_frequency[asset] += 1
+        decision_count = len(decisions)
+        return {
+            "average_exposure_fraction": (
+                average_exposure_fraction / decision_count if decision_count else 0.0
+            ),
+            "regime_distribution": dict(sorted(regime_counts.items())),
+            "risk_distribution": dict(sorted(risk_counts.items())),
+            "action_counts": dict(sorted(action_counts.items())),
+            "reason_counts": dict(sorted(reason_counts.items())),
+            "targeted_asset_frequency": {
+                asset: count / decision_count
+                for asset, count in sorted(targeted_asset_frequency.items())
+            },
+        }
+
+    def _manifest_research_signature(self, manifest: dict[str, object]) -> str:
+        existing = manifest.get("research_settings_signature")
+        if existing not in {None, ""}:
+            return str(existing)
+        payload = cast(dict[str, object], manifest.get("research_settings", {}))
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
+
+    def _manifest_feature_signature(self, manifest: dict[str, object]) -> str:
+        existing = manifest.get("feature_column_signature")
+        if existing not in {None, ""}:
+            return str(existing)
+        columns = [
+            str(column)
+            for column in manifest.get("feature_columns", [])
+            if str(column) != "timestamp" and not str(column).startswith("label_")
+        ]
+        if not columns:
+            columns = [
+                str(column)
+                for column in manifest.get("fieldnames", [])
+                if str(column) != "timestamp" and not str(column).startswith("label_")
+            ]
+        return hashlib.sha256(json.dumps(columns, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
 
     @staticmethod
     def _benchmark_cagr(total_return: float, period_years: float) -> float | None:
