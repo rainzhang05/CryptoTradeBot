@@ -690,7 +690,7 @@ class ResearchSweepService:
                     year=self._optional_int(result["holdout_year"]) or 0,
                     start_timestamp=self._optional_int(result["start_timestamp"]) or 0,
                     end_timestamp=self._optional_int(result["end_timestamp"]) or 0,
-                    stress_multiplier=1.5,
+                    stress_multiplier=2.0,
                     parent_experiment_id=str(
                         result.get("parent_experiment_id") or result["experiment_id"]
                     ),
