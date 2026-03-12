@@ -79,24 +79,28 @@ class StrategySettings(BaseModel):
     """Strategy-level settings that are fixed in V1."""
 
     fixed_universe: tuple[str, ...] = FIXED_UNIVERSE
+    regime_layer_enabled: bool = True
+    entry_filter_layer_enabled: bool = True
+    volatility_layer_enabled: bool = False
+    gradual_reduction_layer_enabled: bool = False
     min_source_confidence: float = Field(default=0.8, ge=0, le=1)
-    entry_momentum_floor: float = Field(default=0.0, ge=-1, le=1)
-    entry_trend_gap_floor: float = Field(default=0.0, ge=-1, le=1)
-    hold_momentum_floor: float = Field(default=-0.03, ge=-1, le=1)
-    hold_trend_gap_floor: float = Field(default=-0.03, ge=-1, le=1)
-    max_realized_volatility: float = Field(default=0.25, gt=0, le=5)
-    reduction_volatility_threshold: float = Field(default=0.12, gt=0, le=5)
+    entry_momentum_floor: float = Field(default=-0.02, ge=-1, le=1)
+    entry_trend_gap_floor: float = Field(default=-0.01, ge=-1, le=1)
+    hold_momentum_floor: float = Field(default=-0.08, ge=-1, le=1)
+    hold_trend_gap_floor: float = Field(default=-0.06, ge=-1, le=1)
+    max_realized_volatility: float = Field(default=0.45, gt=0, le=5)
+    reduction_volatility_threshold: float = Field(default=0.22, gt=0, le=5)
     severe_momentum_floor: float = Field(default=-0.08, ge=-1, le=1)
     severe_trend_gap_floor: float = Field(default=-0.05, ge=-1, le=1)
-    weak_relative_strength_floor: float = Field(default=-0.03, ge=-1, le=1)
-    reduction_target_fraction: float = Field(default=0.5, gt=0, lt=1)
-    held_asset_score_bonus: float = Field(default=0.02, ge=0, le=1)
+    weak_relative_strength_floor: float = Field(default=-0.08, ge=-1, le=1)
+    reduction_target_fraction: float = Field(default=0.25, gt=0, lt=1)
+    held_asset_score_bonus: float = Field(default=0.03, ge=0, le=1)
     drawdown_caution_threshold: float = Field(default=0.10, gt=0, lt=1)
     drawdown_reduced_threshold: float = Field(default=0.20, gt=0, lt=1)
     drawdown_catastrophe_threshold: float = Field(default=0.30, gt=0, lt=1)
-    elevated_caution_exposure_multiplier: float = Field(default=0.8, gt=0, le=1)
-    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.6, gt=0, le=1)
-    catastrophe_exposure_multiplier: float = Field(default=0.3, gt=0, le=1)
+    elevated_caution_exposure_multiplier: float = Field(default=1.0, gt=0, le=1)
+    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.85, gt=0, le=1)
+    catastrophe_exposure_multiplier: float = Field(default=0.4, gt=0, le=1)
 
     @field_validator("fixed_universe")
     @classmethod
@@ -130,6 +134,9 @@ class ResearchSettings(BaseModel):
     """Research and feature-generation settings for deterministic datasets."""
 
     primary_interval: Literal["1d"] = "1d"
+    default_dataset_track: Literal["official_fixed_10", "dynamic_universe_kraken_only"] = (
+        "dynamic_universe_kraken_only"
+    )
     momentum_windows_days: tuple[int, ...] = (7, 30, 90)
     trend_windows_days: tuple[int, ...] = (50, 200)
     volatility_windows_days: tuple[int, ...] = (20, 60)
@@ -176,6 +183,8 @@ class ModelSettings(BaseModel):
     promotion_min_expected_return_correlation: float = Field(default=0.0, ge=-1, le=1)
     promotion_max_downside_brier: float = Field(default=0.25, ge=0, le=1)
     promotion_max_sell_brier: float = Field(default=0.30, ge=0, le=1)
+    promotion_min_yearly_win_rate: float = Field(default=0.6, ge=0, le=1)
+    promotion_max_drawdown_gap: float = Field(default=0.10, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_thresholds(self) -> ModelSettings:
@@ -196,14 +205,14 @@ class BacktestSettings(BaseModel):
     initial_cash_usd: float = Field(default=100_000.0, gt=0)
     fee_rate_bps: float = Field(default=26.0, ge=0)
     slippage_bps: float = Field(default=10.0, ge=0)
-    max_positions: int = Field(default=5, ge=1, le=len(FIXED_UNIVERSE))
+    max_positions: int = Field(default=3, ge=1, le=len(FIXED_UNIVERSE))
     max_asset_weight: float = Field(default=0.35, gt=0, le=0.35)
     min_order_notional_usd: float = Field(default=25.0, gt=0)
-    rebalance_threshold: float = Field(default=0.02, ge=0, lt=1)
+    rebalance_threshold: float = Field(default=0.05, ge=0, lt=1)
     quantity_precision: int = Field(default=8, ge=0, le=12)
     constructive_exposure: float = Field(default=1.0, ge=0, le=1)
-    neutral_exposure: float = Field(default=0.5, ge=0, le=1)
-    defensive_exposure: float = Field(default=0.25, ge=0, le=1)
+    neutral_exposure: float = Field(default=0.85, ge=0, le=1)
+    defensive_exposure: float = Field(default=0.55, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_exposure_order(self) -> BacktestSettings:
