@@ -64,14 +64,14 @@ async def test_shell_shows_command_suggestions_and_guided_form(
         assert suggestions.display is False
 
         input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "model tr"
+        input_widget.value = "features bu"
         await pilot.pause()
 
         assert suggestions.display is True
         assert suggestions.option_count > 0
-        assert str(suggestions.get_option_at_index(0).prompt).startswith("model train")
+        assert str(suggestions.get_option_at_index(0).prompt).startswith("features build")
 
-        input_widget.value = "model train"
+        input_widget.value = "features build"
         await pilot.press("enter")
         await pilot.pause()
 
@@ -79,13 +79,13 @@ async def test_shell_shows_command_suggestions_and_guided_form(
 
 
 @pytest.mark.anyio
-async def test_shell_dynamic_choice_provider_lists_model_ids(
+async def test_shell_dynamic_choice_provider_lists_backtest_run_ids(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     home = tmp_path / "tradebot-home"
     initialize_app_home(home=home)
-    (home / "artifacts" / "models" / "model-123").mkdir(parents=True, exist_ok=True)
+    (home / "artifacts" / "backtests" / "run-123").mkdir(parents=True, exist_ok=True)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
     monkeypatch.setenv("TRADEBOT_HOME", str(home))
 
@@ -93,13 +93,13 @@ async def test_shell_dynamic_choice_provider_lists_model_ids(
     async with app.run_test() as pilot:
         await pilot.pause()
         input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "model validate"
+        input_widget.value = "backtest report"
         await pilot.press("enter")
         await pilot.pause()
 
-        options = app.screen.query_one("#field-model_id-options", OptionList)
+        options = app.screen.query_one("#field-run_id-options", OptionList)
         assert options.option_count == 1
-        assert str(options.get_option_at_index(0).prompt) == "model-123"
+        assert str(options.get_option_at_index(0).prompt) == "run-123"
 
 
 @pytest.mark.anyio
@@ -156,8 +156,6 @@ async def test_shell_clicked_suggestion_runs_command(
     ):
         del params, emitter, cancellation_token
         observed_commands.append(command_id)
-        if command_id == "status":
-            return {"active_model": None}
         return {"ok": True}
 
     monkeypatch.setattr(shell_module, "execute_command", fake_execute_command)
