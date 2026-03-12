@@ -8,9 +8,11 @@ import pytest
 
 from tradebot.config import (
     ConfigError,
+    apply_strategy_preset,
     default_config_path,
     default_tradebot_home,
     ensure_app_home_initialized,
+    identify_strategy_preset,
     initialize_app_home,
     load_config,
 )
@@ -69,12 +71,38 @@ paths:
     assert config.secrets.kraken_api_key == "demo-key"
     assert config.secrets.smtp_port == 2525
     assert config.research.default_dataset_track == "dynamic_universe_kraken_only"
+    assert config.runtime.live_require_active_model is False
     assert config.strategy.volatility_layer_enabled is False
     assert config.strategy.gradual_reduction_layer_enabled is False
-    assert config.backtest.max_positions == 3
+    assert config.strategy.entry_momentum_floor == 0.0
+    assert config.backtest.max_positions == 5
     assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
     assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
     assert config.resolved_paths().models_dir == (tmp_path / "artifacts" / "models").resolve()
+
+
+def test_apply_strategy_preset_can_switch_to_max_profit_profile(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app: {}
+runtime: {}
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+    )
+
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+    aggressive = apply_strategy_preset(config, "max_profit")
+
+    assert identify_strategy_preset(config) == "live_default"
+    assert identify_strategy_preset(aggressive) == "max_profit"
+    assert aggressive.backtest.max_positions == 3
+    assert aggressive.backtest.neutral_exposure == 0.85
+    assert aggressive.strategy.entry_momentum_floor == -0.02
 
 
 def test_load_config_rejects_wrong_universe(tmp_path: Path) -> None:
