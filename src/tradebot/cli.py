@@ -161,11 +161,20 @@ def run(
         default=None,
         help="Optional research/backtest dataset track override.",
     ),
+    strategy_preset: str | None = typer.Option(
+        default=None,
+        help="Optional strategy preset override.",
+    ),
 ) -> None:
     """Start the shared simulate or live runtime loop."""
     payload = _invoke_direct(
         "run",
-        {"mode": mode, "max_cycles": max_cycles, "dataset_track": dataset_track},
+        {
+            "mode": mode,
+            "max_cycles": max_cycles,
+            "dataset_track": dataset_track,
+            "strategy_preset": strategy_preset,
+        },
         emitter=_runtime_emitter,
     )
     if not isinstance(payload, RuntimeRunResult):
@@ -471,6 +480,10 @@ def backtest_run(
         "--use-active-model/--no-use-active-model",
         help="Use the promoted active model when no explicit model id is provided.",
     ),
+    strategy_preset: str | None = typer.Option(
+        default=None,
+        help="Optional strategy preset override.",
+    ),
 ) -> None:
     """Execute a reproducible Kraken-only backtest on canonical daily data."""
     typer.echo(
@@ -484,6 +497,7 @@ def backtest_run(
                     "dataset_track": dataset_track,
                     "model_id": model_id,
                     "use_active_model": use_active_model,
+                    "strategy_preset": strategy_preset,
                 },
             ),
         )
