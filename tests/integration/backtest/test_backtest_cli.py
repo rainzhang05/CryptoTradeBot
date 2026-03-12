@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -37,19 +36,6 @@ research:
   breadth_window_days: 2
   dollar_volume_window_days: 2
   source_window_days: 2
-  forward_return_days: 1
-  downside_lookahead_days: 2
-  downside_threshold: 0.05
-  sell_lookahead_days: 3
-  sell_drawdown_threshold: 0.08
-  sell_return_threshold: -0.01
-model:
-  initial_train_timestamps: 2
-  minimum_validation_rows: 1
-  minimum_walk_forward_splits: 1
-  promotion_min_expected_return_correlation: -1.0
-  promotion_max_downside_brier: 1.0
-  promotion_max_sell_brier: 1.0
 backtest:
   initial_cash_usd: 1000.0
   fee_rate_bps: 0.0
@@ -97,22 +83,6 @@ def test_backtest_run_and_report_commands(tmp_path: Path, monkeypatch) -> None:
         [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
     )
 
-    train_result = runner.invoke(
-        app,
-        [
-            "model",
-            "train",
-            "--assets",
-            "BTC",
-            "--assets",
-            "ETH",
-            "--dataset-track",
-            "dynamic_universe_kraken_only",
-        ],
-    )
-    assert train_result.exit_code == 0
-    model_id = json.loads(train_result.stdout)["model_id"]
-
     run_result = runner.invoke(
         app,
         [
@@ -124,9 +94,6 @@ def test_backtest_run_and_report_commands(tmp_path: Path, monkeypatch) -> None:
             "ETH",
             "--dataset-track",
             "dynamic_universe_kraken_only",
-            "--model-id",
-            model_id,
-            "--no-use-active-model",
             "--strategy-preset",
             "max_profit",
         ],
