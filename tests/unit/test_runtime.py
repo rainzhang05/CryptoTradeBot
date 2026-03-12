@@ -40,7 +40,11 @@ paths:
     config = load_config(config_path=config_path, env_path=tmp_path / ".env")
 
     class FakeBacktestService:
-        def simulate_latest_cycle(self) -> SimulationCycleSummary:
+        def simulate_latest_cycle(
+            self,
+            dataset_track: str | None = None,
+        ) -> SimulationCycleSummary:
+            assert dataset_track is None
             return SimulationCycleSummary(
                 dataset_id=None,
                 timestamp=None,
@@ -107,7 +111,8 @@ KRAKEN_API_SECRET=dGVzdA==
     config = load_config(config_path=config_path, env_path=env_path)
 
     class FakeLiveService:
-        def run_cycle(self) -> LiveCycleSummary:
+        def run_cycle(self, dataset_track: str | None = None) -> LiveCycleSummary:
+            assert dataset_track is None
             return LiveCycleSummary(
                 dataset_id="dataset-1",
                 timestamp=1_705_000_000,
