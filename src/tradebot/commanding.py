@@ -15,6 +15,8 @@ from tradebot.cancellation import CancellationToken
 from tradebot.config import (
     AppConfig,
     ConfigError,
+    STRATEGY_PRESETS,
+    apply_strategy_preset,
     app_home_layout,
     default_config_path,
     default_tradebot_home,
@@ -195,6 +197,10 @@ def _list_research_sweep_ids() -> list[str]:
 
 def _list_dataset_tracks() -> list[str]:
     return sorted(DATASET_TRACKS)
+
+
+def _list_strategy_presets() -> list[str]:
+    return sorted(STRATEGY_PRESETS)
 
 
 def _load_app_config() -> AppConfig:
@@ -412,6 +418,9 @@ def handle_run(
     effective_mode = str(params.get("mode") or config.runtime.default_mode)
     max_cycles = params.get("max_cycles")
     dataset_track = params.get("dataset_track")
+    strategy_preset = params.get("strategy_preset")
+    if strategy_preset not in {None, ""}:
+        config = apply_strategy_preset(config, str(strategy_preset))
     cycle_limit = None if max_cycles in {None, ""} else int(str(max_cycles))
     _emit(
         emitter,
@@ -421,6 +430,7 @@ def handle_run(
             "mode": effective_mode,
             "max_cycles": cycle_limit,
             "dataset_track": dataset_track,
+            "strategy_preset": strategy_preset,
         },
     )
     runtime = RuntimeService(config)
@@ -799,6 +809,9 @@ def handle_backtest_run(
     model_id = params.get("model_id")
     dataset_track = params.get("dataset_track")
     use_active_model = bool(params.get("use_active_model", True))
+    strategy_preset = params.get("strategy_preset")
+    if strategy_preset not in {None, ""}:
+        config = apply_strategy_preset(config, str(strategy_preset))
     _emit(emitter, "step_started", "Running backtest.")
     summary = BacktestService(config).run_backtest(
         assets=assets,
@@ -894,6 +907,13 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 flags=("--dataset-track",),
                 choice_provider=_list_dataset_tracks,
                 help="Optional research/backtest dataset track override.",
+            ),
+            CommandFieldSpec(
+                name="strategy_preset",
+                label="Strategy preset",
+                flags=("--strategy-preset",),
+                choice_provider=_list_strategy_presets,
+                help="Optional strategy preset override for simulate or live runtime.",
             ),
         ),
     ),
@@ -1206,6 +1226,13 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 negative_flags=("--no-use-active-model",),
                 value_type="bool",
                 default=True,
+            ),
+            CommandFieldSpec(
+                name="strategy_preset",
+                label="Strategy preset",
+                flags=("--strategy-preset",),
+                choice_provider=_list_strategy_presets,
+                help="Optional strategy preset override for this backtest.",
             ),
         ),
     ),
