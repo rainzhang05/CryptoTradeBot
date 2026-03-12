@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import math
 from collections import defaultdict
@@ -36,7 +35,6 @@ from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
 from tradebot.logging_config import get_logger
-from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.models import ResearchStrategyProfile
 from tradebot.strategy.service import StrategyEngine
@@ -50,7 +48,6 @@ class BacktestService:
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
         self.logger = get_logger("tradebot.backtest")
-        self.model_service = ModelService(config)
         self.research_service = ResearchService(config)
         self.strategy_engine = StrategyEngine(config)
 
@@ -58,8 +55,6 @@ class BacktestService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
-        model_id: str | None = None,
-        use_active_model: bool = True,
         dataset_track: str | None = None,
         research_profile: ResearchStrategyProfile | None = None,
         start_timestamp: int | None = None,
@@ -75,8 +70,6 @@ class BacktestService:
             extra={
                 "assets": list(assets or ()),
                 "force_features": force_features,
-                "model_id": model_id,
-                "use_active_model": use_active_model,
                 "dataset_track": dataset_track,
                 "strategy_preset": strategy_preset,
                 "start_timestamp": start_timestamp,
@@ -91,21 +84,10 @@ class BacktestService:
         )
         if feature_store.row_count <= 0:
             raise ValueError("Feature store does not contain enough rows for backtesting")
-        feature_manifest = cast(
-            dict[str, object],
-            json.loads(Path(feature_store.manifest_file).read_text(encoding="utf-8")),
-        )
         selected_assets = tuple(feature_store.selected_assets)
-        dataset_context = {
-            "dataset_track": feature_store.dataset_track,
-            "selected_assets": selected_assets,
-            "research_settings_signature": self._manifest_research_signature(feature_manifest),
-            "feature_column_signature": self._manifest_feature_signature(feature_manifest),
-        }
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
         rows_by_timestamp = self._rows_by_timestamp(rows)
-        applied_model_id: str | None = None
         bars_by_asset = self._load_daily_bars(selected_assets)
         evaluation_timestamps = self._evaluation_timestamps(
             rows_by_timestamp,
@@ -130,39 +112,6 @@ class BacktestService:
             if execution_timestamp is None:
                 continue
             rows_for_timestamp = rows_by_timestamp[timestamp]
-            if model_id is not None:
-                rows_for_timestamp, applied_model_id = (
-                    self.model_service.enrich_rows_with_model_predictions(
-                        model_id=model_id,
-                        dataset_id=feature_store.dataset_id,
-                        rows_by_asset=rows_for_timestamp,
-                        timestamp=timestamp,
-                        dataset_track=str(dataset_context["dataset_track"]),
-                        selected_assets=selected_assets,
-                        research_settings_signature=str(
-                            dataset_context["research_settings_signature"]
-                        ),
-                        feature_column_signature=str(
-                            dataset_context["feature_column_signature"]
-                        ),
-                    )
-                )
-            elif use_active_model:
-                rows_for_timestamp, applied_model_id = (
-                    self.model_service.enrich_rows_with_active_predictions(
-                        dataset_id=feature_store.dataset_id,
-                        rows_by_asset=rows_for_timestamp,
-                        timestamp=timestamp,
-                        dataset_track=str(dataset_context["dataset_track"]),
-                        selected_assets=selected_assets,
-                        research_settings_signature=str(
-                            dataset_context["research_settings_signature"]
-                        ),
-                        feature_column_signature=str(
-                            dataset_context["feature_column_signature"]
-                        ),
-                    )
-                )
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
             if not self._has_required_bars(
@@ -285,11 +234,6 @@ class BacktestService:
             end_timestamp=equity_curve[-1].timestamp,
         )
         diagnostics = self._decision_diagnostics(decisions)
-        applied_model_family = None
-        if applied_model_id is not None:
-            applied_model_family = self.model_service.load_model_reference(
-                applied_model_id
-            ).model_family
         summary = BacktestRunSummary(
             run_id=run_id,
             report_file=str(report_path),
@@ -318,8 +262,6 @@ class BacktestService:
         payload = summary.to_dict() | {
             "portfolio": portfolio.to_dict(),
             "dataset_file": feature_store.dataset_file,
-            "model_id": applied_model_id,
-            "model_family": applied_model_family,
             "dataset_track": feature_store.dataset_track,
             "strategy_preset": strategy_preset,
             "metrics": metrics,
@@ -419,28 +361,12 @@ class BacktestService:
             return summary
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
-        feature_manifest = cast(
-            dict[str, object],
-            json.loads(Path(feature_store.manifest_file).read_text(encoding="utf-8")),
-        )
         latest_timestamp = max(cast(int, row["timestamp"]) for row in rows)
         rows_for_timestamp = {
             str(row["asset"]): row
             for row in rows
             if cast(int, row["timestamp"]) == latest_timestamp
         }
-        selected_assets = tuple(feature_store.selected_assets)
-        rows_for_timestamp, active_model_id = (
-            self.model_service.enrich_rows_with_active_predictions(
-                dataset_id=feature_store.dataset_id,
-                rows_by_asset=rows_for_timestamp,
-                timestamp=latest_timestamp,
-                dataset_track=feature_store.dataset_track,
-                selected_assets=selected_assets,
-                research_settings_signature=self._manifest_research_signature(feature_manifest),
-                feature_column_signature=self._manifest_feature_signature(feature_manifest),
-            )
-        )
         bars_by_asset = self._load_daily_bars(tuple(rows_for_timestamp))
         mark_bars = self._bars_at_timestamp(bars_by_asset, latest_timestamp)
         if len(mark_bars) != len(rows_for_timestamp):
@@ -508,7 +434,6 @@ class BacktestService:
             fills=fills,
             state_file=str(state_path),
             freeze_reason=strategy_decision.freeze_reason,
-            model_id=active_model_id,
             holdings=self._holdings(portfolio),
             incidents=(
                 [strategy_decision.freeze_reason]
@@ -519,7 +444,6 @@ class BacktestService:
             target_weights=decision.target_weights,
             decision_actions=decision.asset_actions,
             decision_reasons=decision.asset_reasons,
-            predictions=self._prediction_summary(rows_for_timestamp),
         )
         self.logger.info(
             "simulate cycle completed",
@@ -868,34 +792,6 @@ class BacktestService:
             },
         }
 
-    def _manifest_research_signature(self, manifest: dict[str, object]) -> str:
-        existing = manifest.get("research_settings_signature")
-        if existing not in {None, ""}:
-            return str(existing)
-        payload = cast(dict[str, object], manifest.get("research_settings", {}))
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[
-            :16
-        ]
-
-    def _manifest_feature_signature(self, manifest: dict[str, object]) -> str:
-        existing = manifest.get("feature_column_signature")
-        if existing not in {None, ""}:
-            return str(existing)
-        columns = [
-            str(column)
-            for column in manifest.get("feature_columns", [])
-            if str(column) != "timestamp" and not str(column).startswith("label_")
-        ]
-        if not columns:
-            columns = [
-                str(column)
-                for column in manifest.get("fieldnames", [])
-                if str(column) != "timestamp" and not str(column).startswith("label_")
-            ]
-        return hashlib.sha256(json.dumps(columns, sort_keys=True).encode("utf-8")).hexdigest()[
-            :16
-        ]
-
     @staticmethod
     def _benchmark_cagr(total_return: float, period_years: float) -> float | None:
         if period_years <= 0:
@@ -950,22 +846,3 @@ class BacktestService:
             asset: position.quantity
             for asset, position in sorted(portfolio.positions.items())
         }
-
-    @staticmethod
-    def _prediction_summary(
-        rows_by_asset: dict[str, dict[str, object]],
-    ) -> dict[str, dict[str, float]]:
-        summary: dict[str, dict[str, float]] = {}
-        for asset, row in sorted(rows_by_asset.items()):
-            keys = (
-                "expected_return_score",
-                "downside_risk_score",
-                "sell_risk_score",
-            )
-            if not all(key in row for key in keys):
-                continue
-            summary[asset] = {
-                key: float(row[key])  # type: ignore[arg-type]
-                for key in keys
-            }
-        return summary
