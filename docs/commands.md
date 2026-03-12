@@ -2,7 +2,7 @@
 
 - `cryptotradebot version`: print the installed version.
 - `cryptotradebot config-path`: print the resolved active configuration path.
-- `cryptotradebot setup [--home PATH] [--force]`: initialize the application home, prepare runtime-ready data, and run readiness checks.
+- `cryptotradebot setup [--home PATH] [--force] [--assets ASSET ...]`: initialize the application home, prepare runtime-ready data, and run readiness checks.
 - `cryptotradebot shell`: open the interactive shell explicitly.
 - `cryptotradebot kraken auth set API_KEY [--secret API_SECRET] [--otp OTP]`: store Kraken credentials in the active `.env`.
 - `cryptotradebot config show`: print the active non-secret configuration.
@@ -18,8 +18,8 @@
 - `cryptotradebot data complete [--assets ASSET ...] [--allow-synthetic/--no-allow-synthetic]`: repair gaps and extend canonical data to the latest closed interval.
 - `cryptotradebot data source`: show source coverage and fallback usage.
 - `cryptotradebot data prune-raw`: remove unsupported raw Kraken files outside the fixed V1 universe.
-- `cryptotradebot features build [--dataset-track TRACK] [--force]`: build deterministic point-in-time features from canonical daily candles.
-- `cryptotradebot backtest run [--dataset-track TRACK] [--strategy-preset PRESET]`: run a Kraken-only backtest from canonical daily data.
+- `cryptotradebot features build [--assets ASSET ...] [--dataset-track TRACK] [--force]`: build deterministic point-in-time features from canonical daily candles.
+- `cryptotradebot backtest run [--assets ASSET ...] [--force-features] [--dataset-track TRACK] [--strategy-preset PRESET]`: run a Kraken-only backtest from canonical daily data.
 - `cryptotradebot backtest report [--run-id RUN_ID]`: show the latest or a specific backtest report.
 - `cryptotradebot report list`: list stored reports and artifacts.
 - `cryptotradebot report export SOURCE DESTINATION`: copy a stored report or artifact to a destination path.
