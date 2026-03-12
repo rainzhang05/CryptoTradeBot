@@ -77,7 +77,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     CommandFormScreen {
         align: center middle;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     #command-form {
@@ -85,14 +85,14 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
         height: 80%;
         border: round #8b5cf6;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
         padding: 1 2;
         scrollbar-size: 0 0;
     }
 
     Input {
         border: round #6d28d9;
-        color: #111827;
+        color: ansi_default;
     }
 
     Input:focus {
@@ -103,7 +103,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     OptionList,
     SelectionList {
         border: round #6d28d9;
-        color: #111827;
+        color: ansi_default;
         scrollbar-size: 0 0;
     }
 
@@ -118,7 +118,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     }
 
     .field-help {
-        color: $text-muted;
+        color: ansi_bright_black;
         margin-bottom: 1;
     }
 
@@ -303,13 +303,13 @@ class TradebotShellApp(App[None]):
     CSS = """
     App {
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     Screen {
         layout: vertical;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     #brand {
@@ -320,7 +320,7 @@ class TradebotShellApp(App[None]):
         padding: 1 2;
         margin: 1 1 0 1;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     #body {
@@ -335,7 +335,7 @@ class TradebotShellApp(App[None]):
         border: round #6d28d9;
         padding: 1 2;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
         scrollbar-size: 0 0;
     }
 
@@ -348,7 +348,7 @@ class TradebotShellApp(App[None]):
     #command-input {
         border: round #6d28d9;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     #command-input:focus {
@@ -358,7 +358,7 @@ class TradebotShellApp(App[None]):
 
     #command-input > .input--placeholder,
     #command-input > .input--suggestion {
-        color: #6b7280;
+        color: ansi_bright_black;
     }
 
     #command-suggestions {
@@ -366,7 +366,7 @@ class TradebotShellApp(App[None]):
         border: round #6d28d9;
         margin-top: 1;
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
         scrollbar-size: 0 0;
     }
 
@@ -376,7 +376,7 @@ class TradebotShellApp(App[None]):
 
     OptionList {
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
         scrollbar-size: 0 0;
     }
 
@@ -399,23 +399,23 @@ class TradebotShellApp(App[None]):
 
     Input {
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     Checkbox {
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     SelectionList {
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
         scrollbar-size: 0 0;
     }
 
     Static {
         background: ansi_default;
-        color: #111827;
+        color: ansi_default;
     }
 
     Button {
@@ -823,7 +823,7 @@ class TradebotShellApp(App[None]):
     def _entry_display(self, entry: TranscriptEntry) -> tuple[str, str, str]:
         is_latest = entry.action_id > 0 and entry.action_id == self._latest_action_id
         if entry.kind == "context":
-            return ("bold #374151", "#4b5563", "Context")
+            return ("bold ansi_default", "ansi_bright_black", "Context")
         if entry.kind == "command":
             return self._entry_theme(is_latest, "Latest command", "Earlier command")
         if entry.kind == "result":
@@ -833,9 +833,9 @@ class TradebotShellApp(App[None]):
         if entry.kind == "error":
             return self._entry_theme(is_latest, "Latest problem", "Earlier problem")
         if entry.kind == "help":
-            return ("bold #1f2937", "#4b5563", "Shell help")
+            return ("bold ansi_default", "ansi_bright_black", "Shell help")
         if entry.kind == "system":
-            return ("bold #1f2937", "#4b5563", "Shell")
+            return ("bold ansi_default", "ansi_bright_black", "Shell")
         return self._entry_theme(is_latest, "Latest update", "Earlier update")
 
     def _entry_theme(
@@ -845,8 +845,8 @@ class TradebotShellApp(App[None]):
         earlier_label: str,
     ) -> tuple[str, str, str]:
         if is_latest:
-            return ("bold #111827", "#374151", latest_label)
-        return ("#6b7280", "#4b5563", earlier_label)
+            return ("bold ansi_default", "ansi_default", latest_label)
+        return ("ansi_bright_black", "ansi_bright_black", earlier_label)
 
     def _next_action_id(self) -> int:
         self._latest_action_id += 1
