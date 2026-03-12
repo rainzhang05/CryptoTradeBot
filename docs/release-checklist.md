@@ -42,7 +42,9 @@ Phase 11 extends the release gate with global-install and interactive-shell vali
 ## Live Preflight Readiness
 
 - `tradebot doctor` remains the required live preflight command.
-- Live mode still requires Kraken credentials and freezes when the promoted model or data prerequisites are missing.
+- Live mode still requires Kraken credentials.
+- Live mode trades with the hardened `live_default` preset unless an explicit override is supplied.
+- Live mode may fall back to the rule shell when no compatible promoted model exists, and still freezes when strict live-model enforcement or data prerequisites fail.
 - Email alert routing remains configurable and testable through the CLI.
 
 ## Interactive Shell Readiness
