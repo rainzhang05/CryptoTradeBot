@@ -124,6 +124,8 @@ Phase 4 implements this as a deterministic daily bar engine that:
 - supports dataset-track overrides for deterministic evaluation
 - generates target weights from the shared strategy path
 - executes fills on the next aligned daily bar with configured fee and slippage assumptions
+- anchors the backtest equity curve from initial USD cash before the first executed trade so drawdown and annualized metrics include first-day costs and PnL
+- reports both mark-to-market ending equity and a liquidation-adjusted ending equity estimate that applies terminal exit costs to any remaining holdings
 - writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`
 - maintains `artifacts/reports/backtests/latest_backtest_report.json` as the operator-friendly latest pointer
 
