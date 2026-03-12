@@ -10,22 +10,22 @@
 
 ## Command Naming Rule
 
-The root command for the project is `tradebot`.
+The root command for the project is `cryptotradebot`.
 
 Phase 11 extends the product from direct one-shot commands into a hybrid CLI:
 
-- `tradebot` on an interactive TTY and with no subcommand launches the interactive shell
-- `tradebot shell` explicitly launches the interactive shell
-- `tradebot <documented command> ...` remains supported for automation and scripts
-- `tradebot --help` remains a normal one-shot help command
-- `tradebot` with no args in a non-interactive context must print help and exit instead of opening a blocking shell
-- when `BOT_CONFIG_PATH` is not set and the default app home does not exist yet, the first real command use must auto-create the default `~/.tradebot/` starter layout
+- `cryptotradebot` on an interactive TTY and with no subcommand launches the interactive shell
+- `cryptotradebot shell` explicitly launches the interactive shell
+- `cryptotradebot <documented command> ...` remains supported for automation and scripts
+- `cryptotradebot --help` remains a normal one-shot help command
+- `cryptotradebot` with no args in a non-interactive context must print help and exit instead of opening a blocking shell
+- when `CRYPTOTRADEBOT_CONFIG_PATH` is not set and the default app home does not exist yet, the first real command use must auto-create the default `~/.cryptotradebot/` starter layout
 
 Commands should follow a short noun-plus-action style such as:
 
-- `tradebot run`
-- `tradebot data sync`
-- `tradebot backtest run`
+- `cryptotradebot run`
+- `cryptotradebot setup`
+- `cryptotradebot backtest run`
 
 ## Global Behavior
 
@@ -38,15 +38,15 @@ Commands should follow a short noun-plus-action style such as:
 
 ### Core runtime
 
-- `tradebot version`: print the installed application version.
-- `tradebot config-path`: print the resolved active configuration path.
-- `tradebot run`: start continuous runtime.
-- `tradebot stop`: stop a managed runtime if process control is implemented.
-- `tradebot status`: show current runtime status, positions, balances, and health.
-- `tradebot init`: bootstrap the default application home and starter configuration.
-- `tradebot shell`: open the interactive operator shell explicitly.
+- `cryptotradebot version`: print the installed application version.
+- `cryptotradebot config-path`: print the resolved active configuration path.
+- `cryptotradebot run`: start continuous runtime.
+- `cryptotradebot stop`: stop a managed runtime if process control is implemented.
+- `cryptotradebot status`: show current runtime status, positions, balances, and health.
+- `cryptotradebot setup`: initialize the application home, prepare runtime-ready data, and run readiness checks.
+- `cryptotradebot shell`: open the interactive operator shell explicitly.
 
-### `tradebot stop`
+### `cryptotradebot stop`
 
 This command must:
 
@@ -54,7 +54,7 @@ This command must:
 - request graceful termination of the recorded process when it is still running
 - return a non-zero exit when no managed runtime process is active
 
-### `tradebot status`
+### `cryptotradebot status`
 
 This command must:
 
@@ -65,40 +65,43 @@ This command must:
 
 ### Configuration and setup
 
-- `tradebot init`: create the default application home and starter files.
-- `tradebot doctor`: validate environment, config, and exchange connectivity.
-- `tradebot config show`: display active non-secret configuration.
-- `tradebot config validate`: validate the loaded configuration.
-- `tradebot email set`: set or update the alert email recipient.
-- `tradebot email test`: send a test email.
+- `cryptotradebot setup`: create the default application home if needed, prepare runtime-ready canonical data, build the deterministic feature cache, and validate non-secret runtime prerequisites.
+- `cryptotradebot kraken auth set`: write Kraken API credentials into the active `.env`.
+- `cryptotradebot config show`: display active non-secret configuration.
+- `cryptotradebot config validate`: validate the loaded configuration.
+- `cryptotradebot email set`: set or update the alert email recipient.
+- `cryptotradebot email test`: send a test email.
 
-### `tradebot init`
-
-This command must:
-
-- create the default application home under `~/.tradebot/` unless overridden by `TRADEBOT_HOME`
-- preserve `BOT_CONFIG_PATH` as the highest-precedence explicit config override for existing workflows
-- create `config/settings.yaml`, `.env`, `data/`, `artifacts/`, and `runtime/` beneath the application home
-- avoid overwriting existing files unless a force option is provided
-- print the resolved home, config, and env paths
-
-### `tradebot doctor`
+### `cryptotradebot setup`
 
 This command must:
 
-- validate that configuration loads successfully
-- check Kraken public system status
-- check private Kraken authentication when credentials are configured or required by mode
-- return a non-zero exit when required connectivity checks fail
+- create the default application home under `~/.cryptotradebot/` unless overridden by `CRYPTOTRADEBOT_HOME`
+- preserve `CRYPTOTRADEBOT_CONFIG_PATH` as the highest-precedence explicit config override for existing workflows while honoring the older override names for compatibility
+- create `config/settings.yaml`, `.env`, `data/`, `artifacts/`, and `runtime/` beneath the application home when they do not already exist
+- bootstrap a recent Kraken-native canonical data window sufficient for live and simulate mode when a fuller local history does not yet exist
+- run canonical completion, integrity validation, and deterministic feature preparation needed for live and simulate readiness
+- validate configuration loading and Kraken public system status
+- report Kraken private-auth status without treating missing credentials as a fatal setup failure
+- print the resolved home, config, env, data, and readiness status
 
-### `tradebot email set`
+### `cryptotradebot kraken auth set`
+
+This command must:
+
+- write the supplied Kraken API key into the active `.env`
+- optionally write the supplied Kraken API secret and OTP into the active `.env`
+- avoid printing secrets back to the terminal
+- report whether private credentials are now complete enough for live mode
+
+### `cryptotradebot email set`
 
 This command must:
 
 - update `alerts.email_recipient` in the active YAML configuration file
 - validate that the supplied value is a plausible email address
 
-### `tradebot email test`
+### `cryptotradebot email test`
 
 This command must:
 
@@ -108,18 +111,18 @@ This command must:
 
 ### Data
 
-- `tradebot data import`: import local Kraken historical data packages.
-- `tradebot data sync`: fetch missing or newer market data.
-- `tradebot data check`: run integrity checks and gap reports.
-- `tradebot data complete`: repair historical gaps and extend canonical data to the latest closed interval.
-- `tradebot data source`: show source coverage and fallback usage.
-- `tradebot data prune-raw`: remove unsupported raw Kraken files outside the fixed V1 universe.
+- `cryptotradebot data import`: import local Kraken historical data packages.
+- `cryptotradebot data sync`: fetch missing or newer market data.
+- `cryptotradebot data check`: run integrity checks and gap reports.
+- `cryptotradebot data complete`: repair historical gaps and extend canonical data to the latest closed interval.
+- `cryptotradebot data source`: show source coverage and fallback usage.
+- `cryptotradebot data prune-raw`: remove unsupported raw Kraken files outside the fixed V1 universe.
 
 ### Research
 
-- `tradebot features build`: build derived features.
+- `cryptotradebot features build`: build derived features.
 
-### `tradebot features build`
+### `cryptotradebot features build`
 
 This command must:
 
@@ -132,11 +135,11 @@ This command must:
 
 ### Backtesting and simulation
 
-- `tradebot backtest run`: execute a backtest.
-- `tradebot backtest report`: view or export backtest results.
-- `tradebot run --mode simulate`: start continuous simulation mode.
+- `cryptotradebot backtest run`: execute a backtest.
+- `cryptotradebot backtest report`: view or export backtest results.
+- `cryptotradebot run --mode simulate`: start continuous simulation mode.
 
-### `tradebot backtest run`
+### `cryptotradebot backtest run`
 
 This command must:
 
@@ -149,7 +152,7 @@ This command must:
 - support `--dataset-track <track>` and `--strategy-preset <preset>`
 - include yearly returns, benchmarks, regime and risk distributions, action and reason counts, average exposure, and targeted-asset frequencies in the report payload
 
-### `tradebot backtest report`
+### `cryptotradebot backtest report`
 
 This command must:
 
@@ -157,7 +160,7 @@ This command must:
 - support loading a specific `run_id` when provided
 - return a non-zero exit path if the requested report does not exist
 
-### `tradebot run --mode simulate`
+### `cryptotradebot run --mode simulate`
 
 This command must:
 
@@ -169,9 +172,9 @@ This command must:
 
 ### Live trading and monitoring
 
-- `tradebot run --mode live`: start continuous live trading and terminal monitoring.
+- `cryptotradebot run --mode live`: start continuous live trading and terminal monitoring.
 
-### `tradebot run --mode live`
+### `cryptotradebot run --mode live`
 
 This command must:
 
