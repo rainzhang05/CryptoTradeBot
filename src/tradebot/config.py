@@ -18,8 +18,10 @@ class ConfigError(RuntimeError):
     """Raised when configuration cannot be loaded or validated."""
 
 
-TRADEBOT_HOME_ENV = "TRADEBOT_HOME"
-BOT_CONFIG_PATH_ENV = "BOT_CONFIG_PATH"
+CRYPTOTRADEBOT_HOME_ENV = "CRYPTOTRADEBOT_HOME"
+LEGACY_TRADEBOT_HOME_ENV = "TRADEBOT_HOME"
+CRYPTOTRADEBOT_CONFIG_PATH_ENV = "CRYPTOTRADEBOT_CONFIG_PATH"
+LEGACY_BOT_CONFIG_PATH_ENV = "BOT_CONFIG_PATH"
 
 
 @dataclass(frozen=True)
@@ -357,18 +359,20 @@ def _strategy_preset_fingerprint(config: AppConfig) -> tuple[object, ...]:
 
 def default_config_path() -> Path:
     """Resolve the default configuration path from explicit overrides or the app home."""
-    configured_path = os.getenv(BOT_CONFIG_PATH_ENV)
+    configured_path = os.getenv(CRYPTOTRADEBOT_CONFIG_PATH_ENV) or os.getenv(
+        LEGACY_BOT_CONFIG_PATH_ENV
+    )
     if configured_path:
         return Path(configured_path).expanduser().resolve()
     return app_home_layout().config_path.resolve()
 
 
 def default_tradebot_home() -> Path:
-    """Resolve the default Tradebot home directory."""
-    configured_home = os.getenv(TRADEBOT_HOME_ENV)
+    """Resolve the default CryptoTradeBot home directory."""
+    configured_home = os.getenv(CRYPTOTRADEBOT_HOME_ENV) or os.getenv(LEGACY_TRADEBOT_HOME_ENV)
     if configured_home:
         return Path(configured_home).expanduser().resolve()
-    return (Path.home() / ".tradebot").resolve()
+    return (Path.home() / ".cryptotradebot").resolve()
 
 
 def app_home_layout(home: Path | None = None) -> AppHomeLayout:
@@ -465,7 +469,7 @@ def initialize_app_home(
 
 def ensure_app_home_initialized() -> dict[str, object] | None:
     """Create the default application home on first use when no explicit config override exists."""
-    if os.getenv(BOT_CONFIG_PATH_ENV):
+    if os.getenv(CRYPTOTRADEBOT_CONFIG_PATH_ENV) or os.getenv(LEGACY_BOT_CONFIG_PATH_ENV):
         return None
     layout = app_home_layout()
     if layout.config_path.exists():
