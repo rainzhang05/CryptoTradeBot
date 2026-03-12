@@ -21,8 +21,6 @@ app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
-research_app = typer.Typer(help="Run staged research sweeps and inspect reports.")
-model_app = typer.Typer(help="Train, validate, and promote ML model artifacts.")
 backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
 email_app = typer.Typer(help="Manage alert email configuration and SMTP checks.")
 report_app = typer.Typer(help="List and export generated reports and artifacts.")
@@ -32,8 +30,6 @@ ASSETS_OPTION = typer.Option(default=None)
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
-app.add_typer(research_app, name="research")
-app.add_typer(model_app, name="model")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(email_app, name="email")
 app.add_typer(report_app, name="report")
@@ -329,7 +325,7 @@ def features_build(
         help="Optional dataset track override.",
     ),
 ) -> None:
-    """Build a deterministic feature and label dataset from canonical daily candles."""
+    """Build a deterministic feature dataset from canonical daily candles."""
     typer.echo(
         render_direct_output(
             "features_build",
@@ -337,125 +333,6 @@ def features_build(
                 "features_build",
                 {"assets": assets, "force": force, "dataset_track": dataset_track},
             ),
-        )
-    )
-
-
-@research_app.command("sweep")
-def research_sweep(
-    preset: str = typer.Option(
-        default="broad_staged",
-        help="Named staged research sweep preset to execute.",
-    ),
-    resume: bool = typer.Option(
-        default=False,
-        help="Resume a previously started deterministic sweep id for this preset/config.",
-    ),
-    max_workers: int = typer.Option(
-        default=1,
-        min=1,
-        help="Requested research worker count.",
-    ),
-    limit: int | None = typer.Option(
-        default=None,
-        min=1,
-        help="Optional cap on the number of experiments to execute this run.",
-    ),
-) -> None:
-    """Execute a staged research sweep across dataset, rule, and ML combinations."""
-    typer.echo(
-        render_direct_output(
-            "research_sweep",
-            _invoke_direct(
-                "research_sweep",
-                {
-                    "preset": preset,
-                    "resume": resume,
-                    "max_workers": max_workers,
-                    "limit": limit,
-                },
-            ),
-        )
-    )
-
-
-@research_app.command("report")
-def research_report(
-    sweep_id: str | None = typer.Argument(
-        default=None,
-        help="Optional sweep identifier. Defaults to the latest generated sweep report.",
-    ),
-) -> None:
-    """Print a stored research sweep report."""
-    typer.echo(
-        render_direct_output(
-            "research_report",
-            _invoke_direct("research_report", {"sweep_id": sweep_id}),
-        )
-    )
-
-
-@model_app.command("train")
-def model_train(
-    assets: list[str] | None = ASSETS_OPTION,
-    force_features: bool = typer.Option(
-        default=False,
-        help="Rebuild the feature dataset before training the model.",
-    ),
-    dataset_track: str | None = typer.Option(
-        default=None,
-        help="Optional dataset track override.",
-    ),
-    family: str = typer.Option(
-        default="ridge_logistic",
-        help="Model family to train.",
-    ),
-) -> None:
-    """Train the Phase 6 ML artifact with walk-forward validation."""
-    typer.echo(
-        render_direct_output(
-            "model_train",
-            _invoke_direct(
-                "model_train",
-                {
-                    "assets": assets,
-                    "force_features": force_features,
-                    "dataset_track": dataset_track,
-                    "family": family,
-                },
-            ),
-        )
-    )
-
-
-@model_app.command("validate")
-def model_validate(
-    model_id: str | None = typer.Option(
-        default=None,
-        help="Optional model identifier. Defaults to the latest trained model.",
-    ),
-) -> None:
-    """Validate one trained model artifact against the promotion rules."""
-    typer.echo(
-        render_direct_output(
-            "model_validate",
-            _invoke_direct("model_validate", {"model_id": model_id}),
-        )
-    )
-
-
-@model_app.command("promote")
-def model_promote(
-    model_id: str | None = typer.Option(
-        default=None,
-        help="Optional model identifier. Defaults to the latest trained model.",
-    ),
-) -> None:
-    """Promote one validated model artifact to the active strategy pointer."""
-    typer.echo(
-        render_direct_output(
-            "model_promote",
-            _invoke_direct("model_promote", {"model_id": model_id}),
         )
     )
 
@@ -470,15 +347,6 @@ def backtest_run(
     dataset_track: str | None = typer.Option(
         default=None,
         help="Optional dataset track override.",
-    ),
-    model_id: str | None = typer.Option(
-        default=None,
-        help="Optional explicit model artifact to use.",
-    ),
-    use_active_model: bool = typer.Option(
-        True,
-        "--use-active-model/--no-use-active-model",
-        help="Use the promoted active model when no explicit model id is provided.",
     ),
     strategy_preset: str | None = typer.Option(
         default=None,
@@ -495,8 +363,6 @@ def backtest_run(
                     "assets": assets,
                     "force_features": force_features,
                     "dataset_track": dataset_track,
-                    "model_id": model_id,
-                    "use_active_model": use_active_model,
                     "strategy_preset": strategy_preset,
                 },
             ),
