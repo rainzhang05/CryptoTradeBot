@@ -27,7 +27,17 @@ class StrategyEngine:
         self.strategy_settings = config.strategy
         self.research_settings = config.research
         self.backtest_settings = config.backtest
-        self.research_profile = research_profile or ResearchStrategyProfile()
+        self.research_profile = research_profile or self._default_research_profile()
+
+    def _default_research_profile(self) -> ResearchStrategyProfile:
+        return ResearchStrategyProfile(
+            regime_layer_enabled=self.strategy_settings.regime_layer_enabled,
+            entry_filter_layer_enabled=self.strategy_settings.entry_filter_layer_enabled,
+            volatility_layer_enabled=self.strategy_settings.volatility_layer_enabled,
+            gradual_reduction_layer_enabled=(
+                self.strategy_settings.gradual_reduction_layer_enabled
+            ),
+        )
 
     def evaluate(
         self,
@@ -112,6 +122,7 @@ class StrategyEngine:
                 held=asset in portfolio.positions,
                 current_weight=current_weights.get(asset, 0.0),
                 regime_state=regime_state,
+                exposure_fraction=exposure_fraction,
                 expected_return_rank=expected_return_ranks.get(asset, 0.0),
                 downside_risk_score=downside_scores.get(asset, 0.0),
                 sell_risk_score=sell_risk_scores.get(asset, 0.0),
@@ -152,6 +163,7 @@ class StrategyEngine:
         held: bool,
         current_weight: float,
         regime_state: str,
+        exposure_fraction: float,
         expected_return_rank: float,
         downside_risk_score: float,
         sell_risk_score: float,
@@ -235,9 +247,19 @@ class StrategyEngine:
                 current_weight=current_weight,
             )
 
+        defensive_entry_allowed = (
+            regime_state == "defensive"
+            and long_momentum >= self.strategy_settings.hold_momentum_floor
+            and long_trend >= self.strategy_settings.hold_trend_gap_floor
+            and relative_strength > self.strategy_settings.weak_relative_strength_floor
+            and volatility <= self.strategy_settings.max_realized_volatility
+            and short_trend >= self.strategy_settings.entry_trend_gap_floor
+        )
         entry_eligible = True
         if self.research_profile.regime_layer_enabled:
-            entry_eligible = entry_eligible and regime_state != "defensive"
+            entry_eligible = entry_eligible and (
+                regime_state != "defensive" or defensive_entry_allowed
+            )
         if self.research_profile.entry_filter_layer_enabled:
             entry_eligible = (
                 entry_eligible
@@ -322,6 +344,18 @@ class StrategyEngine:
                 score=0.0,
                 current_weight=current_weight,
             )
+        if (
+            held
+            and self.research_profile.downside_risk_head_enabled
+            and downside_risk_score >= self.config.model.exit_downside_threshold
+        ):
+            return self._asset_decision(
+                asset=asset,
+                action="exit",
+                reason="downside_risk_exit",
+                score=0.0,
+                current_weight=current_weight,
+            )
 
         if (
             held
@@ -339,10 +373,26 @@ class StrategyEngine:
                 )
             )
         ):
-            reduced_weight = min(
-                current_weight * self.strategy_settings.reduction_target_fraction,
+            reduction_floor = min(
                 self.backtest_settings.max_asset_weight,
+                exposure_fraction / self.backtest_settings.max_positions,
             )
+            reduced_weight = min(
+                current_weight,
+                max(
+                    current_weight * self.strategy_settings.reduction_target_fraction,
+                    reduction_floor,
+                ),
+            )
+            if reduced_weight >= current_weight - self.backtest_settings.rebalance_threshold:
+                return self._asset_decision(
+                    asset=asset,
+                    action="hold",
+                    reason="held_supportive",
+                    score=max(score, 0.0),
+                    current_weight=current_weight,
+                    target_weight=current_weight,
+                )
             return self._asset_decision(
                 asset=asset,
                 action="reduce",
@@ -355,7 +405,11 @@ class StrategyEngine:
         if not held and not entry_eligible:
             reason = (
                 "defensive_regime"
-                if self.research_profile.regime_layer_enabled and regime_state == "defensive"
+                if (
+                    self.research_profile.regime_layer_enabled
+                    and regime_state == "defensive"
+                    and not defensive_entry_allowed
+                )
                 else "entry_filter_failed"
             )
             return self._asset_decision(
