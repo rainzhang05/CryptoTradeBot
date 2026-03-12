@@ -52,7 +52,7 @@ class RuntimeSettings(BaseModel):
     """Runtime settings shared by simulate and live mode."""
 
     default_mode: Literal["simulate", "live"] = "simulate"
-    max_cycles: int = Field(default=1, ge=1)
+    max_cycles: int | None = Field(default=None, ge=1)
     cycle_interval_seconds: float = Field(default=1.0, gt=0)
     live_order_poll_seconds: float = Field(default=2.0, gt=0)
     live_order_timeout_seconds: float = Field(default=20.0, gt=0)
