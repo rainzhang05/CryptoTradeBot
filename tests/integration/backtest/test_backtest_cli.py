@@ -127,6 +127,8 @@ def test_backtest_run_and_report_commands(tmp_path: Path, monkeypatch) -> None:
             "--model-id",
             model_id,
             "--no-use-active-model",
+            "--strategy-preset",
+            "max_profit",
         ],
     )
     report_result = runner.invoke(app, ["backtest", "report"])
@@ -134,5 +136,6 @@ def test_backtest_run_and_report_commands(tmp_path: Path, monkeypatch) -> None:
     assert run_result.exit_code == 0
     assert '"run_id":' in run_result.stdout
     assert '"dataset_id":' in run_result.stdout
+    assert '"strategy_preset": "max_profit"' in run_result.stdout
     assert report_result.exit_code == 0
     assert '"final_equity_usd":' in report_result.stdout
