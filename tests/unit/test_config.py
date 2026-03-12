@@ -71,7 +71,6 @@ paths:
     assert config.secrets.kraken_api_key == "demo-key"
     assert config.secrets.smtp_port == 2525
     assert config.research.default_dataset_track == "dynamic_universe_kraken_only"
-    assert config.runtime.live_require_active_model is False
     assert config.strategy.volatility_layer_enabled is False
     assert config.strategy.gradual_reduction_layer_enabled is False
     assert config.strategy.entry_momentum_floor == 0.0
@@ -79,7 +78,6 @@ paths:
     assert config.backtest.neutral_exposure == 0.78
     assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
     assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
-    assert config.resolved_paths().models_dir == (tmp_path / "artifacts" / "models").resolve()
 
 
 def test_apply_strategy_preset_can_switch_to_max_profit_profile(tmp_path: Path) -> None:
@@ -150,7 +148,7 @@ paths: {}
     load_config(config_path=config_path, env_path=tmp_path / ".env")
 
 
-def test_load_config_rejects_invalid_model_threshold_order(tmp_path: Path) -> None:
+def test_load_config_rejects_invalid_dataset_track(tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path,
         """
@@ -159,9 +157,8 @@ runtime: {}
 exchange: {}
 strategy:
   fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
-model:
-  reduce_sell_risk_threshold: 0.7
-  exit_sell_risk_threshold: 0.6
+research:
+  default_dataset_track: unsupported_track
 alerts: {}
 paths: {}
 """,
