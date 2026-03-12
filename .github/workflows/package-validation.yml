@@ -111,7 +111,7 @@ jobs:
       - name: Prepare Python environment
         uses: ./.github/actions/setup-python-dev
 
-      - name: Validate research, model, backtest, and simulation workflow
+      - name: Validate feature, backtest, and simulation workflow
         run: |
           rm -rf .ci-release
           mkdir -p .ci-release/config
@@ -136,19 +136,6 @@ jobs:
             breadth_window_days: 2
             dollar_volume_window_days: 2
             source_window_days: 2
-            forward_return_days: 1
-            downside_lookahead_days: 2
-            downside_threshold: 0.05
-            sell_lookahead_days: 3
-            sell_drawdown_threshold: 0.08
-            sell_return_threshold: -0.01
-          model:
-            initial_train_timestamps: 2
-            minimum_validation_rows: 1
-            minimum_walk_forward_splits: 1
-            promotion_min_expected_return_correlation: -1.0
-            promotion_max_downside_brier: 1.0
-            promotion_max_sell_brier: 1.0
           backtest:
             initial_cash_usd: 1000.0
             fee_rate_bps: 0.0
@@ -190,14 +177,7 @@ jobs:
               ]
               write_candles(path, candles)
           PY
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model train --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model validate
-          if ! BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot model promote > .ci-release/model-promote.log 2>&1; then
-            cat .ci-release/model-promote.log
-            grep -q "does not improve on the rule-only baseline" .ci-release/model-promote.log
-          else
-            cat .ci-release/model-promote.log
-          fi
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot features build --assets BTC --assets ETH
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest run --assets BTC --assets ETH
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest report
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot run --mode simulate --max-cycles 1
@@ -206,8 +186,8 @@ jobs:
         run: |
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot status
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report list
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report export artifacts/reports/models/latest_training_summary.json .ci-release/exports/latest_training_summary.json
+          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report export artifacts/reports/backtests/latest_backtest_report.json .ci-release/exports/latest_backtest_report.json
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot email set trader@example.com
           BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot logs tail --lines 1
-          test -f .ci-release/exports/latest_training_summary.json
+          test -f .ci-release/exports/latest_backtest_report.json
           grep -q "trader@example.com" .ci-release/config/settings.yaml
