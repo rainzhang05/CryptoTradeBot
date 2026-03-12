@@ -232,7 +232,7 @@ This command must:
 - infer the compatible dataset tail from the promoted bundle when prediction CSV coverage stops before the current tail, instead of silently degrading to rule-only
 - write run artifacts under `artifacts/backtests/<run_id>/`
 - update `artifacts/reports/backtests/latest_backtest_report.json`
-- support `--dataset-track <track>`, `--model-id <id>`, and `--use-active-model/--no-use-active-model`
+- support `--dataset-track <track>`, `--strategy-preset <preset>`, `--model-id <id>`, and `--use-active-model/--no-use-active-model`
 - include yearly returns, benchmarks, regime and risk distributions, action and reason counts, average exposure, and targeted-asset frequencies in the report payload
 
 ### `tradebot backtest report`
@@ -252,7 +252,7 @@ This command must:
 - load the active promoted model reference when available so simulation uses the same hybrid strategy path as backtests
 - update that state after each completed simulation cycle
 - return a clear waiting state when canonical data or deterministic signals are not yet available
-- support `--dataset-track <track>`
+- support `--dataset-track <track>` and `--strategy-preset <preset>`
 
 ### Live trading and monitoring
 
@@ -269,8 +269,10 @@ This command must:
 - refresh Kraken's dead-man switch before each live decision cycle
 - sync balances and open orders from Kraken before making a new decision
 - build point-in-time signal rows from canonical Kraken data without forward labels
-- support `--dataset-track <track>` while keeping the live tradeable universe fixed to the documented ten assets
-- require an active promoted model artifact for live inference and freeze if it is missing
+- support `--dataset-track <track>` and `--strategy-preset <preset>` while keeping the live tradeable universe fixed to the documented ten assets
+- use the hardened `live_default` preset when no strategy override is provided
+- consume promoted-model predictions only when a compatible active model exists
+- fall back to the rule shell when no compatible active model exists unless strict live-model enforcement is enabled in configuration
 - place market orders only through the shared order-intent path used by simulate mode
 - persist live runtime state under `runtime/state/live_state.json`
 - update `artifacts/reports/runtime/latest_live_status.json` after each cycle
