@@ -315,6 +315,7 @@ class ResearchSweepService:
         self.paths = config.resolved_paths()
         self.logger = get_logger("tradebot.research.sweep")
         self._holdout_cache: dict[str, list[tuple[int, int, int]]] = {}
+        self.maximum_hybrid_drawdown_gap = config.model.promotion_max_drawdown_gap
 
     def run_sweep(
         self,
@@ -378,6 +379,14 @@ class ResearchSweepService:
                 self._write_results(results_path, results)
                 if limit_remaining is not None:
                     limit_remaining = max(limit_remaining - 1, 0)
+            self._persist_progress(
+                sweep_id=sweep_id,
+                sweep_dir=sweep_dir,
+                manifest=manifest,
+                results=results,
+                manifest_path=manifest_path,
+                leaderboard_path=leaderboard_path,
+            )
 
         self._update_manifest_run_state(
             manifest,
@@ -387,22 +396,13 @@ class ResearchSweepService:
             limit_remaining=limit_remaining,
         )
         write_json(manifest_path, manifest)
-        report = self._build_report(
+        report = self._persist_progress(
             sweep_id=sweep_id,
+            sweep_dir=sweep_dir,
             manifest=manifest,
             results=results,
+            manifest_path=manifest_path,
             leaderboard_path=leaderboard_path,
-        )
-        latest_pointer = self.paths.artifacts_dir / "reports" / "research" / "latest_sweep.json"
-        write_json(
-            latest_pointer,
-            {
-                "sweep_id": sweep_id,
-                "report_file": str(sweep_dir / "report.json"),
-                "leaderboard_file": str(leaderboard_path),
-                "manifest_file": str(manifest_path),
-                "results_file": str(results_path),
-            },
         )
         leaderboard_payload = cast(dict[str, list[dict[str, object]]], report["leaderboard"])
         rule_only_entries = leaderboard_payload["rule_only"]
@@ -470,12 +470,12 @@ class ResearchSweepService:
             self._rule_only_spec(
                 stage=0,
                 stage_name="stage_0_baselines",
-                dataset_track="official_fixed_10",
+                dataset_track="dynamic_universe_kraken_only",
             ),
             self._hybrid_spec(
                 stage=0,
                 stage_name="stage_0_baselines",
-                dataset_track="official_fixed_10",
+                dataset_track="dynamic_universe_kraken_only",
             ),
             self._rule_only_spec(
                 stage=0,
@@ -486,6 +486,16 @@ class ResearchSweepService:
                 stage=0,
                 stage_name="stage_0_baselines",
                 dataset_track="subset_9_no_bnb",
+            ),
+            self._rule_only_spec(
+                stage=0,
+                stage_name="stage_0_baselines",
+                dataset_track="official_fixed_10",
+            ),
+            self._hybrid_spec(
+                stage=0,
+                stage_name="stage_0_baselines",
+                dataset_track="official_fixed_10",
             ),
         ]
 
@@ -1291,6 +1301,35 @@ class ResearchSweepService:
         write_json(report_path, payload)
         payload["report_file"] = str(report_path)
         return payload
+
+    def _persist_progress(
+        self,
+        *,
+        sweep_id: str,
+        sweep_dir: Path,
+        manifest: dict[str, object],
+        results: list[dict[str, object]],
+        manifest_path: Path,
+        leaderboard_path: Path,
+    ) -> dict[str, object]:
+        report = self._build_report(
+            sweep_id=sweep_id,
+            manifest=manifest,
+            results=results,
+            leaderboard_path=leaderboard_path,
+        )
+        latest_pointer = self.paths.artifacts_dir / "reports" / "research" / "latest_sweep.json"
+        write_json(
+            latest_pointer,
+            {
+                "sweep_id": sweep_id,
+                "report_file": str(sweep_dir / "report.json"),
+                "leaderboard_file": str(leaderboard_path),
+                "manifest_file": str(manifest_path),
+                "results_file": str(sweep_dir / "results.csv"),
+            },
+        )
+        return report
 
     def _leaderboard(self, results: list[dict[str, object]]) -> dict[str, object]:
         baseline_results = [
