@@ -75,7 +75,8 @@ paths:
     assert config.strategy.volatility_layer_enabled is False
     assert config.strategy.gradual_reduction_layer_enabled is False
     assert config.strategy.entry_momentum_floor == 0.0
-    assert config.backtest.max_positions == 5
+    assert config.backtest.max_positions == 3
+    assert config.backtest.neutral_exposure == 0.78
     assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
     assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
     assert config.resolved_paths().models_dir == (tmp_path / "artifacts" / "models").resolve()
