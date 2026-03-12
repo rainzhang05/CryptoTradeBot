@@ -10,10 +10,11 @@ The interactive shell supports the same documented command surface as the direct
 
 ## Supported operator commands
 
+- `setup`: initialize the application home, prepare runtime-ready data, and run readiness checks.
 - `run`: start the configured runtime mode. The shell form exposes mode, cycle limit, dataset track, and strategy preset.
 - `stop`: request termination of the tracked runtime process.
 - `status`: show the latest known runtime status.
-- `doctor`: run environment and exchange preflight checks.
+- `kraken auth set`: store Kraken credentials in the active `.env`.
 - `config show`: print the active non-secret configuration.
 - `config validate`: validate the active configuration.
 - `data import`: import raw Kraken data.
