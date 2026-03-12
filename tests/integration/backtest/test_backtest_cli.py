@@ -106,3 +106,4 @@ def test_backtest_run_and_report_commands(tmp_path: Path, monkeypatch) -> None:
     assert '"strategy_preset": "max_profit"' in run_result.stdout
     assert report_result.exit_code == 0
     assert '"final_equity_usd":' in report_result.stdout
+    assert '"net_liquidation_total_return":' in report_result.stdout
