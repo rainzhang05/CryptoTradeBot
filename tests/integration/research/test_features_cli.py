@@ -83,8 +83,21 @@ def test_features_build_command(tmp_path: Path, monkeypatch) -> None:
         [49, 51, 53, 52, 48, 56, 55],
     )
 
-    result = runner.invoke(app, ["features", "build", "--assets", "BTC", "--assets", "ETH"])
+    result = runner.invoke(
+        app,
+        [
+            "features",
+            "build",
+            "--assets",
+            "BTC",
+            "--assets",
+            "ETH",
+            "--dataset-track",
+            "dynamic_universe_kraken_only",
+        ],
+    )
 
     assert result.exit_code == 0
     assert '"dataset_id":' in result.stdout
     assert '"cached": false' in result.stdout
+    assert '"dataset_track": "dynamic_universe_kraken_only"' in result.stdout
