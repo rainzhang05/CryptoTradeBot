@@ -51,6 +51,11 @@ Kraken historical data may come from two paths:
 - user-provided full historical data packages already downloaded locally
 - Kraken API retrieval for dates not covered by the local dump
 
+The operator-facing `cryptotradebot setup` workflow must also be able to bootstrap a runtime-ready
+recent Kraken history window on a blank machine. That bootstrap is allowed to use the public Kraken
+OHLC API to seed only the recent history required for live and simulate mode when no fuller local
+history exists yet.
+
 ### Binance and Coinbase
 
 Binance and Coinbase data should come only from free publicly available sources such as APIs or downloadable market-history endpoints permitted by those platforms.
@@ -79,6 +84,11 @@ The project must normalize all market data into a canonical local format.
 - Use the full historical span available from Kraken for each asset.
 - Extend beyond 2025-12-31 using API retrieval when the local dump stops there.
 - Retain as much historical data as the local machine can handle comfortably.
+
+For live and simulate readiness on a blank install, the setup workflow only needs to seed a recent
+Kraken-native runtime window that comfortably exceeds the strategy lookback requirements. Full
+research and long-horizon backtest history may still rely on user-provided Kraken dumps plus later
+completion runs.
 
 The project should optimize storage and caching rather than artificially truncating history.
 
@@ -165,6 +175,8 @@ The implementation must provide a stable asset mapping layer so the project can 
 - canonical OHLCV for all ten assets from Kraken
 - incremental Kraken extension past the user-provided dump end date
 - integrity reports for each asset
+- a one-command runtime bootstrap path that seeds enough Kraken-native recent candles for
+  `simulate` and `live` mode on a blank machine
 
 ### Production-ready dataset
 
