@@ -1,1 +1,0 @@
-"""Model integration test package."""
