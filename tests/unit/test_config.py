@@ -68,6 +68,10 @@ paths:
     assert config.alerts.email_recipient == "trader@example.com"
     assert config.secrets.kraken_api_key == "demo-key"
     assert config.secrets.smtp_port == 2525
+    assert config.research.default_dataset_track == "dynamic_universe_kraken_only"
+    assert config.strategy.volatility_layer_enabled is False
+    assert config.strategy.gradual_reduction_layer_enabled is False
+    assert config.backtest.max_positions == 3
     assert config.resolved_paths().data_dir == (tmp_path / "data").resolve()
     assert config.resolved_paths().features_dir == (tmp_path / "artifacts" / "features").resolve()
     assert config.resolved_paths().models_dir == (tmp_path / "artifacts" / "models").resolve()
