@@ -22,10 +22,14 @@ def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         ModelService,
         "_promotion_backtest_comparison",
-        lambda self, *, model_id, assets: {
+        lambda self, *, model_id, assets, dataset_track: {
             "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
             "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
             "incremental_total_return": 0.01,
+            "hybrid_cagr": 0.03,
+            "rule_only_cagr": 0.02,
+            "yearly_win_rate": 1.0,
+            "max_drawdown_gap": 0.01,
         },
     )
 
