@@ -55,9 +55,9 @@ strategy:
   drawdown_caution_threshold: 0.10
   drawdown_reduced_threshold: 0.20
   drawdown_catastrophe_threshold: 0.30
-  elevated_caution_exposure_multiplier: 0.90
-  reduced_aggressiveness_exposure_multiplier: 0.68
-  catastrophe_exposure_multiplier: 0.24
+  elevated_caution_exposure_multiplier: 0.96
+  reduced_aggressiveness_exposure_multiplier: 0.78
+  catastrophe_exposure_multiplier: 0.32
 
 research:
   primary_interval: 1d
@@ -99,14 +99,14 @@ backtest:
   initial_cash_usd: 100000.0
   fee_rate_bps: 26.0
   slippage_bps: 10.0
-  max_positions: 5
+  max_positions: 3
   max_asset_weight: 0.35
   min_order_notional_usd: 25.0
-  rebalance_threshold: 0.03
+  rebalance_threshold: 0.05
   quantity_precision: 8
   constructive_exposure: 1.0
-  neutral_exposure: 0.70
-  defensive_exposure: 0.35
+  neutral_exposure: 0.78
+  defensive_exposure: 0.45
 
 alerts:
   email_recipient: null
