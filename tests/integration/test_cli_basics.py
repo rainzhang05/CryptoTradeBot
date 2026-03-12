@@ -37,7 +37,7 @@ paths: {}
 """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
 
     result = runner.invoke(app, ["config-path"])
 
@@ -45,10 +45,36 @@ paths: {}
     assert str(config_path.resolve()) in result.stdout
 
 
-def test_init_command_bootstraps_application_home(tmp_path: Path) -> None:
-    home = tmp_path / "tradebot-home"
+def test_setup_command_bootstraps_application_home(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "cryptotradebot-home"
 
-    result = runner.invoke(app, ["init", "--home", str(home)])
+    class FakeOperationsService:
+        def __init__(self, config: object) -> None:
+            self.config = config
+
+        def setup_summary(self, assets=None) -> dict[str, object]:
+            del assets
+            return {
+                "ok": True,
+                "ready_for_live": False,
+                "ready_for_live_after_auth": True,
+                "selected_assets": ["BTC"],
+                "missing_for_live": ["KRAKEN_API_KEY", "KRAKEN_API_SECRET"],
+                "exchange": {
+                    "public_api": {"ok": True},
+                    "private_api": {"configured": False, "ok": False},
+                },
+                "default_mode": "simulate",
+                "email_configured": False,
+                "paths": {},
+                "data_completion": {"assets": []},
+                "integrity": {"results": []},
+                "features": {"dataset_id": "dataset-1"},
+            }
+
+    monkeypatch.setattr(commanding_module, "OperationsService", FakeOperationsService)
+
+    result = runner.invoke(app, ["setup", "--home", str(home)])
 
     assert result.exit_code == 0
     assert (home / "config" / "settings.yaml").exists()
@@ -56,15 +82,17 @@ def test_init_command_bootstraps_application_home(tmp_path: Path) -> None:
     assert (home / "data").exists()
     assert (home / "artifacts").exists()
     assert (home / "runtime").exists()
+    assert '"ready_for_live_after_auth": true' in result.stdout.lower()
 
 
 def test_config_validate_auto_bootstraps_default_application_home(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     result = runner.invoke(app, ["config", "validate"])
 
@@ -90,7 +118,7 @@ paths: {}
 """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
 
     result = runner.invoke(app, ["config", "validate"])
 
@@ -117,7 +145,7 @@ paths: {}
 """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
 
     result = runner.invoke(
         app,
@@ -155,7 +183,7 @@ paths: {}
 """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
     monkeypatch.setenv("KRAKEN_API_KEY", "test-key")
     monkeypatch.setenv("KRAKEN_API_SECRET", "dGVzdA==")
 
@@ -244,7 +272,7 @@ def test_main_prints_help_in_non_interactive_no_arg_mode(monkeypatch) -> None:
     captured: list[list[str]] = []
 
     def fake_app(*, prog_name: str, args: list[str]) -> None:
-        assert prog_name == "tradebot"
+        assert prog_name == "cryptotradebot"
         captured.append(args)
 
     monkeypatch.setattr(cli_module, "_is_interactive_terminal", lambda: False)
