@@ -14,6 +14,7 @@ The ML layer exists to improve ranking quality and to make downside handling mor
 - Hold cash in USD when not allocated.
 - Use rule-based logic for hard constraints and market structure.
 - Use ML for probabilistic forecasting and sell-quality refinement.
+- Optimize for aggressive after-fee return rather than preserving the current ultra-low-drawdown profile as a primary goal.
 - Bias toward holding losing positions longer when the forward outlook remains acceptable.
 - Avoid naive forced selling purely because a position is red versus entry.
 - Allow the strategy to de-risk when both market structure and predictive evidence deteriorate materially.
@@ -56,6 +57,8 @@ Intraday monitoring exists for execution and severe deterioration handling, not 
 - Portfolio rebalance consideration: once per day.
 - Execution monitoring: continuous while the bot is running.
 - Retraining cadence: scheduled, versioned, and separate from live trading.
+- Walk-forward model validation retrains on the configured cadence instead of refitting on every
+  daily timestamp.
 
 The exact clock times may be adjusted during implementation, but they must remain fixed, documented, and consistent across backtest, simulate, and live modes.
 
@@ -101,6 +104,11 @@ Supplementary exchange data must not replace Kraken values in the primary signal
 The Phase 3 implementation uses these deterministic daily research defaults:
 
 - primary feature interval: 1 day
+- default full-universe research and backtest dataset track: `dynamic_universe_kraken_only`
+- default shell layers: regime filter on, entry filter on, volatility veto off, gradual
+  reduction off
+- default concentration posture: maximum 3 positions, maximum 35% per asset, 5% rebalance
+  threshold, and a 3-point held-asset score bonus
 - momentum windows: 7, 30, and 90 trading days
 - trend-gap windows: 50 and 200 trading days
 - realized-volatility windows: 20 and 60 trading days
@@ -184,6 +192,7 @@ An asset becomes a candidate for purchase or increased weight when:
 Entries are driven by relative attractiveness, not by dip-buying logic alone.
 
 The current implementation also blocks new entries when predicted downside risk breaches the configured entry threshold even if the broader rule shell remains constructive.
+When the regime is defensive, the rule shell may still admit top-ranked entries if source confidence, liquidity, and long-horizon structure remain acceptable. Any such entries remain capped by the defensive exposure policy.
 
 ## Exit and Sell Logic
 
@@ -217,6 +226,7 @@ The system should reduce but not necessarily fully exit when:
 - Market breadth weakens while BTC remains constructive.
 
 The implemented Phase 6 path also reduces positions when sell-risk or downside-risk predictions deteriorate before a hard forced-exit condition is reached.
+The implementation should keep reductions above a practical floor so positions are not repeatedly halved into operationally meaningless dust weights.
 
 ### Loss-handling policy
 
@@ -298,6 +308,7 @@ The ML subsystem must improve decisions in these areas:
 - Clear versioning of datasets, features, models, and results.
 - Performance must be assessed on Kraken-based evaluation data.
 - The ML layer must demonstrate incremental benefit over the rule-only baseline before promotion.
+- Full-universe promotion work should use the dynamic-universe research track as the primary benchmark path.
 
 The current validation summaries track expected-return MAE, expected-return correlation, directional accuracy, downside Brier score, sell-risk Brier score, validation row count, and walk-forward split count.
 
