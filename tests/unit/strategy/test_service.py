@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tradebot.backtest.models import PortfolioState, PositionState
 from tradebot.config import load_config
 from tradebot.strategy.models import ResearchStrategyProfile
@@ -21,6 +23,10 @@ runtime: {}
 exchange: {}
 strategy:
   fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+  regime_layer_enabled: true
+  entry_filter_layer_enabled: true
+  volatility_layer_enabled: true
+  gradual_reduction_layer_enabled: true
   min_source_confidence: 0.8
   entry_momentum_floor: 0.0
   entry_trend_gap_floor: 0.0
@@ -119,9 +125,47 @@ def test_strategy_engine_reduces_held_assets_in_defensive_regime(tmp_path: Path)
     assert decision.risk_state == "reduced_aggressiveness"
     assert decision.asset_decisions["BTC"].action == "reduce"
     assert decision.asset_decisions["BTC"].target_weight == 0.1
-    assert decision.asset_decisions["ETH"].action == "blocked"
+    assert decision.asset_decisions["ETH"].action == "enter"
     assert decision.exposure_fraction == 0.15
-    assert decision.target_weights == {"BTC": 0.1}
+    assert decision.target_weights["BTC"] == pytest.approx(0.1)
+    assert decision.target_weights["ETH"] == pytest.approx(0.05)
+
+
+def test_strategy_engine_uses_reduction_floor_instead_of_dusting_positions(
+    tmp_path: Path,
+) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    engine = StrategyEngine(config)
+    portfolio = PortfolioState(
+        cash_usd=900.0,
+        positions={
+            "BTC": PositionState(asset="BTC", quantity=1.0, average_entry_price=95.0),
+        },
+        peak_equity_usd=1_000.0,
+    )
+
+    decision = engine.evaluate(
+        timestamp=1_700_000_000,
+        rows_by_asset={
+            "BTC": _row(
+                asset="BTC",
+                regime_state="defensive",
+                short_momentum=-0.01,
+                long_momentum=0.02,
+                relative_strength=-0.04,
+                short_trend=-0.01,
+                long_trend=0.01,
+                volatility=0.08,
+                breadth_positive=0.34,
+                breadth_above_trend=0.45,
+            ),
+        },
+        portfolio=portfolio,
+        prices_by_asset={"BTC": 100.0},
+    )
+
+    assert decision.asset_decisions["BTC"].action == "reduce"
+    assert decision.asset_decisions["BTC"].target_weight == 0.075
 
 
 def test_strategy_engine_freezes_when_held_asset_lacks_signal_row(tmp_path: Path) -> None:
