@@ -71,7 +71,11 @@ Responsibilities:
 Phase 3 stores derived datasets under `artifacts/features/<dataset_id>/` and reserves `artifacts/experiments/<dataset_id>/` for experiments that consume that dataset.
 
 The research harness may also write staged sweep artifacts under `artifacts/experiments/<sweep_id>/`.
-That layer is research-only: it can vary dataset policy, rule-shell toggles, label settings, model families, and hybrid integration weights without changing live runtime behavior or the promoted-model pointer.
+That layer is research-only: it can vary dataset policy, rule-shell toggles, label settings,
+model families, and hybrid integration weights without changing the checked-in live default or the
+promoted-model pointer. The documented `strategy-preset` surface is the only supported way to
+switch runtime behavior intentionally between the hardened live preset and the max-profit research
+variant.
 
 ### 4. ML subsystem
 
@@ -100,7 +104,10 @@ Responsibilities:
 - generate portfolio targets
 - generate hold, reduce, exit, and freeze decisions
 
-The implemented strategy path keeps the rule shell authoritative for hard vetoes, regime-aware exposure, and freeze handling, then blends optional promoted-model predictions into ranking, entry gating, and sell refinement.
+The implemented strategy path keeps the rule shell authoritative for hard vetoes, regime-aware
+exposure, and freeze handling, then blends optional promoted-model predictions into ranking, entry
+gating, and sell refinement. The checked-in runtime default is a hardened live preset, while the
+max-profit preset remains available as an explicit override for research and backtest inspection.
 
 ### 6. Portfolio subsystem
 
@@ -148,7 +155,12 @@ Phase 4 implements this as a deterministic daily bar engine that:
 - writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`
 - maintains `artifacts/reports/backtests/latest_backtest_report.json` as the operator-friendly latest pointer
 
-Phase 6 extends the same engine to enrich feature rows with promoted-model predictions when the active model is compatible with the dataset in use. When stored prediction rows stop before the compatible dataset tail, the backtest and simulate paths may infer the tail directly from the promoted bundle instead of silently falling back to rule-only behavior.
+Phase 6 extends the same engine to enrich feature rows with promoted-model predictions when the
+active model is compatible with the dataset in use. When stored prediction rows stop before the
+compatible dataset tail, the backtest and simulate paths may infer the tail directly from the
+promoted bundle instead of silently falling back to rule-only behavior. Live mode may also operate
+in documented rule-only fallback mode when no compatible promoted model is present, unless strict
+active-model enforcement is enabled in runtime settings.
 
 ### 9. Runtime orchestration subsystem
 
