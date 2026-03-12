@@ -69,8 +69,14 @@ class ModelPromotionSummary:
 class ActiveModelReference:
     model_id: str
     dataset_id: str
+    dataset_track: str
     manifest_file: str
     metrics_file: str
     predictions_file: str
     bundle_file: str
     selected_assets: tuple[str, ...]
+    research_settings_signature: str
+    feature_column_signature: str
+    model_family: str
+    prediction_start_timestamp: int | None = None
+    prediction_end_timestamp: int | None = None
