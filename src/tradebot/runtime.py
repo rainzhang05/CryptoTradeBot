@@ -59,7 +59,7 @@ class RuntimeContextState:
     pid: int
     mode: str
     status: str
-    cycle_limit: int
+    cycle_limit: int | None
     completed_cycles: int
     started_at: str
     updated_at: str
@@ -174,7 +174,9 @@ class RuntimeService:
             )
             self.logger.info("runtime started", extra={"mode": mode, "cycle_limit": cycle_limit})
 
-            for cycle in range(1, cycle_limit + 1):
+            cycle = 0
+            while cycle_limit is None or cycle < cycle_limit:
+                cycle += 1
                 if cancellation_token is not None:
                     cancellation_token.raise_if_cancelled()
                 snapshot = self._run_cycle(
@@ -209,14 +211,14 @@ class RuntimeService:
                     for alert in alerts:
                         on_alert(alert)
                 snapshots.append(snapshot)
-                if cycle < cycle_limit:
+                if cycle_limit is None or cycle < cycle_limit:
                     if cancellation_token is not None:
                         cancellation_token.raise_if_cancelled()
                     self.sleep_fn(self.config.runtime.cycle_interval_seconds)
 
             self.logger.info(
                 "runtime finished",
-                extra={"mode": mode, "completed_cycles": cycle_limit},
+                extra={"mode": mode, "completed_cycles": len(snapshots)},
             )
             self._write_runtime_context(
                 mode=mode,
@@ -358,7 +360,7 @@ class RuntimeService:
         *,
         mode: str,
         status: str,
-        cycle_limit: int,
+        cycle_limit: int | None,
         completed_cycles: int,
         started_at: str,
         finished_at: str | None = None,
