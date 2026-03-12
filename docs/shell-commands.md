@@ -42,14 +42,14 @@ When a command needs more input, the shell opens a form so you can fill in the v
 
 ## Research And Models
 
-- `features build`: build the deterministic feature dataset.
-- `model train`: train the current model candidate.
+- `features build`: build the deterministic feature dataset. The shell form exposes the dataset track.
+- `model train`: train the current model candidate. The shell form exposes the dataset track and model family.
 - `model validate`: validate a trained model.
 - `model promote`: promote a validated model for runtime and backtests.
 
 ## Backtests And Reports
 
-- `backtest run`: execute a backtest using the current configuration.
+- `backtest run`: execute a backtest using the current configuration. The shell form exposes the dataset track, optional model id, and active-model usage.
 - `backtest report`: open the latest or a selected backtest report.
 - `report list`: list saved reports and artifacts.
 - `report export`: copy one saved artifact to another path.
