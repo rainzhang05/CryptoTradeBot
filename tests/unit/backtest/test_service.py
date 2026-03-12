@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tradebot.backtest.service import BacktestService
 from tradebot.config import load_config
 from tradebot.data.models import Candle
@@ -92,6 +94,9 @@ def test_run_backtest_writes_report_and_artifacts(tmp_path: Path) -> None:
     assert Path(summary.report_file).exists()
     assert Path(summary.equity_curve_file).exists()
     assert Path(summary.decisions_file).exists()
+    report_payload = Path(summary.report_file).read_text(encoding="utf-8")
+    assert '"diagnostics"' in report_payload
+    assert '"dataset_track"' in report_payload
 
 
 def test_simulate_latest_cycle_persists_state_when_data_exists(tmp_path: Path) -> None:
@@ -113,3 +118,33 @@ def test_simulate_latest_cycle_persists_state_when_data_exists(tmp_path: Path) -
     assert summary.risk_state is not None
     assert Path(summary.state_file).exists()
     assert summary.dataset_id is not None
+
+
+def test_dynamic_equal_weight_benchmark_adds_assets_when_they_list_later(tmp_path: Path) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    service = BacktestService(config)
+    start = 1_704_067_200
+    day = 86_400
+    bars_by_asset = {
+        "BTC": {
+            start: Candle(start, 100, 101, 99, 100, 1000, 100, "kraken_api"),
+            start + day: Candle(start + day, 110, 111, 109, 110, 1000, 100, "kraken_api"),
+            start + 2 * day: Candle(
+                start + 2 * day, 121, 122, 120, 121, 1000, 100, "kraken_api"
+            ),
+        },
+        "ETH": {
+            start + day: Candle(start + day, 50, 51, 49, 50, 1000, 100, "kraken_api"),
+            start + 2 * day: Candle(
+                start + 2 * day, 100, 101, 99, 100, 1000, 100, "kraken_api"
+            ),
+        },
+    }
+
+    total_return = service._dynamic_equal_weight_total_return(
+        bars_by_asset=bars_by_asset,
+        start_timestamp=start,
+        end_timestamp=start + 2 * day,
+    )
+
+    assert total_return == pytest.approx(0.705)
