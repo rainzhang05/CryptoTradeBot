@@ -59,6 +59,7 @@ paths:
     )
     env_path = tmp_path / ".env"
     env_path.write_text("KRAKEN_API_KEY=demo-key\nSMTP_PORT=2525\n", encoding="utf-8")
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("KRAKEN_API_KEY", raising=False)
     monkeypatch.delenv("SMTP_PORT", raising=False)
@@ -168,30 +169,31 @@ paths: {}
         load_config(config_path=config_path, env_path=tmp_path / ".env")
 
 
-def test_default_paths_prefer_tradebot_home_when_bot_config_path_is_absent(
+def test_default_paths_prefer_cryptotradebot_home_when_config_path_is_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(tmp_path / "tradebot-home"))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(tmp_path / "cryptotradebot-home"))
 
-    assert default_tradebot_home() == (tmp_path / "tradebot-home").resolve()
+    assert default_tradebot_home() == (tmp_path / "cryptotradebot-home").resolve()
     assert default_config_path() == (
-        tmp_path / "tradebot-home" / "config" / "settings.yaml"
+        tmp_path / "cryptotradebot-home" / "config" / "settings.yaml"
     ).resolve()
 
 
-def test_default_config_path_prefers_explicit_bot_config_path(
+def test_default_config_path_prefers_explicit_cryptotradebot_config_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     explicit_path = tmp_path / "repo" / "config" / "settings.yaml"
-    monkeypatch.setenv("TRADEBOT_HOME", str(tmp_path / "tradebot-home"))
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(explicit_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(tmp_path / "cryptotradebot-home"))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(explicit_path))
 
     assert default_config_path() == explicit_path.resolve()
 
 
 def test_initialize_app_home_creates_starter_layout(tmp_path: Path) -> None:
-    summary = initialize_app_home(home=tmp_path / "tradebot-home")
+    summary = initialize_app_home(home=tmp_path / "cryptotradebot-home")
 
     assert Path(str(summary["config_path"])).exists()
     assert Path(str(summary["env_path"])).exists()
@@ -204,9 +206,10 @@ def test_ensure_app_home_initialized_creates_default_home_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     first_summary = ensure_app_home_initialized()
     second_summary = ensure_app_home_initialized()
@@ -214,3 +217,20 @@ def test_ensure_app_home_initialized_creates_default_home_once(
     assert first_summary is not None
     assert Path(str(first_summary["config_path"])).exists()
     assert second_summary is None
+
+
+def test_default_paths_support_legacy_env_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CRYPTOTRADEBOT_HOME", raising=False)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TRADEBOT_HOME", str(tmp_path / "legacy-home"))
+    monkeypatch.setenv(
+        "BOT_CONFIG_PATH",
+        str(tmp_path / "legacy-home" / "config" / "settings.yaml"),
+    )
+
+    assert default_tradebot_home() == (tmp_path / "legacy-home").resolve()
+    assert default_config_path() == (
+        tmp_path / "legacy-home" / "config" / "settings.yaml"
+    ).resolve()
