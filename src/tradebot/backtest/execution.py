@@ -228,12 +228,12 @@ def _apply_buy(
         new_position = PositionState(
             asset=intent.asset,
             quantity=quantity,
-            average_entry_price=fill_price,
+            average_entry_price=total_cost / quantity,
         )
     else:
         new_quantity = position.quantity + quantity
         average_entry_price = (
-            position.quantity * position.average_entry_price + quantity * fill_price
+            position.quantity * position.average_entry_price + total_cost
         ) / new_quantity
         new_position = PositionState(
             asset=intent.asset,

@@ -40,14 +40,12 @@ class RuntimeSnapshot:
     open_order_count: int = 0
     incidents: list[str] = field(default_factory=list)
     freeze_reason: str | None = None
-    model_id: str | None = None
     decision_executed: bool = False
     fills: list[dict[str, object]] = field(default_factory=list)
     portfolio_drawdown: float | None = None
     target_weights: dict[str, float] = field(default_factory=dict)
     decision_actions: dict[str, str] = field(default_factory=dict)
     decision_reasons: dict[str, str] = field(default_factory=dict)
-    predictions: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         """Return a machine-friendly runtime snapshot payload."""
@@ -134,8 +132,6 @@ class RuntimeService:
             paths.artifacts_dir,
             paths.features_dir,
             paths.experiments_dir,
-            paths.models_dir,
-            paths.model_reports_dir,
             paths.artifacts_dir / "reports" / "runtime",
             paths.logs_dir,
             paths.state_dir,
@@ -147,6 +143,7 @@ class RuntimeService:
         mode: str,
         max_cycles: int | None = None,
         *,
+        dataset_track: str | None = None,
         cancellation_token: CancellationToken | None = None,
         on_cycle: Callable[[RuntimeSnapshot], None] | None = None,
         on_alert: Callable[[AlertEvent], None] | None = None,
@@ -180,7 +177,11 @@ class RuntimeService:
             for cycle in range(1, cycle_limit + 1):
                 if cancellation_token is not None:
                     cancellation_token.raise_if_cancelled()
-                snapshot = self._run_cycle(mode=mode, cycle=cycle)
+                snapshot = self._run_cycle(
+                    mode=mode,
+                    cycle=cycle,
+                    dataset_track=dataset_track,
+                )
                 alerts = self.alert_service.process_snapshot(snapshot)
                 latest_alert_payloads = [alert.to_dict() for alert in alerts]
                 self.logger.info(
@@ -275,9 +276,14 @@ class RuntimeService:
         finally:
             self._clear_process(process_path)
 
-    def _run_cycle(self, mode: str, cycle: int) -> RuntimeSnapshot:
+    def _run_cycle(
+        self,
+        mode: str,
+        cycle: int,
+        dataset_track: str | None,
+    ) -> RuntimeSnapshot:
         if mode == "live":
-            live_summary = self.live_service.run_cycle()
+            live_summary = self.live_service.run_cycle(dataset_track=dataset_track)
             return RuntimeSnapshot(
                 mode=mode,
                 cycle=cycle,
@@ -294,17 +300,17 @@ class RuntimeService:
                 open_order_count=live_summary.open_order_count,
                 incidents=live_summary.incidents,
                 freeze_reason=live_summary.freeze_reason,
-                model_id=live_summary.model_id,
                 decision_executed=live_summary.decision_executed,
                 fills=[fill.to_dict() for fill in live_summary.fills],
                 portfolio_drawdown=live_summary.portfolio_drawdown,
                 target_weights=live_summary.target_weights,
                 decision_actions=live_summary.decision_actions,
                 decision_reasons=live_summary.decision_reasons,
-                predictions=live_summary.predictions,
             )
 
-        simulate_summary = self.backtest_service.simulate_latest_cycle()
+        simulate_summary = self.backtest_service.simulate_latest_cycle(
+            dataset_track=dataset_track
+        )
         return RuntimeSnapshot(
             mode=mode,
             cycle=cycle,
@@ -320,7 +326,6 @@ class RuntimeService:
             holdings=simulate_summary.holdings,
             incidents=simulate_summary.incidents,
             freeze_reason=simulate_summary.freeze_reason,
-            model_id=simulate_summary.model_id,
             decision_executed=(
                 simulate_summary.fill_count > 0 or simulate_summary.timestamp is not None
             ),
@@ -329,7 +334,6 @@ class RuntimeService:
             target_weights=simulate_summary.target_weights,
             decision_actions=simulate_summary.decision_actions,
             decision_reasons=simulate_summary.decision_reasons,
-            predictions=simulate_summary.predictions,
         )
 
     def _register_process(self, path: Path, mode: str, *, started_at: str) -> None:

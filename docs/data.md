@@ -48,8 +48,13 @@ The data layer may store additional metadata about related Kraken symbols if nee
 
 Kraken historical data may come from two paths:
 
-- User-provided full historical data packages already downloaded locally.
-- Kraken API retrieval for dates not covered by the local dump.
+- user-provided full historical data packages already downloaded locally
+- Kraken API retrieval for dates not covered by the local dump
+
+The operator-facing `cryptotradebot setup` workflow must also be able to bootstrap a runtime-ready
+recent Kraken history window on a blank machine. That bootstrap is allowed to use the public Kraken
+OHLC API to seed only the recent history required for live and simulate mode when no fuller local
+history exists yet.
 
 ### Binance and Coinbase
 
@@ -61,24 +66,29 @@ The project must normalize all market data into a canonical local format.
 
 ### Required canonical properties
 
-- UTC timestamps.
-- Clear symbol mapping from exchange-native naming to project asset identifiers.
-- Explicit source metadata.
-- Deduplicated rows.
-- Integrity status for each dataset segment.
-- Local storage that supports deterministic reloads.
+- UTC timestamps
+- clear symbol mapping from exchange-native naming to project asset identifiers
+- explicit source metadata
+- deduplicated rows
+- integrity status for each dataset segment
+- local storage that supports deterministic reloads
 
 ### Required data classes
 
-- OHLCV candles.
-- Market metadata such as symbol status, lot size, and tick size where available.
-- Optional order-book snapshots if the implementation later supports them, but they are not required for the initial canonical dataset.
+- OHLCV candles
+- market metadata such as symbol status, lot size, and tick size where available
+- optional order-book snapshots if the implementation later supports them, but they are not required for the initial canonical dataset
 
 ## Time Coverage Policy
 
 - Use the full historical span available from Kraken for each asset.
 - Extend beyond 2025-12-31 using API retrieval when the local dump stops there.
 - Retain as much historical data as the local machine can handle comfortably.
+
+For live and simulate readiness on a blank install, the setup workflow only needs to seed a recent
+Kraken-native runtime window that comfortably exceeds the strategy lookback requirements. Full
+research and long-horizon backtest history may still rely on user-provided Kraken dumps plus later
+completion runs.
 
 The project should optimize storage and caching rather than artificially truncating history.
 
@@ -134,16 +144,16 @@ The project may store large data artifacts outside version control while keeping
 
 ### Storage expectations
 
-- Raw source data is preserved when practical.
-- Canonical cleaned datasets are materialized locally.
-- Derived features and labels are cacheable.
-- Backtest and simulation outputs are stored as reproducible artifacts.
+- raw source data is preserved when practical
+- canonical cleaned datasets are materialized locally
+- derived feature datasets are cacheable
+- backtest and simulation outputs are stored as reproducible artifacts
 
 Phase 3 derived-dataset layout is:
 
-- `artifacts/features/<dataset_id>/dataset.csv`: experiment-ready labeled rows
+- `artifacts/features/<dataset_id>/dataset.csv`: deterministic point-in-time feature rows
 - `artifacts/features/<dataset_id>/manifest.json`: deterministic input, settings, and column metadata
-- `artifacts/experiments/<dataset_id>/`: reserved experiment root for later training and validation artifacts tied to that dataset
+- `artifacts/experiments/<dataset_id>/`: optional reserved experiment root for future deterministic evaluation artifacts tied to that dataset
 
 `dataset_id` must be deterministic from the selected assets, research settings, and canonical daily inputs so cached datasets can be reused safely.
 
@@ -154,22 +164,24 @@ The implementation must provide a stable asset mapping layer so the project can 
 
 ## Evaluation Policy
 
-- Strategy evaluation is performed against Kraken-based canonical data.
-- Supplementary data may inform integrity confidence but not official performance measurement.
-- Any backtest that relies on fallback-filled intervals must report that fact.
+- strategy evaluation is performed against Kraken-based canonical data
+- supplementary data may inform integrity confidence but not official performance measurement
+- any backtest that relies on fallback-filled intervals must report that fact
 
 ## Data Deliverables by Maturity
 
 ### Minimum useful dataset
 
-- Canonical OHLCV for all ten assets from Kraken.
-- Incremental Kraken extension past the user-provided dump end date.
-- Integrity reports for each asset.
+- canonical OHLCV for all ten assets from Kraken
+- incremental Kraken extension past the user-provided dump end date
+- integrity reports for each asset
+- a one-command runtime bootstrap path that seeds enough Kraken-native recent candles for
+  `simulate` and `live` mode on a blank machine
 
 ### Production-ready dataset
 
-- Canonical OHLCV plus metadata for all ten assets.
-- Gap and anomaly diagnostics.
-- Supplementary exchange cross-check capability.
-- Reproducible feature inputs for research, backtest, simulate, and live modes.
-- A repair workflow that can close historical gaps and extend canonical data to the latest closed interval with traceable source metadata.
+- canonical OHLCV plus metadata for all ten assets
+- gap and anomaly diagnostics
+- supplementary exchange cross-check capability
+- reproducible feature inputs for research, backtest, simulate, and live modes
+- a repair workflow that can close historical gaps and extend canonical data to the latest closed interval with traceable source metadata

@@ -21,8 +21,6 @@ That means:
 - clear internal module boundaries
 - shared domain models across research, backtest, simulate, and live execution
 
-This is the simplest architecture that still supports production quality, testing, and future evolution.
-
 ## Recommended Implementation Stack
 
 The project should be implemented in Python.
@@ -30,8 +28,8 @@ This is the recommended baseline for all future implementation work unless the d
 
 ### Why Python
 
-- best fit for market-data handling and ML workflows
-- strong ecosystem for backtesting, data processing, and modeling
+- strong fit for market-data handling and research workflows
+- strong ecosystem for backtesting and data processing
 - suitable for CLI-first products
 - easy Docker portability
 
@@ -64,44 +62,26 @@ Responsibilities:
 Responsibilities:
 
 - compute deterministic features from canonical data
-- compute labels for training and evaluation
 - cache reusable derived datasets
 - ensure point-in-time correctness
 
-Phase 3 stores derived datasets under `artifacts/features/<dataset_id>/` and reserves `artifacts/experiments/<dataset_id>/` for experiments that consume that dataset.
+Phase 3 stores derived datasets under `artifacts/features/<dataset_id>/` and may reserve
+`artifacts/experiments/<dataset_id>/` for deterministic evaluation artifacts tied to that dataset.
 
-The research harness may also write staged sweep artifacts under `artifacts/experiments/<sweep_id>/`.
-That layer is research-only: it can vary dataset policy, rule-shell toggles, label settings, model families, and hybrid integration weights without changing live runtime behavior or the promoted-model pointer.
-
-### 4. ML subsystem
-
-Responsibilities:
-
-- train predictive models
-- validate models with walk-forward methods
-- version model artifacts
-- expose inference outputs to the strategy engine
-
-Phase 6 implements this through a local artifact-oriented model service that:
-
-- trains only on deterministic Phase 3 feature-store rows
-- performs expanding walk-forward validation across later timestamps
-- writes bundle, manifest, metrics, and prediction artifacts under `artifacts/models/<model_id>/`
-- writes latest operator-facing summaries under `artifacts/reports/models/`
-- maintains a promoted-model reference so runtime and backtests can load the active artifact deterministically
-
-### 5. Strategy subsystem
+### 4. Strategy subsystem
 
 Responsibilities:
 
 - apply rule-based eligibility and risk shell
-- consume ML outputs
 - generate portfolio targets
 - generate hold, reduce, exit, and freeze decisions
 
-The implemented strategy path keeps the rule shell authoritative for hard vetoes, regime-aware exposure, and freeze handling, then blends optional promoted-model predictions into ranking, entry gating, and sell refinement.
+The strategy path is entirely deterministic.
+It uses regime-aware exposure, feature-derived scoring, concentration caps, and freeze handling.
+The checked-in runtime default is a hardened live preset, while the `max_profit` preset remains
+available as an explicit override for research and backtest inspection.
 
-### 6. Portfolio subsystem
+### 5. Portfolio subsystem
 
 Responsibilities:
 
@@ -110,7 +90,7 @@ Responsibilities:
 - compute realized and unrealized PnL
 - generate target deltas between current and desired allocations
 
-### 7. Execution subsystem
+### 6. Execution subsystem
 
 Responsibilities:
 
@@ -129,36 +109,36 @@ Phase 7 implements this through a Kraken-focused live execution service that:
 - persists restart-safe live state under `runtime/state/live_state.json`
 - writes the latest operator-facing live status report under `artifacts/reports/runtime/latest_live_status.json`
 
-### 8. Backtest subsystem
+### 7. Backtest subsystem
 
 Responsibilities:
 
 - replay historical data using strategy logic
 - apply cost and execution assumptions
 - generate trades, equity curves, and reports
-- compare baselines and candidate models
+- compare presets and evaluation windows
 
 Phase 4 implements this as a deterministic daily bar engine that:
 
 - consumes Phase 3 feature-store rows derived from canonical Kraken daily candles
-- supports research-only dataset-track and holdout-window overrides for staged evaluation sweeps
+- supports dataset-track overrides for deterministic evaluation
 - generates target weights from the shared strategy path
 - executes fills on the next aligned daily bar with configured fee and slippage assumptions
+- anchors the backtest equity curve from initial USD cash before the first executed trade so drawdown and annualized metrics include first-day costs and PnL
+- reports both mark-to-market ending equity and a liquidation-adjusted ending equity estimate that applies terminal exit costs to any remaining holdings
 - writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`
 - maintains `artifacts/reports/backtests/latest_backtest_report.json` as the operator-friendly latest pointer
 
-Phase 6 extends the same engine to enrich feature rows with promoted-model predictions when the active model matches the dataset in use.
-
-### 9. Runtime orchestration subsystem
+### 8. Runtime orchestration subsystem
 
 Responsibilities:
 
 - control long-running simulate and live sessions
 - schedule daily strategy evaluations
-- coordinate data refresh, inference, decision, and execution
+- coordinate data refresh, decision, and execution
 - emit monitoring events
 
-### 10. Observability subsystem
+### 9. Observability subsystem
 
 Responsibilities:
 
@@ -167,7 +147,7 @@ Responsibilities:
 - terminal monitoring output
 - alert routing to email
 
-### 11. CLI subsystem
+### 10. CLI subsystem
 
 Responsibilities:
 
@@ -180,12 +160,12 @@ Responsibilities:
 
 Phase 8 implements the documented CLI surface through operator-oriented services that:
 
-- validate Kraken connectivity through `tradebot doctor`
+- validate operator readiness through `cryptotradebot setup`
 - expose tracked runtime status and managed-process stop control
 - manage the configured alert email recipient and SMTP test flow
 - expose the latest runtime context and alert history for operator inspection
 - list and export stored reports and artifacts
-- tail durable JSON log files from `runtime/logs/tradebot.log`
+- tail durable JSON log files from `runtime/logs/cryptotradebot.log`
 
 Phase 11 extends the CLI subsystem with:
 
@@ -206,7 +186,6 @@ The project should define stable internal models for:
 - orders
 - fills
 - signals
-- model predictions
 - trade decisions
 - runtime health events
 
@@ -222,6 +201,7 @@ These models must be reused across backtest, simulate, and live pathways wheneve
 - records the same observability artifacts as live wherever practical
 
 The current implementation reuses the backtest decision and simulated execution services for the latest available feature timestamp and persists portfolio state under `runtime/state/simulate_state.json`.
+The default full-universe optimize-and-evaluate path uses `dynamic_universe_kraken_only`, while the live tradeable universe remains the fixed documented ten assets.
 
 ### Live mode
 
@@ -245,15 +225,13 @@ The system must persist enough state to resume safely after restart.
 - open orders
 - recent fills
 - latest strategy decisions
-- latest predictions
 - runtime health and freeze state
 
 Phase 4 also persists simulate-mode portfolio state so repeated local runs can resume from the last simulated holdings and cash balance.
-Phase 6 also persists promoted-model reference state so the same active artifact is reused consistently across simulate and backtest runs until a newer model is promoted.
 Phase 7 also persists live-mode balances, holdings, open orders, fills, and freeze state so live runs can resume after restart with Kraken reconciliation.
-Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `tradebot status` and `tradebot stop` can inspect or manage an active runtime process.
+Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `cryptotradebot status` and `cryptotradebot stop` can inspect or manage an active runtime process.
 Phase 9 also persists runtime context under `runtime/state/runtime_context.json`, alert-deduplication state under `runtime/state/alert_state.json`, and operator-facing mirrors under `artifacts/reports/runtime/`.
-Phase 11 changes the default installed workspace from the repository root to a user application home rooted at `~/.tradebot/`, with `TRADEBOT_HOME` and `BOT_CONFIG_PATH` overrides for explicit workflows.
+Phase 11 changes the default installed workspace from the repository root to a user application home rooted at `~/.cryptotradebot/`, with `CRYPTOTRADEBOT_HOME` and `CRYPTOTRADEBOT_CONFIG_PATH` overrides for explicit workflows plus compatibility support for the older `TRADEBOT_HOME` and `BOT_CONFIG_PATH` names.
 
 ## Storage Layout Expectations
 
@@ -264,45 +242,5 @@ The implementation should separate:
 - raw data
 - canonical data
 - derived features
-- experiment manifests and outputs
-- model artifacts
-- backtest results
-- runtime logs
-- reports
-
-Large data artifacts should stay out of version control while small manifests and metadata may be tracked where useful.
-
-## Docker Requirements
-
-The project must support Docker as the standard packaging format.
-
-### Docker goals
-
-- reproducible environment
-- one-command local run path
-- future easy cloud migration
-- support for both simulate and live mode execution
-
-### Docker scope
-
-At minimum, Docker must support:
-
-- application build
-- test execution
-- CLI command execution
-- simulate mode runtime
-
-Live mode support in Docker is also required before final production readiness.
-
-## Security Boundaries
-
-- API secrets must never be hardcoded.
-- Secrets live in `.env` only.
-- Logs must avoid leaking secrets.
-- Email credentials, if needed, must be treated as secrets.
-- The application must validate that it is connected to the intended Kraken environment and account before live trading begins.
-
-## Cloud Portability Rule
-
-Nothing in the architecture should assume permanent dependence on the local machine beyond file-path defaults and local operator convenience.
-All runtime behavior should be portable to a containerized environment with mounted volumes and environment variables.
+- runtime state
+- reports and reproducible artifacts

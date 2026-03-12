@@ -9,7 +9,7 @@ The software must be usable by a single operator on a local macOS machine while 
 
 ## Project Goals
 
-- Maximize long-run expected return using a hybrid strategy that combines rule-based structure with ML-assisted decision improvement.
+- Maximize long-run expected return using a deterministic rule-based strategy with aggressive but bounded risk controls.
 - Trade only spot markets with no leverage, no margin, no shorts, and no derivatives.
 - Keep the product CLI-first and simple to operate.
 - Make simulation and live behavior as close as possible, with the primary difference being whether orders are real.
@@ -40,6 +40,7 @@ The software must be usable by a single operator on a local macOS machine while 
 
 - `simulate`: uses the same strategy and order-intent flow as live mode but never sends real orders.
 - `live`: sends real orders to Kraken and displays monitoring output in the terminal.
+- Both runtime modes use the same deterministic strategy path, with named preset overrides only.
 
 ### Operator model
 
@@ -81,14 +82,13 @@ The final system must include all of the following capabilities.
 
 ### Research capabilities
 
-- Generate deterministic features and labels from canonical data.
-- Run repeatable experiments.
+- Generate deterministic feature datasets from canonical data.
+- Run repeatable backtests and preset comparisons.
 - Produce comparable evaluation artifacts.
-- Track model versions and experiment outputs.
 
 ### Trading capabilities
 
-- Generate portfolio decisions from the hybrid strategy.
+- Generate portfolio decisions from the deterministic strategy.
 - Manage cash and positions in USD.
 - Simulate and live trade from the same strategy code path as far as possible.
 - Reconcile exchange state, orders, and balances.
@@ -96,7 +96,9 @@ The final system must include all of the following capabilities.
 
 ### Operator capabilities
 
-- Run setup, data, research, backtest, simulate, and live commands through the CLI.
+- Run `cryptotradebot setup` to initialize the operator home, prepare runtime-ready data, and validate non-secret prerequisites.
+- Run `cryptotradebot kraken auth set` to store Kraken API credentials in the active `.env`.
+- Run data, features, backtest, simulate, and live commands through the CLI.
 - View real-time monitoring output in the terminal during live execution.
 - Configure an email recipient for alerts.
 - Export logs, reports, and run artifacts.
@@ -111,16 +113,16 @@ The final system must include all of the following capabilities.
 
 The final deliverable is a repository that contains:
 
-- Complete authoritative documentation in `docs/`.
-- A working Python application for CLI-driven simulate and live trading.
-- Canonical data ingestion and storage.
-- A full backtesting engine.
-- A hybrid strategy implementation.
-- A Kraken live execution engine.
-- Comprehensive logs, reports, and email alerts.
-- Docker-based deployment support.
-- CI workflows that verify code quality, tests, coverage, and Docker health.
-- Runbooks for operation and incident handling.
+- complete authoritative documentation in `docs/`
+- a working Python application for CLI-driven simulate and live trading
+- canonical data ingestion and storage
+- a full backtesting engine
+- a rule-only strategy implementation
+- a Kraken live execution engine
+- comprehensive logs, reports, and email alerts
+- Docker-based deployment support
+- CI workflows that verify code quality, tests, coverage, and Docker health
+- runbooks for operation and incident handling
 
 ## Acceptance Criteria
 

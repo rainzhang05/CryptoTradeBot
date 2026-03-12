@@ -46,7 +46,6 @@ During long-running execution, the terminal monitoring surface must display at m
 - current portfolio
 - USD cash balance
 - most recent decision outcome
-- most recent model outputs summary
 - open orders
 - recent fills
 - warnings, freezes, and abnormal conditions
@@ -63,7 +62,7 @@ The project must implement comprehensive logs.
 - separate human-readable terminal monitoring from durable log storage
 - no secret leakage in logs
 
-Phase 8 writes durable application logs to `runtime/logs/tradebot.log` in JSON-line format so CLI inspection commands can tail recent activity.
+Phase 8 writes durable application logs to `runtime/logs/cryptotradebot.log` in JSON-line format so CLI inspection commands can tail recent activity.
 Phase 9 also persists the latest runtime context under `runtime/state/runtime_context.json` and writes operator-facing runtime status reports under `artifacts/reports/runtime/latest_runtime_context.json`.
 
 ## Alerting Requirements
@@ -83,7 +82,6 @@ Alerts must be sent to:
 - data gap or data-integrity failure
 - portfolio drawdown threshold events
 - startup failure
-- model or inference failure
 
 Phase 9 persists alert-deduplication state under `runtime/state/alert_state.json` and writes the latest operator-facing alert history under `artifacts/reports/runtime/latest_alerts.json`.
 Terminal monitoring must render newly emitted alerts immediately, and email delivery must avoid repeating the same alert condition every cycle.
@@ -95,11 +93,11 @@ Email delivery credentials, if needed, are secrets and must be loaded through `.
 
 ## Interactive Shell Requirements
 
-Phase 11 introduces an interactive operator shell launched by bare `tradebot` on interactive terminals.
+Phase 11 introduces an interactive operator shell launched by bare `cryptotradebot` on interactive terminals.
 
 The shell must:
 
-- present operator context such as active home, config path, runtime mode, and active model
+- present operator context such as active home, config path, runtime mode, and command state
 - render structured command progress and summaries in readable transcript form
 - keep the input surface locked while a long-running command is active
 - treat `Ctrl-C` as a shell-exit shortcut with a confirmation guard: the first press must log an instruction to press `Ctrl-C` again, and the second press within 5 seconds must exit the shell
@@ -117,7 +115,6 @@ The runtime must freeze new trading activity when any of the following occurs:
 - exchange connectivity is unreliable
 - order placement failures repeat beyond acceptable tolerance
 - account reconciliation fails
-- model artifacts are missing or invalid
 - configuration is invalid for the requested mode
 
 When frozen, the system must:

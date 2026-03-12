@@ -1,4 +1,4 @@
-"""Headless tests for the interactive Tradebot shell."""
+"""Headless tests for the interactive CryptoTradeBot shell."""
 
 from __future__ import annotations
 
@@ -24,9 +24,10 @@ async def test_shell_first_run_auto_bootstraps_home(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     app = TradebotShellApp()
     async with app.run_test() as pilot:
@@ -39,7 +40,7 @@ async def test_shell_first_run_auto_bootstraps_home(
         assert "Config:" in transcript
         assert "Runtime:" in transcript
         assert "Session:" in transcript
-        assert "Created your default Tradebot home" in transcript
+        assert "Created your default CryptoTradeBot home" in transcript
         assert "Shell help" not in transcript
         assert transcript_widget.styles.scrollbar_size_vertical == 0
         assert transcript_widget.styles.scrollbar_size_horizontal == 0
@@ -52,10 +53,11 @@ async def test_shell_shows_command_suggestions_and_guided_form(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
     initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     app = TradebotShellApp()
     async with app.run_test() as pilot:
@@ -64,14 +66,14 @@ async def test_shell_shows_command_suggestions_and_guided_form(
         assert suggestions.display is False
 
         input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "model tr"
+        input_widget.value = "features bu"
         await pilot.pause()
 
         assert suggestions.display is True
         assert suggestions.option_count > 0
-        assert str(suggestions.get_option_at_index(0).prompt).startswith("model train")
+        assert str(suggestions.get_option_at_index(0).prompt).startswith("features build")
 
-        input_widget.value = "model train"
+        input_widget.value = "features build"
         await pilot.press("enter")
         await pilot.pause()
 
@@ -79,27 +81,28 @@ async def test_shell_shows_command_suggestions_and_guided_form(
 
 
 @pytest.mark.anyio
-async def test_shell_dynamic_choice_provider_lists_model_ids(
+async def test_shell_dynamic_choice_provider_lists_backtest_run_ids(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
     initialize_app_home(home=home)
-    (home / "artifacts" / "models" / "model-123").mkdir(parents=True, exist_ok=True)
+    (home / "artifacts" / "backtests" / "run-123").mkdir(parents=True, exist_ok=True)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     app = TradebotShellApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "model validate"
+        input_widget.value = "backtest report"
         await pilot.press("enter")
         await pilot.pause()
 
-        options = app.screen.query_one("#field-model_id-options", OptionList)
+        options = app.screen.query_one("#field-run_id-options", OptionList)
         assert options.option_count == 1
-        assert str(options.get_option_at_index(0).prompt) == "model-123"
+        assert str(options.get_option_at_index(0).prompt) == "run-123"
 
 
 @pytest.mark.anyio
@@ -107,10 +110,11 @@ async def test_shell_ctrl_c_requires_double_press_to_exit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
     initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
     times = iter((100.0, 106.0, 106.5))
     exit_calls: list[bool] = []
 
@@ -140,10 +144,11 @@ async def test_shell_clicked_suggestion_runs_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
     initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     observed_commands: list[str] = []
 
@@ -156,8 +161,6 @@ async def test_shell_clicked_suggestion_runs_command(
     ):
         del params, emitter, cancellation_token
         observed_commands.append(command_id)
-        if command_id == "status":
-            return {"active_model": None}
         return {"ok": True}
 
     monkeypatch.setattr(shell_module, "execute_command", fake_execute_command)
@@ -166,16 +169,53 @@ async def test_shell_clicked_suggestion_runs_command(
     async with app.run_test() as pilot:
         await pilot.pause()
         input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "doctor"
+        input_widget.value = "setup"
         await pilot.pause()
 
         suggestions = app.screen.query_one("#command-suggestions", OptionList)
         app.on_option_list_option_selected(OptionList.OptionSelected(suggestions, 0))
         await pilot.pause()
 
-        assert "doctor" in observed_commands
+        assert "setup" in observed_commands
         assert "Running command." in _transcript_text(app)
-        assert "doctor" in _transcript_text(app)
+        assert "setup" in _transcript_text(app)
+
+
+@pytest.mark.anyio
+async def test_shell_runs_setup_without_showing_guided_form(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "cryptotradebot-home"
+    initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
+
+    observed_commands: list[str] = []
+
+    def fake_execute_command(
+        command_id: str,
+        params=None,
+        *,
+        emitter=None,
+        cancellation_token=None,
+    ):
+        del params, emitter, cancellation_token
+        observed_commands.append(command_id)
+        return {"ok": True}
+
+    monkeypatch.setattr(shell_module, "execute_command", fake_execute_command)
+
+    app = TradebotShellApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        input_widget = app.screen.query_one("#command-input", Input)
+        input_widget.value = "setup"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert observed_commands == ["setup"]
 
 
 @pytest.mark.anyio
@@ -183,10 +223,11 @@ async def test_shell_rejects_new_commands_while_busy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    home = tmp_path / "tradebot-home"
+    home = tmp_path / "cryptotradebot-home"
     initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
     monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("TRADEBOT_HOME", str(home))
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
 
     observed_commands: list[str] = []
 
@@ -207,7 +248,7 @@ async def test_shell_rejects_new_commands_while_busy(
     async with app.run_test() as pilot:
         await pilot.pause()
         input_widget = app.screen.query_one("#command-input", Input)
-        input_widget.value = "doctor"
+        input_widget.value = "setup"
         await pilot.pause()
         observed_commands.clear()
 

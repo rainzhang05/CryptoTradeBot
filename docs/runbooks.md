@@ -1,173 +1,101 @@
 # Operator Runbooks
 
-This file defines the operator runbooks required by `docs/operations.md`.
-All commands assume the repository root as the working directory and an active local
-environment from `source .venv/bin/activate` unless noted otherwise.
+## Initial Setup
 
-## 0. Global Install
+1. Run `cryptotradebot setup`.
+2. Review and update `config/settings.yaml` if you need non-default settings.
+3. Run `cryptotradebot kraken auth set <api-key> --secret <api-secret>` when you are ready for live trading.
+4. Run `cryptotradebot run --mode simulate --max-cycles 1` as a final smoke check if desired.
 
-For a published release install:
+## Historical Data Import
 
-1. Run `pipx install CryptoTradeBot`.
-2. Launch the shell with `tradebot`.
+1. Place supported Kraken raw files in the configured raw data directory.
+2. Run `cryptotradebot data import`.
+3. Run `cryptotradebot data check`.
+4. Run `cryptotradebot data complete`.
+5. Run `cryptotradebot data source` if you need to inspect fallback usage.
 
-Expected outcome:
+## Feature Preparation
 
-- `tradebot` works from any directory
-- the default application home is `~/.tradebot/` unless `TRADEBOT_HOME` is set
-- starter files exist under `~/.tradebot/config/settings.yaml` and `~/.tradebot/.env`
-- the starter files are created automatically on first use when no explicit `BOT_CONFIG_PATH` is set
+1. Run `cryptotradebot features build`.
+2. Re-run with `--dataset-track dynamic_universe_kraken_only` when you want the long-history default explicitly.
 
-## 1. Initial Setup
+## Backtest Validation
 
-1. Install `uv` and Docker.
-2. Sync dependencies with `uv sync --python 3.12 --extra dev`.
-3. Activate the local environment with `source .venv/bin/activate`.
-4. Copy `.env.example` to `.env` and fill in Kraken and SMTP secrets as needed.
-5. Review `config/settings.yaml`.
-6. Run `tradebot doctor`.
+1. Run `cryptotradebot backtest run --strategy-preset live_default`.
+2. Review the result with `cryptotradebot backtest report`.
+3. Run `cryptotradebot backtest run --strategy-preset max_profit` when you want the more aggressive comparison preset.
 
-Expected outcome:
+## Simulate Mode Operation
 
-- configuration loads successfully
-- Kraken public connectivity is healthy
-- private Kraken authentication passes when live credentials are configured
-- the repository paths in the doctor output point at the expected local directories
+1. Run `cryptotradebot run --mode simulate --max-cycles 1` for a short verification cycle.
+2. Use `cryptotradebot status` to confirm the latest simulate snapshot and holdings state.
+3. Re-run with a longer cycle count or continuous loop as needed.
 
-## 2. Historical Data Import
+## Live Mode Preflight
 
-1. Place raw Kraken CSV files in `data/kraken_data/`.
-2. Run `tradebot data import`.
-3. Run `tradebot data check`.
-4. Run `tradebot data source`.
-5. If gaps remain, run `tradebot data complete`.
+1. Run `cryptotradebot setup`.
+2. Confirm `.env` contains valid Kraken API credentials, or run `cryptotradebot kraken auth set`.
+3. Run `cryptotradebot data complete` if you want an explicit fresh repair pass.
+4. Run `cryptotradebot features build`.
+5. Run `cryptotradebot backtest run --strategy-preset live_default`.
+6. Review `cryptotradebot backtest report`.
+7. Review `cryptotradebot status` to confirm there is no unresolved freeze reason.
+8. Start a short simulate cycle if needed for final sanity checking.
 
-Expected artifacts:
+## Live Mode Operation
 
-- canonical candles under `data/canonical/kraken/<ASSET>/`
-- integrity reports under `artifacts/reports/data/`
-- completion summaries under `artifacts/reports/data/latest_completion_summary.json`
+1. Start live mode with `cryptotradebot run --mode live`.
+2. Monitor terminal output for:
+   - current positions and USD cash
+   - latest regime and risk state
+   - most recent fills
+   - outstanding incidents or freeze reasons
+3. Use `cryptotradebot status` from another terminal if you need the persisted runtime snapshot.
+4. Use `cryptotradebot stop` to request graceful termination.
 
-## 3. Simulate Mode Operation
+## Freeze Recovery
 
-1. Build or refresh features with `tradebot features build`.
-2. Train, validate, and promote a model when the feature dataset has changed:
-   - `tradebot model train`
-   - `tradebot model validate`
-   - `tradebot model promote`
-     This promotion step rechecks Kraken backtest uplift against the rule-only baseline and refuses promotion if the hybrid candidate does not improve on it.
-3. Start simulation with `tradebot run --mode simulate`.
-4. Inspect status with `tradebot status`.
-5. Tail logs with `tradebot logs tail --lines 50`.
-
-Expected runtime files:
-
-- simulated portfolio state: `runtime/state/simulate_state.json`
-- runtime context: `runtime/state/runtime_context.json`
-- alert deduplication state: `runtime/state/alert_state.json`
-- latest runtime context report: `artifacts/reports/runtime/latest_runtime_context.json`
-- latest alert history: `artifacts/reports/runtime/latest_alerts.json`
-
-## 4. Live Mode Preflight
-
-Run this checklist before every live session:
-
-1. Confirm `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` are present in `.env`.
-2. Confirm SMTP settings are present when email alerts are expected.
-3. Confirm the alert recipient with `tradebot email set trader@example.com` if needed.
-4. Verify SMTP delivery with `tradebot email test`.
-5. Verify exchange connectivity with `tradebot doctor`.
-6. Confirm an active promoted model exists with `tradebot status`.
-7. Confirm canonical daily data is current with `tradebot data complete`.
-
-Do not start live mode when:
-
-- doctor reports failed exchange checks
-- there is no promoted model
-- latest daily signals are stale
-- the alert recipient or SMTP settings are intentionally absent for a monitored live run
-
-## 5. Live Mode Operation
-
-1. Start the live runtime with `tradebot run --mode live`.
-2. Watch the terminal monitoring output for:
-   - mode, connectivity, regime, risk, holdings, and cash
-   - model summary and recent fills
-   - alert lines beginning with `ALERT`
-3. Use `tradebot status` from another terminal to inspect:
-   - the managed runtime process
+1. Run `cryptotradebot status` and inspect:
    - latest runtime context
-   - latest alert history
-   - live state and live status summary
-4. Use `tradebot stop` for a managed graceful stop.
+   - latest live status
+   - latest alerts
+   - freeze reason
+2. If the issue is data-related:
+   - run `cryptotradebot data complete`
+   - rerun `cryptotradebot features build`
+3. If the issue is exchange-related:
+   - rerun `cryptotradebot setup`
+   - verify Kraken system status and private authentication
+4. If the issue is configuration-related:
+   - run `cryptotradebot config validate`
+   - correct `config/settings.yaml`
+5. Before resuming live mode, confirm the freeze reason is gone and run a short simulate cycle if needed.
 
-Primary live artifacts:
-
-- `runtime/state/live_state.json`
-- `runtime/state/runtime_process.json`
-- `runtime/state/runtime_context.json`
-- `runtime/state/alert_state.json`
-- `artifacts/reports/runtime/latest_live_status.json`
-- `artifacts/reports/runtime/latest_runtime_context.json`
-- `artifacts/reports/runtime/latest_alerts.json`
-- `runtime/logs/tradebot.log`
-
-## 6. Freeze Recovery
-
-When the bot freezes:
-
-1. Run `tradebot status`.
-2. Identify `freeze_reason` in:
-   - terminal alert output
-   - `artifacts/reports/runtime/latest_live_status.json`
-   - `runtime/state/live_state.json`
-   - `runtime/state/runtime_context.json`
-3. Inspect the recent durable logs with `tradebot logs tail --lines 100`.
-4. Classify the freeze:
-   - exchange or API failure
-   - data gap or integrity failure
-   - model or inference failure
-   - reconciliation or order-management failure
-5. Fix the underlying issue.
-6. Re-run `tradebot doctor`.
-7. Re-run `tradebot data complete` if data freshness or source confidence was involved.
-8. Confirm the promoted model is still valid with `tradebot status`.
-9. Restart `tradebot run --mode live` only after the preflight checks pass again.
-
-## 7. Incident Investigation
-
-Use this order of evidence:
-
-1. `runtime/state/runtime_context.json`
-2. `artifacts/reports/runtime/latest_alerts.json`
-3. `artifacts/reports/runtime/latest_live_status.json`
-4. `runtime/state/live_state.json` or `runtime/state/simulate_state.json`
-5. `runtime/logs/tradebot.log`
+## Incident Investigation
 
 Questions to answer:
 
-- What was the most recent decision timestamp?
-- What regime and risk state were active?
-- Which alert class fired first?
-- Did the bot execute trades, reduce risk, or freeze?
-- Was the issue exchange-related, data-related, or model-related?
+- Was the issue exchange-related, data-related, or strategy-related?
+- Did the freeze occur before or after order submission?
+- Were fallback candles involved in the current signal window?
+- Did the portfolio enter elevated caution, reduced aggressiveness, or catastrophe state first?
 
-## 8. Release Validation
+Useful commands:
 
-Before treating a work session as complete:
+- `cryptotradebot status`
+- `cryptotradebot backtest report`
+- `cryptotradebot data source`
+- `cryptotradebot logs tail`
+- `cryptotradebot report list`
+- `cryptotradebot report export`
 
-1. Run `ruff check src tests`.
-2. Run `mypy src`.
-3. Run `pytest`.
-4. Build Docker with `docker build -t cryptotradebot .`.
-5. Run the safe container preflight with `docker run --rm cryptotradebot doctor`.
-6. Run the compose preflight with `docker compose run --rm tradebot`.
-7. Validate the published install smoke path with `tradebot --help`, `tradebot config validate`, and `tradebot` in an isolated environment when release packaging changed.
+## Release Validation
 
-The release candidate is valid only when:
-
-- tests pass with coverage at or above 80%
-- Docker builds successfully
-- the documented CLI flows still work
-- the operational reports and runbooks remain consistent with the implementation
-- the checklist in `docs/release-checklist.md` is fully satisfied
+1. Run `.venv/bin/python -m pytest`.
+2. Run `cryptotradebot setup`.
+3. Run `cryptotradebot data complete`.
+4. Run `cryptotradebot features build`.
+5. Run `cryptotradebot backtest run --strategy-preset live_default`.
+6. Run `cryptotradebot run --mode simulate --max-cycles 1`.
+7. Review the latest reports and runtime status.

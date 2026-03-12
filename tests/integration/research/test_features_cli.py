@@ -35,12 +35,6 @@ research:
   breadth_window_days: 2
   dollar_volume_window_days: 2
   source_window_days: 2
-  forward_return_days: 1
-  downside_lookahead_days: 2
-  downside_threshold: 0.05
-  sell_lookahead_days: 3
-  sell_drawdown_threshold: 0.08
-  sell_return_threshold: -0.01
 alerts: {}
 paths: {}
 """,
@@ -83,8 +77,21 @@ def test_features_build_command(tmp_path: Path, monkeypatch) -> None:
         [49, 51, 53, 52, 48, 56, 55],
     )
 
-    result = runner.invoke(app, ["features", "build", "--assets", "BTC", "--assets", "ETH"])
+    result = runner.invoke(
+        app,
+        [
+            "features",
+            "build",
+            "--assets",
+            "BTC",
+            "--assets",
+            "ETH",
+            "--dataset-track",
+            "dynamic_universe_kraken_only",
+        ],
+    )
 
     assert result.exit_code == 0
     assert '"dataset_id":' in result.stdout
     assert '"cached": false' in result.stdout
+    assert '"dataset_track": "dynamic_universe_kraken_only"' in result.stdout

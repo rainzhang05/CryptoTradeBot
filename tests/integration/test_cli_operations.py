@@ -10,6 +10,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import tradebot.commanding as commanding_module
 from tradebot.cli import app
 from tradebot.config import load_config
 from tradebot.logging_config import configure_logging
@@ -44,7 +45,7 @@ paths: {{}}
 
 def test_status_command_reads_runtime_state(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
     process_path = runtime_process_file(tmp_path / "runtime" / "state")
     process_path.parent.mkdir(parents=True, exist_ok=True)
     process_path.write_text(
@@ -87,11 +88,11 @@ def test_status_command_reads_runtime_state(tmp_path: Path, monkeypatch) -> None
 
 def test_report_list_and_export_commands(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
-    report_path = tmp_path / "artifacts" / "reports" / "models" / "latest_validation_summary.json"
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
+    report_path = tmp_path / "artifacts" / "reports" / "backtests" / "latest_backtest_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text('{"model_id":"model-1"}', encoding="utf-8")
-    export_path = tmp_path / "exports" / "validation.json"
+    report_path.write_text('{"run_id":"run-1"}', encoding="utf-8")
+    export_path = tmp_path / "exports" / "report.json"
 
     list_result = runner.invoke(app, ["report", "list"])
     export_result = runner.invoke(
@@ -99,13 +100,13 @@ def test_report_list_and_export_commands(tmp_path: Path, monkeypatch) -> None:
         [
             "report",
             "export",
-            "artifacts/reports/models/latest_validation_summary.json",
+            "artifacts/reports/backtests/latest_backtest_report.json",
             str(export_path),
         ],
     )
 
     assert list_result.exit_code == 0
-    assert "artifacts/reports/models/latest_validation_summary.json" in list_result.stdout
+    assert "artifacts/reports/backtests/latest_backtest_report.json" in list_result.stdout
     assert export_result.exit_code == 0
     assert export_path.exists()
     assert '"destination":' in export_result.stdout
@@ -113,7 +114,7 @@ def test_report_list_and_export_commands(tmp_path: Path, monkeypatch) -> None:
 
 def test_logs_tail_command_reads_durable_log_file(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
     config = load_config(config_path=config_path, env_path=tmp_path / ".env")
     configure_logging(config, stream=io.StringIO())
     logging.getLogger("tradebot.test").info("phase8-log-line")
@@ -127,7 +128,7 @@ def test_logs_tail_command_reads_durable_log_file(tmp_path: Path, monkeypatch) -
 
 def test_email_set_updates_yaml_config(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
 
     result = runner.invoke(app, ["email", "set", "trader@example.com"])
 
@@ -147,7 +148,7 @@ def test_email_test_command_uses_smtp(tmp_path: Path, monkeypatch) -> None:
         updated_config,
         encoding="utf-8",
     )
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_USERNAME", "bot@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "secret")
@@ -184,63 +185,66 @@ def test_email_test_command_uses_smtp(tmp_path: Path, monkeypatch) -> None:
     assert '"recipient": "trader@example.com"' in result.stdout
 
 
-def test_doctor_validates_exchange_connectivity(tmp_path: Path, monkeypatch) -> None:
-    import tradebot.operations.service as operations_service
-
+def test_setup_runs_readiness_flow(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
-    monkeypatch.setenv("KRAKEN_API_KEY", "test-key")
-    monkeypatch.setenv("KRAKEN_API_SECRET", "dGVzdA==")
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
 
-    class FakeKrakenClient:
-        def __init__(self, *, api_key=None, api_secret=None, otp=None) -> None:
-            del api_key, api_secret, otp
+    class FakeOperationsService:
+        def __init__(self, config: object) -> None:
+            self.config = config
 
-        def get_system_status(self) -> dict[str, str | None]:
-            return {"status": "online", "timestamp": "123", "message": None}
+        def setup_summary(self, assets=None) -> dict[str, object]:
+            del assets
+            return {
+                "ok": True,
+                "ready_for_live": False,
+                "ready_for_live_after_auth": True,
+                "selected_assets": ["BTC", "ETH"],
+                "missing_for_live": ["KRAKEN_API_KEY", "KRAKEN_API_SECRET"],
+                "exchange": {
+                    "public_api": {"ok": True, "status": "online"},
+                    "private_api": {"configured": False, "ok": False},
+                },
+                "default_mode": "simulate",
+                "email_configured": False,
+                "paths": {},
+                "data_completion": {"assets": []},
+                "integrity": {"results": []},
+                "features": {"dataset_id": "dataset-123"},
+            }
 
-        def get_balances(self) -> dict[str, float]:
-            return {"ZUSD": 100.0}
+    monkeypatch.setattr(commanding_module, "OperationsService", FakeOperationsService)
 
-    monkeypatch.setattr(operations_service, "KrakenClient", FakeKrakenClient)
-
-    result = runner.invoke(app, ["doctor"])
+    result = runner.invoke(app, ["setup"])
 
     assert result.exit_code == 0
-    assert '"ok": true' in result.stdout
-    assert '"public_api": {' in result.stdout
-    assert '"private_api": {' in result.stdout
+    assert '"ok": true' in result.stdout.lower()
+    assert '"ready_for_live_after_auth": true' in result.stdout.lower()
+    assert '"dataset_id": "dataset-123"' in result.stdout
 
 
-def test_doctor_fails_when_live_mode_requires_missing_private_credentials(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_kraken_auth_set_updates_active_env_file(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8").replace(
-            "  default_mode: simulate",
-            "  default_mode: live",
-            1,
-        ),
-        encoding="utf-8",
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
+
+    result = runner.invoke(
+        app,
+        ["kraken", "auth", "set", "demo-key", "--secret", "demo-secret", "--otp", "123456"],
     )
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
-    monkeypatch.delenv("KRAKEN_API_KEY", raising=False)
-    monkeypatch.delenv("KRAKEN_API_SECRET", raising=False)
 
-    result = runner.invoke(app, ["doctor"])
-
-    assert result.exit_code == 1
-    assert '"ok": false' in result.stdout.lower()
-    assert '"required_for_mode": true' in result.stdout.lower()
+    assert result.exit_code == 0
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "KRAKEN_API_KEY=demo-key" in env_text
+    assert "KRAKEN_API_SECRET=demo-secret" in env_text
+    assert "KRAKEN_API_OTP=123456" in env_text
+    assert '"live_ready": true' in result.stdout.lower()
 
 
 def test_stop_command_requests_runtime_termination(tmp_path: Path, monkeypatch) -> None:
     import tradebot.operations.service as operations_service
 
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CRYPTOTRADEBOT_CONFIG_PATH", str(config_path))
     process_path = runtime_process_file(tmp_path / "runtime" / "state")
     process_path.parent.mkdir(parents=True, exist_ok=True)
     process_path.write_text(

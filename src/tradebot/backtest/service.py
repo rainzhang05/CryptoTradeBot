@@ -30,12 +30,11 @@ from tradebot.backtest.storage import (
     write_csv_rows,
 )
 from tradebot.cancellation import CancellationToken
-from tradebot.config import AppConfig
+from tradebot.config import AppConfig, identify_strategy_preset
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
 from tradebot.logging_config import get_logger
-from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.models import ResearchStrategyProfile
 from tradebot.strategy.service import StrategyEngine
@@ -49,7 +48,6 @@ class BacktestService:
         self.paths = config.resolved_paths()
         self.data_settings = config.resolved_data_settings()
         self.logger = get_logger("tradebot.backtest")
-        self.model_service = ModelService(config)
         self.research_service = ResearchService(config)
         self.strategy_engine = StrategyEngine(config)
 
@@ -57,8 +55,6 @@ class BacktestService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
-        model_id: str | None = None,
-        use_active_model: bool = True,
         dataset_track: str | None = None,
         research_profile: ResearchStrategyProfile | None = None,
         start_timestamp: int | None = None,
@@ -68,14 +64,14 @@ class BacktestService:
     ) -> BacktestRunSummary:
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
+        strategy_preset = identify_strategy_preset(self.config)
         self.logger.info(
             "backtest started",
             extra={
                 "assets": list(assets or ()),
                 "force_features": force_features,
-                "model_id": model_id,
-                "use_active_model": use_active_model,
                 "dataset_track": dataset_track,
+                "strategy_preset": strategy_preset,
                 "start_timestamp": start_timestamp,
                 "end_timestamp": end_timestamp,
             },
@@ -88,11 +84,10 @@ class BacktestService:
         )
         if feature_store.row_count <= 0:
             raise ValueError("Feature store does not contain enough rows for backtesting")
+        selected_assets = tuple(feature_store.selected_assets)
 
         rows = self._load_feature_rows(Path(feature_store.dataset_file))
         rows_by_timestamp = self._rows_by_timestamp(rows)
-        applied_model_id: str | None = None
-        selected_assets = tuple(feature_store.selected_assets)
         bars_by_asset = self._load_daily_bars(selected_assets)
         evaluation_timestamps = self._evaluation_timestamps(
             rows_by_timestamp,
@@ -117,23 +112,6 @@ class BacktestService:
             if execution_timestamp is None:
                 continue
             rows_for_timestamp = rows_by_timestamp[timestamp]
-            if model_id is not None:
-                rows_for_timestamp, applied_model_id = (
-                    self.model_service.enrich_rows_with_model_predictions(
-                        model_id=model_id,
-                        dataset_id=feature_store.dataset_id,
-                        rows_by_asset=rows_for_timestamp,
-                        timestamp=timestamp,
-                    )
-                )
-            elif use_active_model:
-                rows_for_timestamp, applied_model_id = (
-                    self.model_service.enrich_rows_with_active_predictions(
-                        dataset_id=feature_store.dataset_id,
-                        rows_by_asset=rows_for_timestamp,
-                        timestamp=timestamp,
-                    )
-                )
             signal_bars = self._bars_at_timestamp(bars_by_asset, timestamp)
             execution_bars = self._bars_at_timestamp(bars_by_asset, execution_timestamp)
             if not self._has_required_bars(
@@ -143,6 +121,15 @@ class BacktestService:
                 execution_bars=execution_bars,
             ):
                 continue
+            if not equity_curve:
+                equity_curve.append(
+                    EquityPoint(
+                        timestamp=timestamp,
+                        equity_usd=portfolio.cash_usd,
+                        cash_usd=portfolio.cash_usd,
+                        gross_exposure=0.0,
+                    )
+                )
 
             strategy_decision = strategy_engine.evaluate(
                 timestamp=timestamp,
@@ -194,7 +181,7 @@ class BacktestService:
                     }
                 )
 
-        if not equity_curve:
+        if len(equity_curve) < 2:
             raise ValueError("Backtest did not produce any executable decision points")
 
         run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
@@ -244,6 +231,10 @@ class BacktestService:
 
         max_drawdown = self._max_drawdown(equity_curve)
         final_equity = equity_curve[-1].equity_usd
+        liquidation_metrics = self._liquidation_metrics(
+            portfolio=portfolio,
+            mark_bars=self._bars_at_timestamp(bars_by_asset, equity_curve[-1].timestamp),
+        )
         metrics = self._performance_metrics(
             initial_cash=self.config.backtest.initial_cash_usd,
             equity_curve=equity_curve,
@@ -255,6 +246,7 @@ class BacktestService:
             start_timestamp=equity_curve[0].timestamp,
             end_timestamp=equity_curve[-1].timestamp,
         )
+        diagnostics = self._decision_diagnostics(decisions)
         summary = BacktestRunSummary(
             run_id=run_id,
             report_file=str(report_path),
@@ -262,12 +254,29 @@ class BacktestService:
             equity_curve_file=str(equity_path),
             decisions_file=str(decisions_path),
             dataset_id=feature_store.dataset_id,
+            strategy_preset=strategy_preset,
             decision_count=len(decisions),
             fill_count=len(fills),
             final_equity_usd=final_equity,
             total_return=(final_equity / self.config.backtest.initial_cash_usd) - 1,
             max_drawdown=max_drawdown,
             total_fees_usd=portfolio.fees_paid_usd,
+            net_liquidation_equity_usd=cast(
+                float | None,
+                liquidation_metrics["net_liquidation_equity_usd"],
+            ),
+            net_liquidation_total_return=cast(
+                float | None,
+                liquidation_metrics["net_liquidation_total_return"],
+            ),
+            estimated_liquidation_fee_usd=cast(
+                float | None,
+                liquidation_metrics["estimated_liquidation_fee_usd"],
+            ),
+            estimated_liquidation_slippage_usd=cast(
+                float | None,
+                liquidation_metrics["estimated_liquidation_slippage_usd"],
+            ),
             start_timestamp=equity_curve[0].timestamp,
             end_timestamp=equity_curve[-1].timestamp,
             cagr=cast(float | None, metrics["cagr"]),
@@ -282,11 +291,13 @@ class BacktestService:
         payload = summary.to_dict() | {
             "portfolio": portfolio.to_dict(),
             "dataset_file": feature_store.dataset_file,
-            "model_id": applied_model_id,
             "dataset_track": feature_store.dataset_track,
+            "strategy_preset": strategy_preset,
             "metrics": metrics,
             "yearly_returns": yearly_returns,
             "benchmarks": benchmarks,
+            "diagnostics": diagnostics,
+            "liquidation": liquidation_metrics,
             "period": {
                 "start_timestamp": equity_curve[0].timestamp,
                 "end_timestamp": equity_curve[-1].timestamp,
@@ -300,9 +311,7 @@ class BacktestService:
                 ).date().isoformat(),
                 "years": metrics["period_years"],
             },
-            "research_profile": (
-                None if research_profile is None else research_profile.to_dict()
-            ),
+            "research_profile": strategy_engine.research_profile.to_dict(),
         }
         write_json(report_path, payload)
         write_json(latest_backtest_report_file(self.paths.artifacts_dir), payload)
@@ -314,6 +323,7 @@ class BacktestService:
                 "decision_count": len(decisions),
                 "fill_count": len(fills),
                 "final_equity_usd": final_equity,
+                "net_liquidation_equity_usd": liquidation_metrics["net_liquidation_equity_usd"],
             },
         )
         return summary
@@ -331,6 +341,7 @@ class BacktestService:
         self,
         assets: tuple[str, ...] | None = None,
         force_features: bool = False,
+        dataset_track: str | None = None,
     ) -> SimulationCycleSummary:
         state_path = simulate_state_file(self.paths.state_dir)
         portfolio = self._load_simulation_state(state_path)
@@ -339,6 +350,7 @@ class BacktestService:
             feature_store = self.research_service.build_feature_store(
                 assets=assets,
                 force=force_features,
+                dataset_track=dataset_track,
             )
         except (FileNotFoundError, ValueError):
             self._write_simulation_state(state_path, portfolio)
@@ -386,13 +398,6 @@ class BacktestService:
             for row in rows
             if cast(int, row["timestamp"]) == latest_timestamp
         }
-        rows_for_timestamp, active_model_id = (
-            self.model_service.enrich_rows_with_active_predictions(
-            dataset_id=feature_store.dataset_id,
-            rows_by_asset=rows_for_timestamp,
-            timestamp=latest_timestamp,
-            )
-        )
         bars_by_asset = self._load_daily_bars(tuple(rows_for_timestamp))
         mark_bars = self._bars_at_timestamp(bars_by_asset, latest_timestamp)
         if len(mark_bars) != len(rows_for_timestamp):
@@ -460,7 +465,6 @@ class BacktestService:
             fills=fills,
             state_file=str(state_path),
             freeze_reason=strategy_decision.freeze_reason,
-            model_id=active_model_id,
             holdings=self._holdings(portfolio),
             incidents=(
                 [strategy_decision.freeze_reason]
@@ -471,7 +475,6 @@ class BacktestService:
             target_weights=decision.target_weights,
             decision_actions=decision.asset_actions,
             decision_reasons=decision.asset_reasons,
-            predictions=self._prediction_summary(rows_for_timestamp),
         )
         self.logger.info(
             "simulate cycle completed",
@@ -665,6 +668,39 @@ class BacktestService:
             "total_return": total_return,
         }
 
+    def _liquidation_metrics(
+        self,
+        *,
+        portfolio: PortfolioState,
+        mark_bars: dict[str, Candle],
+    ) -> dict[str, float]:
+        fee_rate = self.config.backtest.fee_rate_bps / 10_000
+        slippage_rate = self.config.backtest.slippage_bps / 10_000
+        estimated_liquidation_fee_usd = 0.0
+        estimated_liquidation_slippage_usd = 0.0
+        net_liquidation_equity_usd = portfolio.cash_usd
+
+        for asset, position in portfolio.positions.items():
+            bar = mark_bars.get(asset)
+            if bar is None or position.quantity <= 0:
+                continue
+            mark_notional = position.quantity * bar.close
+            slippage_cost = max(mark_notional * slippage_rate, 0.0)
+            gross_liquidation_notional = max(mark_notional - slippage_cost, 0.0)
+            liquidation_fee = gross_liquidation_notional * fee_rate
+            estimated_liquidation_slippage_usd += slippage_cost
+            estimated_liquidation_fee_usd += liquidation_fee
+            net_liquidation_equity_usd += gross_liquidation_notional - liquidation_fee
+
+        return {
+            "net_liquidation_equity_usd": net_liquidation_equity_usd,
+            "net_liquidation_total_return": (
+                (net_liquidation_equity_usd / self.config.backtest.initial_cash_usd) - 1
+            ),
+            "estimated_liquidation_fee_usd": estimated_liquidation_fee_usd,
+            "estimated_liquidation_slippage_usd": estimated_liquidation_slippage_usd,
+        }
+
     def _yearly_returns(
         self,
         equity_curve: list[EquityPoint],
@@ -680,18 +716,19 @@ class BacktestService:
         for fill in fills:
             year = datetime.fromtimestamp(fill.timestamp, tz=UTC).year
             fill_counts[year] += 1
+        previous_equity: float | None = None
         for point in equity_curve:
             year = datetime.fromtimestamp(point.timestamp, tz=UTC).year
+            start_equity = previous_equity if previous_equity is not None else point.equity_usd
             entry = yearly.setdefault(
                 year,
                 {
-                    "start_equity_usd": point.equity_usd,
+                    "start_equity_usd": start_equity,
                     "end_equity_usd": point.equity_usd,
-                    "decision_count": 0,
-                    "fill_count": 0,
                 },
             )
             entry["end_equity_usd"] = point.equity_usd
+            previous_equity = point.equity_usd
 
         payload: dict[str, dict[str, object]] = {}
         for year, entry in sorted(yearly.items()):
@@ -736,23 +773,15 @@ class BacktestService:
         else:
             benchmarks["btc_buy_and_hold"] = {"total_return": None, "cagr": None}
 
-        start_assets = [
-            asset
-            for asset, bars in sorted(bars_by_asset.items())
-            if start_timestamp in bars and end_timestamp in bars and bars[start_timestamp].close > 0
-        ]
-        if start_assets:
-            total_return = sum(
-                (
-                    bars_by_asset[asset][end_timestamp].close
-                    / bars_by_asset[asset][start_timestamp].close
-                )
-                - 1
-                for asset in start_assets
-            ) / len(start_assets)
+        dynamic_equal_weight_total_return = self._dynamic_equal_weight_total_return(
+            bars_by_asset=bars_by_asset,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+        )
+        if dynamic_equal_weight_total_return is not None:
             benchmarks["equal_weight_active_universe_buy_and_hold"] = {
-                "total_return": total_return,
-                "cagr": self._benchmark_cagr(total_return, period_years),
+                "total_return": dynamic_equal_weight_total_return,
+                "cagr": self._benchmark_cagr(dynamic_equal_weight_total_return, period_years),
             }
         else:
             benchmarks["equal_weight_active_universe_buy_and_hold"] = {
@@ -760,6 +789,77 @@ class BacktestService:
                 "cagr": None,
             }
         return benchmarks
+
+    def _dynamic_equal_weight_total_return(
+        self,
+        *,
+        bars_by_asset: dict[str, dict[int, Candle]],
+        start_timestamp: int,
+        end_timestamp: int,
+    ) -> float | None:
+        timestamps = sorted(
+            {
+                timestamp
+                for bars in bars_by_asset.values()
+                for timestamp in bars
+                if start_timestamp <= timestamp <= end_timestamp
+            }
+        )
+        if len(timestamps) < 2:
+            return None
+        equity = 1.0
+        for previous_timestamp, current_timestamp in zip(
+            timestamps[:-1],
+            timestamps[1:],
+            strict=True,
+        ):
+            asset_returns: list[float] = []
+            for bars in bars_by_asset.values():
+                previous_bar = bars.get(previous_timestamp)
+                current_bar = bars.get(current_timestamp)
+                if previous_bar is None or current_bar is None or previous_bar.close <= 0:
+                    continue
+                asset_returns.append((current_bar.close / previous_bar.close) - 1)
+            if not asset_returns:
+                continue
+            equity *= 1 + (sum(asset_returns) / len(asset_returns))
+        return equity - 1
+
+    def _decision_diagnostics(
+        self,
+        decisions: list[DecisionSnapshot],
+    ) -> dict[str, object]:
+        regime_counts: dict[str, int] = defaultdict(int)
+        risk_counts: dict[str, int] = defaultdict(int)
+        action_counts: dict[str, int] = defaultdict(int)
+        reason_counts: dict[str, int] = defaultdict(int)
+        targeted_asset_frequency: dict[str, int] = defaultdict(int)
+        average_exposure_fraction = 0.0
+        for decision in decisions:
+            regime_counts[decision.regime_state] += 1
+            risk_counts[decision.risk_state] += 1
+            average_exposure_fraction += decision.exposure_fraction
+            for action in decision.asset_actions.values():
+                action_counts[action] += 1
+            for reason in decision.asset_reasons.values():
+                reason_counts[reason] += 1
+            for asset, weight in decision.target_weights.items():
+                if weight > 0:
+                    targeted_asset_frequency[asset] += 1
+        decision_count = len(decisions)
+        return {
+            "average_exposure_fraction": (
+                average_exposure_fraction / decision_count if decision_count else 0.0
+            ),
+            "regime_distribution": dict(sorted(regime_counts.items())),
+            "risk_distribution": dict(sorted(risk_counts.items())),
+            "action_counts": dict(sorted(action_counts.items())),
+            "reason_counts": dict(sorted(reason_counts.items())),
+            "targeted_asset_frequency": {
+                asset: count / decision_count
+                for asset, count in sorted(targeted_asset_frequency.items())
+            },
+        }
 
     @staticmethod
     def _benchmark_cagr(total_return: float, period_years: float) -> float | None:
@@ -815,22 +915,3 @@ class BacktestService:
             asset: position.quantity
             for asset, position in sorted(portfolio.positions.items())
         }
-
-    @staticmethod
-    def _prediction_summary(
-        rows_by_asset: dict[str, dict[str, object]],
-    ) -> dict[str, dict[str, float]]:
-        summary: dict[str, dict[str, float]] = {}
-        for asset, row in sorted(rows_by_asset.items()):
-            keys = (
-                "expected_return_score",
-                "downside_risk_score",
-                "sell_risk_score",
-            )
-            if not all(key in row for key in keys):
-                continue
-            summary[asset] = {
-                key: float(row[key])  # type: ignore[arg-type]
-                for key in keys
-            }
-        return summary

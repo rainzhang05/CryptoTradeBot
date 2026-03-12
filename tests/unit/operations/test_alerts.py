@@ -67,8 +67,8 @@ SMTP_PASSWORD=secret
         connectivity_state="degraded",
         timestamp=1_705_000_000,
         risk_state="normal",
-        incidents=["missing_active_model"],
-        freeze_reason="missing_active_model",
+        incidents=["missing_live_price"],
+        freeze_reason="missing_live_price",
     )
 
     first_events = service.process_snapshot(snapshot)
@@ -76,7 +76,7 @@ SMTP_PASSWORD=secret
 
     assert [event.event_class for event in first_events] == [
         "freeze_triggered",
-        "model_inference_failure",
+        "data_integrity_failure",
     ]
     assert all(event.email_sent for event in first_events)
     assert second_events == []
@@ -85,7 +85,7 @@ SMTP_PASSWORD=secret
     state_payload = json.loads(
         alert_state_file(config.resolved_paths().state_dir).read_text(encoding="utf-8")
     )
-    assert "freeze:live:1705000000:missing_active_model" in state_payload["sent_keys"]
+    assert "freeze:live:1705000000:missing_live_price" in state_payload["sent_keys"]
 
 
 def test_runtime_alert_service_emits_drawdown_and_startup_events(tmp_path: Path) -> None:

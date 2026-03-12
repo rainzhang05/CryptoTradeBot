@@ -27,7 +27,7 @@ jobs:
           mkdir -p .ci-smoke/data/kraken_data .ci-smoke/artifacts
           cp tests/fixtures/raw/kraken/XBTUSD.csv .ci-smoke/data/kraken_data/XBTUSD.csv
           cp tests/fixtures/raw/kraken/ETHUSD.csv .ci-smoke/data/kraken_data/ETHUSD.csv
-          docker run --rm cryptotradebot:ci doctor
+          docker run --rm cryptotradebot:ci config validate
           docker run --rm cryptotradebot:ci run --mode simulate --max-cycles 1
           docker run --rm \
             -v "$PWD/.ci-smoke/data:/app/data" \

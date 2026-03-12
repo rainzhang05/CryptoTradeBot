@@ -15,7 +15,7 @@ Create the project source of truth before application code begins.
 - Create the documentation set in `docs/`.
 - Define project goals, non-goals, and constraints.
 - Freeze the V1 trading universe, exchange scope, operating currency, and runtime modes.
-- Define the hybrid strategy direction at a high level.
+- Define the rule-only strategy direction at a high level.
 - Define testing, CI, operations, and release-quality expectations.
 - Create root-level agent instructions for future coding sessions.
 
@@ -54,7 +54,7 @@ Build the canonical data pipeline that powers research, backtesting, simulation,
 
 - Ingest full historical Kraken market data dumps provided by the user.
 - Add incremental Kraken API ingestion for dates not present in local historical dumps.
-- Build a canonical schema for OHLCV, trades if available, and metadata.
+- Build a canonical schema for OHLCV and metadata.
 - Add symbol mapping for the fixed 10-asset universe.
 - Add integrity checks for missing candles, duplicate timestamps, and malformed rows.
 - Add Binance and Coinbase collectors for gap detection and cross-checking only.
@@ -69,20 +69,19 @@ Build the canonical data pipeline that powers research, backtesting, simulation,
 
 ### Objective
 
-Provide a research layer that can generate deterministic features and labels for the hybrid strategy.
+Provide a research layer that can generate deterministic feature datasets for the rule-only strategy.
 
 ### Includes
 
 - Implement feature generation from Kraken canonical data.
 - Implement rule-based indicators and regime variables.
 - Implement supplementary cross-check features from Binance and Coinbase only where permitted by the data policy.
-- Define ML label generation for forward return, downside risk, and sell-risk modeling.
-- Add feature stores or cached derived datasets for repeatable experiments.
-- Add experiment tracking conventions and artifact layout.
+- Add feature stores or cached derived datasets for repeatable evaluation.
+- Add artifact layout and deterministic dataset identity conventions.
 
 ### Deliverable
 
-- A deterministic research pipeline that turns raw canonical market data into reproducible features, labels, and experiment-ready datasets.
+- A deterministic research pipeline that turns raw canonical market data into reproducible signal datasets for backtests, simulate mode, and live mode.
 
 ## Phase 4: Backtesting Engine and Simulation Core
 
@@ -116,31 +115,30 @@ Implement the deterministic strategy shell that defines admissible trades and ha
 - Trend, momentum, volatility, breadth, and regime calculations.
 - Rule-based candidate filtering and portfolio constraints.
 - Cash allocation behavior for risk-off periods.
-- Hard invalidation rules that override ML preference when risk conditions are unacceptable.
+- Hard invalidation rules when risk conditions are unacceptable.
 - Initial sell discipline and downside-handling rules.
 
 ### Deliverable
 
 - A deterministic rule engine that can independently generate positions, exits, and risk states from historical or live inputs.
 
-## Phase 6: ML Prediction Layer
+## Phase 6: Strategy Optimization and Preset Hardening
 
 ### Objective
 
-Add an ML layer that improves ranking quality and downside decision quality without replacing the rule-based safety shell.
+Tune the deterministic strategy for production use and preserve reproducible preset behavior.
 
 ### Includes
 
-- Train a predictive model on Kraken-based canonical features.
-- Use supplementary exchange data only for validation and gap-confidence, not as blended primary labels.
-- Produce forward-looking signals such as expected return, downside risk probability, and sell-risk confidence.
-- Integrate the ML outputs into the strategy as ranking refinement and downside-aware sell moderation.
-- Add walk-forward validation, leakage controls, and model artifact versioning.
-- Define model retraining cadence and promotion rules.
+- Compare named strategy presets on Kraken-based canonical data.
+- Add deterministic rule-shell ablations and preset comparisons where needed for research.
+- Tighten live-default risk posture while preserving the explicit max-profit variant.
+- Keep preset identity reproducible across backtest, simulate, and live mode.
+- Ensure research artifacts remain deterministic and auditable.
 
 ### Deliverable
 
-- A versioned ML subsystem whose outputs are consumed by the strategy engine in a controlled, auditable way.
+- A rule-only strategy package with stable named presets and reproducible Kraken backtest evidence.
 
 ## Phase 7: Execution and Live Trading Engine
 
@@ -173,7 +171,7 @@ Deliver the operator-facing interface for research, simulation, live trading, mo
 - Implement the full CLI command tree defined in `cli.md`.
 - Add setup and configuration validation commands.
 - Add data ingestion and integrity-report commands.
-- Add backtest and simulation commands.
+- Add feature-build, backtest, and simulation commands.
 - Add live trading and terminal monitoring commands.
 - Add email recipient management commands.
 - Add report export and artifact inspection commands.
@@ -228,31 +226,33 @@ Layer a globally installed, interactive terminal shell on top of the production 
 
 ### Includes
 
-- Add a full-screen terminal shell launched by bare `tradebot` on interactive TTYs.
-- Keep `tradebot <command> ...` stable for CI, scripts, Docker, and direct operator usage.
-- Add `tradebot shell` as an explicit shell entrypoint and keep `tradebot init` as an explicit bootstrap/reset command.
-- Move the default installed workspace to a single application home under `~/.tradebot/`, with `TRADEBOT_HOME` override support.
-- Auto-create the default application home on first use when no explicit `BOT_CONFIG_PATH` override is present.
+- Add a full-screen terminal shell launched by bare `cryptotradebot` on interactive TTYs.
+- Keep `cryptotradebot <command> ...` stable for CI, scripts, Docker, and direct operator usage.
+- Add `cryptotradebot shell` as an explicit shell entrypoint.
+- Replace the separate bootstrap and doctor flow with a single `cryptotradebot setup` command that initializes the app home, prepares runtime-ready market data, and runs operator preflight checks.
+- Add `cryptotradebot kraken auth set` so the operator can write Kraken credentials from the shell or direct CLI.
+- Move the default installed workspace to a single application home under `~/.cryptotradebot/`, with `CRYPTOTRADEBOT_HOME` override support and legacy `TRADEBOT_HOME` compatibility.
+- Auto-create the default application home on first use when no explicit `CRYPTOTRADEBOT_CONFIG_PATH` override is present, while preserving legacy `BOT_CONFIG_PATH` compatibility.
 - Introduce a shared command registry and structured execution-event layer reused by both direct commands and the shell.
 - Add guided parameter selection, command suggestions, readable transcript rendering, and cooperative cancellation in the shell.
 - Add distribution build and publish automation for global installation through PyPI and `pipx`.
 
 ### Deliverable
 
-- A globally installable `tradebot` package that launches an interactive terminal shell by default on interactive terminals, while preserving the full direct CLI contract for automation.
+- A globally installable `cryptotradebot` package that launches an interactive terminal shell by default on interactive terminals, while preserving the full direct CLI contract for automation.
 
 ## Final Deliverable Definition
 
 The final deliverable for this project is not just a trading algorithm.
 It is a complete, documented, test-covered, Dockerized software system that includes:
 
-- Canonical historical data ingestion and validation.
-- A reproducible research and feature pipeline.
-- A full backtesting engine.
-- A simulation mode and a live trading mode.
-- A hybrid strategy with rule-based safety rails and ML-assisted decision improvement.
-- Kraken-only live execution in USD.
-- CLI-based operation.
-- Comprehensive logs and email alerts.
-- CI enforcement with at least 80% test coverage.
-- Operator runbooks and project documentation sufficient for a new developer to understand and continue the work.
+- canonical historical data ingestion and validation
+- a reproducible research and feature pipeline
+- a full backtesting engine
+- a simulation mode and a live trading mode
+- a rule-only strategy with deterministic safety rails and named presets
+- Kraken-only live execution in USD
+- CLI-based operation
+- comprehensive logs and email alerts
+- CI enforcement with at least 80% test coverage
+- operator runbooks and project documentation sufficient for a new developer to understand and continue the work

@@ -1,4 +1,4 @@
-"""Interactive Textual shell for Tradebot."""
+"""Interactive Textual shell for CryptoTradeBot."""
 
 from __future__ import annotations
 
@@ -298,7 +298,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
 
 
 class TradebotShellApp(App[None]):
-    """Interactive operator shell for the Tradebot command surface."""
+    """Interactive operator shell for the CryptoTradeBot command surface."""
 
     CSS = """
     App {
@@ -471,7 +471,6 @@ class TradebotShellApp(App[None]):
         self.current_command: str = "idle"
         self._active_action_id: int = 0
         self._latest_action_id: int = 0
-        self._active_model_label: str = "n/a"
         self._context_entry_index: int | None = None
         self._pending_exit_deadline: float | None = None
         self._transcript_entries: list[TranscriptEntry] = []
@@ -488,7 +487,9 @@ class TradebotShellApp(App[None]):
             yield RichLog(id="transcript", wrap=True, markup=True)
         with Vertical(id="input-region"):
             yield Input(
-                placeholder="Type a command like model train, data source, help, clear, or exit",
+                placeholder=(
+                    "Type a command like setup, kraken auth set, data source, help, clear, or exit"
+                ),
                 id="command-input",
             )
             yield OptionList(id="command-suggestions")
@@ -507,7 +508,7 @@ class TradebotShellApp(App[None]):
         if bootstrap_summary is not None:
             self._append_entry(
                 "system",
-                "Created your default Tradebot home.",
+                "Created your default CryptoTradeBot home.",
                 lines=(
                     f"Home: {bootstrap_summary['home']}",
                     "Starter config and environment files are now in place.",
@@ -527,7 +528,7 @@ class TradebotShellApp(App[None]):
         self._append_entry(
             "warning",
             "Press Ctrl+C again to exit the shell.",
-            lines=("Repeat the same shortcut within 5 seconds to close Tradebot shell.",),
+            lines=("Repeat the same shortcut within 5 seconds to close CryptoTradeBot shell.",),
             action_id=self._active_action_id,
         )
 
@@ -598,7 +599,11 @@ class TradebotShellApp(App[None]):
             )
             return
 
-        if parsed.spec.fields and not parsed.used_inline_arguments:
+        if (
+            parsed.spec.fields
+            and parsed.spec.guided_when_empty
+            and not parsed.used_inline_arguments
+        ):
             self.push_screen(
                 CommandFormScreen(parsed.spec, default_form_values(parsed.spec)),
                 lambda params: self._run_form_submission(
@@ -852,14 +857,12 @@ class TradebotShellApp(App[None]):
         home = summary.get("home", "n/a")
         config_path = summary.get("resolved_config_path", str(default_config_path()))
         runtime_mode = summary.get("runtime_mode", "n/a")
-        if resolve_status:
-            self._active_model_label = self._active_model_id()
         self._set_context_entry(
             "Current shell context.",
             lines=(
                 f"Home: {home}",
                 f"Config: {config_path}",
-                f"Runtime: mode={runtime_mode} | active model={self._active_model_label}",
+                f"Runtime: mode={runtime_mode}",
                 "Session: "
                 f"command={self.current_command} | "
                 f"state={'running' if self.active_task else 'idle'}",
@@ -868,20 +871,6 @@ class TradebotShellApp(App[None]):
 
     def _clear_exit_confirmation(self) -> None:
         self._pending_exit_deadline = None
-
-    def _active_model_id(self) -> str:
-        try:
-            status = execute_command("status")
-        except Exception:
-            return "n/a"
-        if not isinstance(status, dict):
-            return "n/a"
-        active_model = status.get("active_model")
-        if isinstance(active_model, dict):
-            model_id = active_model.get("model_id")
-            if model_id is not None:
-                return str(model_id)
-        return "n/a"
 
     def _set_context_entry(self, title: str, *, lines: tuple[str, ...]) -> None:
         entry = TranscriptEntry(kind="context", title=title, lines=lines)

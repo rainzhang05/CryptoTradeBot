@@ -38,12 +38,6 @@ _DATA_FAILURE_MARKERS = (
     "low_source_confidence",
     "liquidity_invalid",
 )
-_MODEL_FAILURE_MARKERS = (
-    "missing_active_model",
-    "missing_model_predictions",
-    "inference",
-    "prediction",
-)
 
 
 @dataclass(frozen=True)
@@ -143,7 +137,6 @@ class RuntimeAlertService:
                     details={
                         "fills": list(snapshot.fills),
                         "holdings": dict(snapshot.holdings),
-                        "model_id": snapshot.model_id,
                     },
                 )
             )
@@ -325,8 +318,8 @@ class RuntimeAlertService:
             return replace(event, email_error="smtp_host_not_configured")
 
         message = EmailMessage()
-        message["Subject"] = f"[tradebot][{event.severity.upper()}] {event.title}"
-        message["From"] = self.config.secrets.smtp_username or "tradebot@localhost"
+        message["Subject"] = f"[cryptotradebot][{event.severity.upper()}] {event.title}"
+        message["From"] = self.config.secrets.smtp_username or "cryptotradebot@localhost"
         message["To"] = recipient
         message.set_content(self._email_body(event))
 
@@ -385,8 +378,6 @@ class RuntimeAlertService:
             classifications.append(("exchange_api_failure", "Exchange or API failure"))
         if self._matches_any(payload, _DATA_FAILURE_MARKERS):
             classifications.append(("data_integrity_failure", "Data gap or integrity failure"))
-        if self._matches_any(payload, _MODEL_FAILURE_MARKERS):
-            classifications.append(("model_inference_failure", "Model or inference failure"))
         return classifications
 
     def _load_state(self) -> AlertState:

@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TRADEBOT_HOME=/app \
+    CRYPTOTRADEBOT_HOME=/app \
     UV_LINK_MODE=copy
 
 WORKDIR /app
@@ -18,5 +18,5 @@ RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:${PATH}"
 
-ENTRYPOINT ["tradebot"]
+ENTRYPOINT ["cryptotradebot"]
 CMD ["--help"]

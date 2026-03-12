@@ -40,7 +40,11 @@ paths:
     config = load_config(config_path=config_path, env_path=tmp_path / ".env")
 
     class FakeBacktestService:
-        def simulate_latest_cycle(self) -> SimulationCycleSummary:
+        def simulate_latest_cycle(
+            self,
+            dataset_track: str | None = None,
+        ) -> SimulationCycleSummary:
+            assert dataset_track is None
             return SimulationCycleSummary(
                 dataset_id=None,
                 timestamp=None,
@@ -67,8 +71,6 @@ paths:
     assert sleep_calls == [config.runtime.cycle_interval_seconds]
     assert (tmp_path / "data").exists()
     assert (tmp_path / "artifacts").exists()
-    assert (tmp_path / "artifacts" / "models").exists()
-    assert (tmp_path / "artifacts" / "reports" / "models").exists()
     assert (tmp_path / "artifacts" / "reports" / "runtime").exists()
     assert (tmp_path / "runtime" / "logs").exists()
     assert (tmp_path / "runtime" / "state").exists()
@@ -107,7 +109,8 @@ KRAKEN_API_SECRET=dGVzdA==
     config = load_config(config_path=config_path, env_path=env_path)
 
     class FakeLiveService:
-        def run_cycle(self) -> LiveCycleSummary:
+        def run_cycle(self, dataset_track: str | None = None) -> LiveCycleSummary:
+            assert dataset_track is None
             return LiveCycleSummary(
                 dataset_id="dataset-1",
                 timestamp=1_705_000_000,
@@ -125,7 +128,6 @@ KRAKEN_API_SECRET=dGVzdA==
                 incidents=["trade_executed"],
                 state_file=str(tmp_path / "runtime" / "state" / "live_state.json"),
                 freeze_reason=None,
-                model_id="model-1",
                 decision_executed=True,
             )
 
@@ -139,7 +141,6 @@ KRAKEN_API_SECRET=dGVzdA==
     assert snapshot.system_status == "online"
     assert snapshot.connectivity_state == "online"
     assert snapshot.holdings == {"BTC": 0.5}
-    assert snapshot.model_id == "model-1"
     assert not runtime_process_file(tmp_path / "runtime" / "state").exists()
     context_payload = runtime_context_file(tmp_path / "runtime" / "state").read_text(
         encoding="utf-8"

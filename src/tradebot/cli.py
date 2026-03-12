@@ -19,10 +19,10 @@ from tradebot.runtime import RuntimeSnapshot
 
 app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
+kraken_app = typer.Typer(help="Manage Kraken-specific operator workflows.")
+kraken_auth_app = typer.Typer(help="Manage Kraken API credentials.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
-research_app = typer.Typer(help="Run staged research sweeps and inspect reports.")
-model_app = typer.Typer(help="Train, validate, and promote ML model artifacts.")
 backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
 email_app = typer.Typer(help="Manage alert email configuration and SMTP checks.")
 report_app = typer.Typer(help="List and export generated reports and artifacts.")
@@ -30,10 +30,10 @@ logs_app = typer.Typer(help="Inspect durable application logs.")
 ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
+app.add_typer(kraken_app, name="kraken")
+kraken_app.add_typer(kraken_auth_app, name="auth")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
-app.add_typer(research_app, name="research")
-app.add_typer(model_app, name="model")
 app.add_typer(backtest_app, name="backtest")
 app.add_typer(email_app, name="email")
 app.add_typer(report_app, name="report")
@@ -69,7 +69,7 @@ def _runtime_emitter(event: Any) -> None:
 
 
 def launch_shell() -> None:
-    """Launch the interactive Tradebot shell."""
+    """Launch the interactive CryptoTradeBot shell."""
     from tradebot.shell import TradebotShellApp
 
     TradebotShellApp().run()
@@ -86,9 +86,9 @@ def main(argv: list[str] | None = None) -> None:
         if _is_interactive_terminal():
             launch_shell()
             return
-        app(prog_name="tradebot", args=["--help"])
+        app(prog_name="cryptotradebot", args=["--help"])
         return
-    app(prog_name="tradebot", args=args)
+    app(prog_name="cryptotradebot", args=args)
 
 
 @app.command("version")
@@ -103,8 +103,8 @@ def config_path() -> None:
     typer.echo(render_direct_output("config_path", _invoke_direct("config_path")))
 
 
-@app.command("init")
-def init(
+@app.command("setup")
+def setup(
     home: str | None = typer.Option(
         default=None,
         help="Optional application-home override.",
@@ -113,10 +113,13 @@ def init(
         default=False,
         help="Rewrite starter config and env files when they already exist.",
     ),
+    assets: list[str] | None = ASSETS_OPTION,
 ) -> None:
-    """Bootstrap the default application home and starter files."""
-    payload = _invoke_direct("init", {"home": home, "force": force})
-    typer.echo(render_direct_output("init", payload))
+    """Initialize the app home, prepare runtime-ready data, and run readiness checks."""
+    payload = _invoke_direct("setup", {"home": home, "force": force, "assets": assets})
+    typer.echo(render_direct_output("setup", payload))
+    if isinstance(payload, dict) and not bool(payload["ok"]):
+        raise typer.Exit(code=1)
 
 
 @app.command("shell")
@@ -124,14 +127,22 @@ def shell_command() -> None:
     """Launch the interactive operator shell explicitly."""
     launch_shell()
 
-
-@app.command("doctor")
-def doctor() -> None:
-    """Validate config, local environment, and exchange connectivity."""
-    payload = _invoke_direct("doctor")
-    typer.echo(render_direct_output("doctor", payload))
-    if isinstance(payload, dict) and not bool(payload["ok"]):
-        raise typer.Exit(code=1)
+@kraken_auth_app.command("set")
+def kraken_auth_set(
+    api_key: str = typer.Argument(..., help="Kraken API key."),
+    secret: str | None = typer.Option(default=None, help="Optional Kraken API secret."),
+    otp: str | None = typer.Option(default=None, help="Optional Kraken OTP value."),
+) -> None:
+    """Write Kraken credentials into the active environment file."""
+    typer.echo(
+        render_direct_output(
+            "kraken_auth_set",
+            _invoke_direct(
+                "kraken_auth_set",
+                {"api_key": api_key, "api_secret": secret, "otp": otp},
+            ),
+        )
+    )
 
 
 @config_app.command("show")
@@ -157,11 +168,24 @@ def run(
         min=1,
         help="Optional cycle count override for testing or short runs.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional research/backtest dataset track override.",
+    ),
+    strategy_preset: str | None = typer.Option(
+        default=None,
+        help="Optional strategy preset override.",
+    ),
 ) -> None:
     """Start the shared simulate or live runtime loop."""
     payload = _invoke_direct(
         "run",
-        {"mode": mode, "max_cycles": max_cycles},
+        {
+            "mode": mode,
+            "max_cycles": max_cycles,
+            "dataset_track": dataset_track,
+            "strategy_preset": strategy_preset,
+        },
         emitter=_runtime_emitter,
     )
     if not isinstance(payload, RuntimeRunResult):
@@ -311,118 +335,19 @@ def features_build(
         default=False,
         help="Rebuild the dataset even if the deterministic cache already exists.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional dataset track override.",
+    ),
 ) -> None:
-    """Build a deterministic feature and label dataset from canonical daily candles."""
+    """Build a deterministic feature dataset from canonical daily candles."""
     typer.echo(
         render_direct_output(
             "features_build",
-            _invoke_direct("features_build", {"assets": assets, "force": force}),
-        )
-    )
-
-
-@research_app.command("sweep")
-def research_sweep(
-    preset: str = typer.Option(
-        default="broad_staged",
-        help="Named staged research sweep preset to execute.",
-    ),
-    resume: bool = typer.Option(
-        default=False,
-        help="Resume a previously started deterministic sweep id for this preset/config.",
-    ),
-    max_workers: int = typer.Option(
-        default=1,
-        min=1,
-        help="Requested research worker count.",
-    ),
-    limit: int | None = typer.Option(
-        default=None,
-        min=1,
-        help="Optional cap on the number of experiments to execute this run.",
-    ),
-) -> None:
-    """Execute a staged research sweep across dataset, rule, and ML combinations."""
-    typer.echo(
-        render_direct_output(
-            "research_sweep",
             _invoke_direct(
-                "research_sweep",
-                {
-                    "preset": preset,
-                    "resume": resume,
-                    "max_workers": max_workers,
-                    "limit": limit,
-                },
+                "features_build",
+                {"assets": assets, "force": force, "dataset_track": dataset_track},
             ),
-        )
-    )
-
-
-@research_app.command("report")
-def research_report(
-    sweep_id: str | None = typer.Argument(
-        default=None,
-        help="Optional sweep identifier. Defaults to the latest generated sweep report.",
-    ),
-) -> None:
-    """Print a stored research sweep report."""
-    typer.echo(
-        render_direct_output(
-            "research_report",
-            _invoke_direct("research_report", {"sweep_id": sweep_id}),
-        )
-    )
-
-
-@model_app.command("train")
-def model_train(
-    assets: list[str] | None = ASSETS_OPTION,
-    force_features: bool = typer.Option(
-        default=False,
-        help="Rebuild the feature dataset before training the model.",
-    ),
-) -> None:
-    """Train the Phase 6 ML artifact with walk-forward validation."""
-    typer.echo(
-        render_direct_output(
-            "model_train",
-            _invoke_direct(
-                "model_train",
-                {"assets": assets, "force_features": force_features},
-            ),
-        )
-    )
-
-
-@model_app.command("validate")
-def model_validate(
-    model_id: str | None = typer.Option(
-        default=None,
-        help="Optional model identifier. Defaults to the latest trained model.",
-    ),
-) -> None:
-    """Validate one trained model artifact against the promotion rules."""
-    typer.echo(
-        render_direct_output(
-            "model_validate",
-            _invoke_direct("model_validate", {"model_id": model_id}),
-        )
-    )
-
-
-@model_app.command("promote")
-def model_promote(
-    model_id: str | None = typer.Option(
-        default=None,
-        help="Optional model identifier. Defaults to the latest trained model.",
-    ),
-) -> None:
-    """Promote one validated model artifact to the active strategy pointer."""
-    typer.echo(
-        render_direct_output(
-            "model_promote",
-            _invoke_direct("model_promote", {"model_id": model_id}),
         )
     )
 
@@ -434,6 +359,14 @@ def backtest_run(
         default=False,
         help="Rebuild the feature dataset before running the backtest.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional dataset track override.",
+    ),
+    strategy_preset: str | None = typer.Option(
+        default=None,
+        help="Optional strategy preset override.",
+    ),
 ) -> None:
     """Execute a reproducible Kraken-only backtest on canonical daily data."""
     typer.echo(
@@ -441,7 +374,12 @@ def backtest_run(
             "backtest_run",
             _invoke_direct(
                 "backtest_run",
-                {"assets": assets, "force_features": force_features},
+                {
+                    "assets": assets,
+                    "force_features": force_features,
+                    "dataset_track": dataset_track,
+                    "strategy_preset": strategy_preset,
+                },
             ),
         )
     )

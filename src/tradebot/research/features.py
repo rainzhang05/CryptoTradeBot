@@ -1,4 +1,4 @@
-"""Deterministic feature and label generation for research datasets."""
+"""Deterministic feature generation for research datasets."""
 
 from __future__ import annotations
 
@@ -48,16 +48,6 @@ def feature_column_names(
         ]
     )
     columns.extend(f"regime_{state}" for state in REGIME_STATES)
-    columns.extend(
-        [
-            f"label_forward_return_{settings.forward_return_days}d",
-            f"label_downside_return_{settings.downside_lookahead_days}d",
-            f"label_downside_risk_flag_{settings.downside_lookahead_days}d",
-            f"label_sell_return_{settings.sell_lookahead_days}d",
-            f"label_sell_drawdown_{settings.sell_lookahead_days}d",
-            f"label_sell_risk_flag_{settings.sell_lookahead_days}d",
-        ]
-    )
     return columns
 
 
@@ -65,16 +55,16 @@ def build_feature_rows(
     candles_by_asset: dict[str, list[Candle]],
     settings: ResearchSettings,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
-    """Build deterministic feature and label rows from aligned daily candles."""
-    return _build_rows(candles_by_asset, settings, include_labels=True)
+    """Build deterministic feature rows from aligned daily candles."""
+    return _build_rows(candles_by_asset, settings)
 
 
 def build_signal_rows(
     candles_by_asset: dict[str, list[Candle]],
     settings: ResearchSettings,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
-    """Build point-in-time signal rows without requiring forward labels."""
-    return _build_rows(candles_by_asset, settings, include_labels=False)
+    """Build point-in-time signal rows."""
+    return _build_rows(candles_by_asset, settings)
 
 
 def build_dynamic_feature_rows(
@@ -82,7 +72,7 @@ def build_dynamic_feature_rows(
     settings: ResearchSettings,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
     """Build feature rows using a Kraken-only dynamic active universe."""
-    return _build_dynamic_rows(candles_by_asset, settings, include_labels=True)
+    return _build_dynamic_rows(candles_by_asset, settings)
 
 
 def build_dynamic_signal_rows(
@@ -90,16 +80,14 @@ def build_dynamic_signal_rows(
     settings: ResearchSettings,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
     """Build point-in-time signal rows for the dynamic active universe."""
-    return _build_dynamic_rows(candles_by_asset, settings, include_labels=False)
+    return _build_dynamic_rows(candles_by_asset, settings)
 
 
 def _build_rows(
     candles_by_asset: dict[str, list[Candle]],
     settings: ResearchSettings,
-    *,
-    include_labels: bool,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
-    """Build deterministic feature and label rows from aligned daily candles."""
+    """Build deterministic feature rows from aligned daily candles."""
     aligned = _align_candles(candles_by_asset)
     series = {asset: _AssetSeries(candles) for asset, candles in aligned.items()}
     assets = tuple(aligned)
@@ -154,7 +142,6 @@ def _build_rows(
                 btc_volatility=btc_volatility,
                 universe_average_momentum=universe_average_momentum,
                 asset_momentum=momentum_by_asset[asset],
-                include_labels=include_labels,
             )
             if row is None:
                 continue
@@ -185,8 +172,6 @@ def _build_rows(
 def _build_dynamic_rows(
     candles_by_asset: dict[str, list[Candle]],
     settings: ResearchSettings,
-    *,
-    include_labels: bool,
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, int]]]:
     series = {
         asset: _AssetSeries(candles)
@@ -284,7 +269,6 @@ def _build_dynamic_rows(
                 btc_volatility=btc_volatility,
                 universe_average_momentum=universe_average_momentum,
                 asset_momentum=momentum_by_asset[asset],
-                include_labels=include_labels,
                 asset_age_days=asset_age_days,
                 active_universe_count=active_universe_count,
             )
@@ -359,7 +343,6 @@ def _build_asset_row(
     btc_volatility: float | None,
     universe_average_momentum: float | None,
     asset_momentum: float | None,
-    include_labels: bool,
     asset_age_days: int | None = None,
     active_universe_count: int | None = None,
 ) -> dict[str, object] | None:
@@ -385,27 +368,6 @@ def _build_asset_row(
     fallback_ratio = None if kraken_ratio is None else max(0.0, 1.0 - kraken_ratio)
     source_confidence = kraken_ratio
 
-    forward_return = (
-        asset_series.forward_return(settings.forward_return_days, index)
-        if include_labels
-        else None
-    )
-    downside_return = (
-        asset_series.forward_min_low_return(settings.downside_lookahead_days, index)
-        if include_labels
-        else None
-    )
-    sell_return = (
-        asset_series.forward_return(settings.sell_lookahead_days, index)
-        if include_labels
-        else None
-    )
-    sell_drawdown = (
-        asset_series.forward_min_low_return(settings.sell_lookahead_days, index)
-        if include_labels
-        else None
-    )
-
     required_values = [
         *momentum_values.values(),
         *trend_values.values(),
@@ -425,15 +387,6 @@ def _build_asset_row(
         fallback_ratio,
         source_confidence,
     ]
-    if include_labels:
-        required_values.extend(
-            [
-                forward_return,
-                downside_return,
-                sell_return,
-                sell_drawdown,
-            ]
-        )
     if any(value is None for value in required_values):
         return None
 
@@ -476,24 +429,6 @@ def _build_asset_row(
         row["asset_age_days"] = asset_age_days
     if active_universe_count is not None:
         row["active_universe_count"] = active_universe_count
-    if include_labels:
-        assert forward_return is not None
-        assert downside_return is not None
-        assert sell_return is not None
-        assert sell_drawdown is not None
-        row |= {
-            f"label_forward_return_{settings.forward_return_days}d": forward_return,
-            f"label_downside_return_{settings.downside_lookahead_days}d": downside_return,
-            f"label_downside_risk_flag_{settings.downside_lookahead_days}d": 1
-            if downside_return <= -settings.downside_threshold
-            else 0,
-            f"label_sell_return_{settings.sell_lookahead_days}d": sell_return,
-            f"label_sell_drawdown_{settings.sell_lookahead_days}d": sell_drawdown,
-            f"label_sell_risk_flag_{settings.sell_lookahead_days}d": 1
-            if sell_drawdown <= -settings.sell_drawdown_threshold
-            and sell_return <= settings.sell_return_threshold
-            else 0,
-        }
 
     for window, value in momentum_values.items():
         row[f"momentum_{window}d"] = value

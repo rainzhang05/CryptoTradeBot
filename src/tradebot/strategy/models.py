@@ -68,15 +68,12 @@ class StrategyDecision:
 
 @dataclass(frozen=True)
 class ResearchStrategyProfile:
-    """Research-only ablations for the rule shell and ML head integration."""
+    """Research-only ablations for the deterministic rule shell."""
 
     regime_layer_enabled: bool = True
     entry_filter_layer_enabled: bool = True
     volatility_layer_enabled: bool = True
     gradual_reduction_layer_enabled: bool = True
-    expected_return_head_enabled: bool = True
-    downside_risk_head_enabled: bool = True
-    sell_risk_head_enabled: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

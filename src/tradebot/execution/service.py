@@ -26,7 +26,6 @@ from tradebot.execution.models import (
 )
 from tradebot.execution.storage import latest_live_status_file, live_state_file
 from tradebot.logging_config import get_logger
-from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.service import StrategyEngine
 
@@ -49,7 +48,6 @@ class LiveExecutionService:
         kraken_client: KrakenClient | None = None,
         data_service: DataService | None = None,
         research_service: ResearchService | None = None,
-        model_service: ModelService | None = None,
         strategy_engine: StrategyEngine | None = None,
         sleep_fn: Callable[[float], None] | None = None,
     ) -> None:
@@ -64,11 +62,14 @@ class LiveExecutionService:
         )
         self.data_service = data_service or DataService(config)
         self.research_service = research_service or ResearchService(config)
-        self.model_service = model_service or ModelService(config)
         self.strategy_engine = strategy_engine or StrategyEngine(config)
         self.sleep_fn = sleep_fn or default_sleep
 
-    def run_cycle(self, assets: tuple[str, ...] | None = None) -> LiveCycleSummary:
+    def run_cycle(
+        self,
+        assets: tuple[str, ...] | None = None,
+        dataset_track: str | None = None,
+    ) -> LiveCycleSummary:
         """Run one live account-sync, decision, and execution cycle."""
         selected_assets = self._select_assets(assets)
         self.logger.info("live cycle started", extra={"assets": list(selected_assets)})
@@ -131,7 +132,10 @@ class LiveExecutionService:
         try:
             self.data_service.complete_canonical(assets=selected_assets, allow_synthetic=False)
             dataset_id, latest_timestamp, rows_for_timestamp = (
-                self.research_service.build_live_signal_rows(assets=selected_assets)
+                self.research_service.build_live_signal_rows(
+                    assets=selected_assets,
+                    dataset_track=dataset_track,
+                )
             )
         except Exception as exc:
             return self._freeze_summary(
@@ -148,7 +152,7 @@ class LiveExecutionService:
             )
 
         latest_closed_timestamp = self._latest_closed_timestamp()
-        if latest_timestamp is None or latest_timestamp < latest_closed_timestamp:
+        if latest_timestamp is None or latest_timestamp < latest_closed_timestamp - (2 * 86_400):
             return self._freeze_summary(
                 state=state,
                 state_path=state_path,
@@ -182,52 +186,6 @@ class LiveExecutionService:
                 holdings=self._holdings(account.positions),
             )
 
-        active_reference = self.model_service.load_latest_active_reference()
-        if active_reference is None:
-            return self._freeze_summary(
-                state=state,
-                state_path=state_path,
-                report_path=report_path,
-                freeze_reason="missing_active_model",
-                system_status=system_status,
-                incidents=incidents + ["missing_active_model"],
-                dataset_id=dataset_id,
-                timestamp=latest_timestamp,
-                cash_usd=account.cash_usd,
-                positions=account.positions,
-                open_orders=account.open_orders,
-                holdings=self._holdings(account.positions),
-            )
-
-        rows_for_timestamp, model_id = self.model_service.infer_rows_with_active_model(
-            rows_for_timestamp
-        )
-        predictions = self._prediction_summary(rows_for_timestamp)
-        if model_id is None or any(
-            prediction_key not in row
-            for row in rows_for_timestamp.values()
-            for prediction_key in (
-                "expected_return_score",
-                "downside_risk_score",
-                "sell_risk_score",
-            )
-        ):
-            return self._freeze_summary(
-                state=state,
-                state_path=state_path,
-                report_path=report_path,
-                freeze_reason="missing_model_predictions",
-                system_status=system_status,
-                incidents=incidents + ["missing_model_predictions"],
-                dataset_id=dataset_id,
-                timestamp=latest_timestamp,
-                cash_usd=account.cash_usd,
-                positions=account.positions,
-                open_orders=account.open_orders,
-                holdings=self._holdings(account.positions),
-                predictions=predictions,
-            )
-
         prices_by_asset = self._prices_by_asset(selected_assets)
         if any(asset not in prices_by_asset for asset in selected_assets):
             return self._freeze_summary(
@@ -243,8 +201,6 @@ class LiveExecutionService:
                 positions=account.positions,
                 open_orders=account.open_orders,
                 holdings=self._holdings(account.positions),
-                model_id=model_id,
-                predictions=predictions,
             )
 
         equity_usd = self._portfolio_equity(account.cash_usd, account.positions, prices_by_asset)
@@ -255,7 +211,6 @@ class LiveExecutionService:
                 open_orders=account.open_orders,
                 recent_fills=state.recent_fills,
                 last_decision_timestamp=state.last_decision_timestamp,
-                last_model_id=state.last_model_id,
                 last_regime=state.last_regime,
                 last_risk_state=state.last_risk_state,
                 peak_equity_usd=max(state.peak_equity_usd or equity_usd, equity_usd),
@@ -282,9 +237,7 @@ class LiveExecutionService:
                     incidents=incidents,
                     state_file=str(state_path),
                     freeze_reason=None,
-                    model_id=model_id,
                     decision_executed=False,
-                    predictions=predictions,
                 ),
                 state=updated_state,
                 state_path=state_path,
@@ -295,7 +248,6 @@ class LiveExecutionService:
                 extra={
                     "timestamp": latest_timestamp,
                     "dataset_id": dataset_id,
-                    "model_id": model_id,
                 },
             )
             return summary
@@ -320,8 +272,6 @@ class LiveExecutionService:
                     positions=account.positions,
                     open_orders=account.open_orders,
                     holdings=self._holdings(account.positions),
-                    model_id=model_id,
-                    predictions=predictions,
                 )
 
         portfolio = PortfolioState(
@@ -349,7 +299,6 @@ class LiveExecutionService:
                 positions=account.positions,
                 open_orders=account.open_orders,
                 holdings=self._holdings(account.positions),
-                model_id=model_id,
                 regime_state=strategy_decision.regime_state,
                 risk_state=strategy_decision.risk_state,
                 portfolio_drawdown=strategy_decision.portfolio_drawdown,
@@ -362,7 +311,6 @@ class LiveExecutionService:
                     asset: asset_decision.reason
                     for asset, asset_decision in strategy_decision.asset_decisions.items()
                 },
-                predictions=predictions,
             )
 
         decision_snapshot = DecisionSnapshot(
@@ -443,14 +391,12 @@ class LiveExecutionService:
                 positions=account.positions,
                 open_orders=account.open_orders,
                 holdings=self._holdings(account.positions),
-                model_id=model_id,
                 regime_state=strategy_decision.regime_state,
                 risk_state=strategy_decision.risk_state,
                 portfolio_drawdown=strategy_decision.portfolio_drawdown,
                 target_weights=decision_snapshot.target_weights,
                 decision_actions=decision_snapshot.asset_actions,
                 decision_reasons=decision_snapshot.asset_reasons,
-                predictions=predictions,
             )
         if self._balances_mismatch(account.positions, account_after.positions, fills):
             failures += 1
@@ -473,7 +419,6 @@ class LiveExecutionService:
             open_orders=account_after.open_orders,
             recent_fills=(fills + state.recent_fills)[:10],
             last_decision_timestamp=latest_timestamp,
-            last_model_id=model_id,
             last_regime=strategy_decision.regime_state,
             last_risk_state=strategy_decision.risk_state,
             peak_equity_usd=max(state.peak_equity_usd or equity_after, equity_after),
@@ -499,13 +444,11 @@ class LiveExecutionService:
             incidents=updated_state.incidents,
             state_file=str(state_path),
             freeze_reason=freeze_reason,
-            model_id=model_id,
             decision_executed=True,
             portfolio_drawdown=strategy_decision.portfolio_drawdown,
             target_weights=decision_snapshot.target_weights,
             decision_actions=decision_snapshot.asset_actions,
             decision_reasons=decision_snapshot.asset_reasons,
-            predictions=predictions,
         )
         persisted = self._persist_summary(
             summary=summary,
@@ -521,7 +464,6 @@ class LiveExecutionService:
                 "status": persisted.status,
                 "fill_count": len(fills),
                 "freeze_reason": freeze_reason,
-                "model_id": model_id,
             },
         )
         return persisted
@@ -612,7 +554,6 @@ class LiveExecutionService:
             open_orders=open_orders,
             recent_fills=fills,
             last_decision_timestamp=payload.get("last_decision_timestamp"),
-            last_model_id=payload.get("last_model_id"),
             last_regime=payload.get("last_regime"),
             last_risk_state=payload.get("last_risk_state"),
             peak_equity_usd=payload.get("peak_equity_usd"),
@@ -649,14 +590,12 @@ class LiveExecutionService:
         positions: dict[str, PositionState] | None = None,
         open_orders: dict[str, KrakenOrderState] | None = None,
         holdings: dict[str, float] | None = None,
-        model_id: str | None = None,
         regime_state: str | None = None,
         risk_state: str | None = None,
         portfolio_drawdown: float | None = None,
         target_weights: dict[str, float] | None = None,
         decision_actions: dict[str, str] | None = None,
         decision_reasons: dict[str, str] | None = None,
-        predictions: dict[str, dict[str, float]] | None = None,
     ) -> LiveCycleSummary:
         frozen_state = LiveState(
             cash_usd=state.cash_usd if cash_usd is None else cash_usd,
@@ -664,7 +603,6 @@ class LiveExecutionService:
             open_orders=state.open_orders if open_orders is None else open_orders,
             recent_fills=state.recent_fills,
             last_decision_timestamp=state.last_decision_timestamp,
-            last_model_id=state.last_model_id if model_id is None else model_id,
             last_regime=state.last_regime if regime_state is None else regime_state,
             last_risk_state=state.last_risk_state if risk_state is None else risk_state,
             peak_equity_usd=state.peak_equity_usd,
@@ -690,13 +628,11 @@ class LiveExecutionService:
             incidents=frozen_state.incidents,
             state_file=str(state_path),
             freeze_reason=freeze_reason,
-            model_id=model_id,
             decision_executed=False,
             portfolio_drawdown=portfolio_drawdown,
             target_weights=target_weights or {},
             decision_actions=decision_actions or {},
             decision_reasons=decision_reasons or {},
-            predictions=predictions or {},
         )
         self.logger.warning(
             "live cycle frozen",
@@ -801,25 +737,6 @@ class LiveExecutionService:
     @staticmethod
     def _holdings(positions: dict[str, PositionState]) -> dict[str, float]:
         return {asset: position.quantity for asset, position in positions.items()}
-
-    @staticmethod
-    def _prediction_summary(
-        rows_by_asset: dict[str, dict[str, object]],
-    ) -> dict[str, dict[str, float]]:
-        summary: dict[str, dict[str, float]] = {}
-        for asset, row in sorted(rows_by_asset.items()):
-            prediction_keys = (
-                "expected_return_score",
-                "downside_risk_score",
-                "sell_risk_score",
-            )
-            if not all(key in row for key in prediction_keys):
-                continue
-            summary[asset] = {
-                key: float(row[key])  # type: ignore[arg-type]
-                for key in prediction_keys
-            }
-        return summary
 
     @staticmethod
     def _portfolio_equity(

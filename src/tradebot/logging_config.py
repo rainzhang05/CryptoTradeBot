@@ -15,7 +15,7 @@ from tradebot.config import AppConfig
 
 def log_file(root: Path) -> Path:
     """Return the durable application log file path."""
-    return root / "tradebot.log"
+    return root / "cryptotradebot.log"
 
 
 def configure_logging(config: AppConfig, stream: TextIO | None = None) -> None:

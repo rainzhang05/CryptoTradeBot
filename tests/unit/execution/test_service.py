@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-
-import pytest
 
 from tradebot.config import load_config
 from tradebot.data.models import Candle
@@ -13,24 +10,10 @@ from tradebot.data.storage import write_candles
 from tradebot.execution.kraken import KrakenClientError
 from tradebot.execution.models import KrakenOrderState, OrderSubmission, PairMetadata
 from tradebot.execution.service import LiveExecutionService
-from tradebot.model.service import ModelService
 from tradebot.research.service import ResearchService
 from tradebot.strategy.service import StrategyEngine
 
 LATEST_TEST_TIMESTAMP = 1_704_067_200 + 11 * 86_400
-
-
-@pytest.fixture(autouse=True)
-def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        ModelService,
-        "_promotion_backtest_comparison",
-        lambda self, *, model_id, assets: {
-            "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
-            "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
-            "incremental_total_return": 0.01,
-        },
-    )
 
 
 def _write_config(root: Path) -> Path:
@@ -62,19 +45,6 @@ research:
   breadth_window_days: 2
   dollar_volume_window_days: 2
   source_window_days: 2
-  forward_return_days: 1
-  downside_lookahead_days: 2
-  downside_threshold: 0.05
-  sell_lookahead_days: 3
-  sell_drawdown_threshold: 0.08
-  sell_return_threshold: -0.01
-model:
-  initial_train_timestamps: 2
-  minimum_validation_rows: 1
-  minimum_walk_forward_splits: 1
-  promotion_min_expected_return_correlation: -1.0
-  promotion_max_downside_brier: 1.0
-  promotion_max_sell_brier: 1.0
 backtest:
   initial_cash_usd: 1000.0
   fee_rate_bps: 0.0
@@ -209,7 +179,7 @@ class FakeKrakenClient:
         return 1
 
 
-def _prepare_promoted_model(tmp_path: Path) -> tuple[object, ResearchService, ModelService]:
+def _prepare_services(tmp_path: Path) -> tuple[object, ResearchService]:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
     _write_daily_series(
         tmp_path,
@@ -223,22 +193,17 @@ def _prepare_promoted_model(tmp_path: Path) -> tuple[object, ResearchService, Mo
         [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
         [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
     )
-    research_service = ResearchService(config)
-    model_service = ModelService(config)
-    training = model_service.train_model(assets=("BTC", "ETH"))
-    model_service.promote_model(training.model_id)
-    return config, research_service, model_service
+    return config, ResearchService(config)
 
 
 def test_live_service_places_orders_and_persists_state(tmp_path: Path, monkeypatch) -> None:
-    config, research_service, model_service = _prepare_promoted_model(tmp_path)
+    config, research_service = _prepare_services(tmp_path)
     fake_client = FakeKrakenClient()
     service = LiveExecutionService(
         config,
         kraken_client=fake_client,
         data_service=FakeDataService(),
         research_service=research_service,
-        model_service=model_service,
         strategy_engine=StrategyEngine(config),
         sleep_fn=lambda _: None,
     )
@@ -250,17 +215,17 @@ def test_live_service_places_orders_and_persists_state(tmp_path: Path, monkeypat
     assert summary.fill_count >= 1
     assert fake_client.submissions
     assert Path(summary.state_file).exists()
+    assert all("model" not in incident for incident in summary.incidents)
 
 
 def test_live_service_skips_repeated_decision_timestamp(tmp_path: Path, monkeypatch) -> None:
-    config, research_service, model_service = _prepare_promoted_model(tmp_path)
+    config, research_service = _prepare_services(tmp_path)
     fake_client = FakeKrakenClient()
     service = LiveExecutionService(
         config,
         kraken_client=fake_client,
         data_service=FakeDataService(),
         research_service=research_service,
-        model_service=model_service,
         strategy_engine=StrategyEngine(config),
         sleep_fn=lambda _: None,
     )
@@ -274,45 +239,10 @@ def test_live_service_skips_repeated_decision_timestamp(tmp_path: Path, monkeypa
     assert len(fake_client.submissions) == first.fill_count
 
 
-def test_live_service_freezes_without_active_model(tmp_path: Path, monkeypatch) -> None:
-    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
-    _write_daily_series(
-        tmp_path,
-        "BTC",
-        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
-        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
-    )
-    _write_daily_series(
-        tmp_path,
-        "ETH",
-        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
-        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
-    )
-    research_service = ResearchService(config)
-    model_service = ModelService(config)
-    model_service.train_model(assets=("BTC", "ETH"))
-
-    service = LiveExecutionService(
-        config,
-        kraken_client=FakeKrakenClient(),
-        data_service=FakeDataService(),
-        research_service=research_service,
-        model_service=model_service,
-        strategy_engine=StrategyEngine(config),
-        sleep_fn=lambda _: None,
-    )
-    monkeypatch.setattr(service, "_latest_closed_timestamp", lambda: LATEST_TEST_TIMESTAMP)
-
-    summary = service.run_cycle(assets=("BTC", "ETH"))
-
-    assert summary.status == "frozen"
-    assert summary.freeze_reason == "missing_active_model"
-
-
 def test_live_service_cancels_stale_open_orders_before_new_decision(
     tmp_path: Path, monkeypatch
 ) -> None:
-    config, research_service, model_service = _prepare_promoted_model(tmp_path)
+    config, research_service = _prepare_services(tmp_path)
     fake_client = FakeKrakenClient()
     fake_client.open_orders["OLD1"] = KrakenOrderState(
         txid="OLD1",
@@ -351,7 +281,6 @@ def test_live_service_cancels_stale_open_orders_before_new_decision(
         kraken_client=fake_client,
         data_service=FakeDataService(),
         research_service=research_service,
-        model_service=model_service,
         strategy_engine=StrategyEngine(config),
         sleep_fn=lambda _: None,
     )
@@ -366,7 +295,7 @@ def test_live_service_cancels_stale_open_orders_before_new_decision(
 def test_live_service_freezes_on_order_management_failures(
     tmp_path: Path, monkeypatch
 ) -> None:
-    config, research_service, model_service = _prepare_promoted_model(tmp_path)
+    config, research_service = _prepare_services(tmp_path)
 
     class FailingOrderKrakenClient(FakeKrakenClient):
         def add_market_order(
@@ -386,7 +315,6 @@ def test_live_service_freezes_on_order_management_failures(
         kraken_client=FailingOrderKrakenClient(),
         data_service=FakeDataService(),
         research_service=research_service,
-        model_service=model_service,
         strategy_engine=StrategyEngine(config),
         sleep_fn=lambda _: None,
     )

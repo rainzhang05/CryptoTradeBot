@@ -18,8 +18,10 @@ class ConfigError(RuntimeError):
     """Raised when configuration cannot be loaded or validated."""
 
 
-TRADEBOT_HOME_ENV = "TRADEBOT_HOME"
-BOT_CONFIG_PATH_ENV = "BOT_CONFIG_PATH"
+CRYPTOTRADEBOT_HOME_ENV = "CRYPTOTRADEBOT_HOME"
+LEGACY_TRADEBOT_HOME_ENV = "TRADEBOT_HOME"
+CRYPTOTRADEBOT_CONFIG_PATH_ENV = "CRYPTOTRADEBOT_CONFIG_PATH"
+LEGACY_BOT_CONFIG_PATH_ENV = "BOT_CONFIG_PATH"
 
 
 @dataclass(frozen=True)
@@ -79,24 +81,28 @@ class StrategySettings(BaseModel):
     """Strategy-level settings that are fixed in V1."""
 
     fixed_universe: tuple[str, ...] = FIXED_UNIVERSE
+    regime_layer_enabled: bool = True
+    entry_filter_layer_enabled: bool = True
+    volatility_layer_enabled: bool = False
+    gradual_reduction_layer_enabled: bool = False
     min_source_confidence: float = Field(default=0.8, ge=0, le=1)
     entry_momentum_floor: float = Field(default=0.0, ge=-1, le=1)
     entry_trend_gap_floor: float = Field(default=0.0, ge=-1, le=1)
     hold_momentum_floor: float = Field(default=-0.03, ge=-1, le=1)
     hold_trend_gap_floor: float = Field(default=-0.03, ge=-1, le=1)
-    max_realized_volatility: float = Field(default=0.25, gt=0, le=5)
-    reduction_volatility_threshold: float = Field(default=0.12, gt=0, le=5)
+    max_realized_volatility: float = Field(default=0.30, gt=0, le=5)
+    reduction_volatility_threshold: float = Field(default=0.16, gt=0, le=5)
     severe_momentum_floor: float = Field(default=-0.08, ge=-1, le=1)
     severe_trend_gap_floor: float = Field(default=-0.05, ge=-1, le=1)
-    weak_relative_strength_floor: float = Field(default=-0.03, ge=-1, le=1)
-    reduction_target_fraction: float = Field(default=0.5, gt=0, lt=1)
+    weak_relative_strength_floor: float = Field(default=-0.08, ge=-1, le=1)
+    reduction_target_fraction: float = Field(default=0.35, gt=0, lt=1)
     held_asset_score_bonus: float = Field(default=0.02, ge=0, le=1)
     drawdown_caution_threshold: float = Field(default=0.10, gt=0, lt=1)
     drawdown_reduced_threshold: float = Field(default=0.20, gt=0, lt=1)
     drawdown_catastrophe_threshold: float = Field(default=0.30, gt=0, lt=1)
-    elevated_caution_exposure_multiplier: float = Field(default=0.8, gt=0, le=1)
-    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.6, gt=0, le=1)
-    catastrophe_exposure_multiplier: float = Field(default=0.3, gt=0, le=1)
+    elevated_caution_exposure_multiplier: float = Field(default=0.96, gt=0, le=1)
+    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.78, gt=0, le=1)
+    catastrophe_exposure_multiplier: float = Field(default=0.32, gt=0, le=1)
 
     @field_validator("fixed_universe")
     @classmethod
@@ -130,6 +136,9 @@ class ResearchSettings(BaseModel):
     """Research and feature-generation settings for deterministic datasets."""
 
     primary_interval: Literal["1d"] = "1d"
+    default_dataset_track: Literal["official_fixed_10", "dynamic_universe_kraken_only"] = (
+        "dynamic_universe_kraken_only"
+    )
     momentum_windows_days: tuple[int, ...] = (7, 30, 90)
     trend_windows_days: tuple[int, ...] = (50, 200)
     volatility_windows_days: tuple[int, ...] = (20, 60)
@@ -137,12 +146,6 @@ class ResearchSettings(BaseModel):
     breadth_window_days: int = Field(default=30, ge=2)
     dollar_volume_window_days: int = Field(default=20, ge=2)
     source_window_days: int = Field(default=30, ge=2)
-    forward_return_days: int = Field(default=5, ge=1)
-    downside_lookahead_days: int = Field(default=10, ge=1)
-    downside_threshold: float = Field(default=0.08, gt=0)
-    sell_lookahead_days: int = Field(default=20, ge=1)
-    sell_drawdown_threshold: float = Field(default=0.12, gt=0)
-    sell_return_threshold: float = Field(default=-0.02, lt=1)
 
     @field_validator(
         "momentum_windows_days",
@@ -158,52 +161,20 @@ class ResearchSettings(BaseModel):
         return tuple(value)
 
 
-class ModelSettings(BaseModel):
-    """ML training, validation, and promotion settings."""
-
-    enabled: bool = True
-    initial_train_timestamps: int = Field(default=80, ge=2)
-    minimum_validation_rows: int = Field(default=60, ge=1)
-    minimum_walk_forward_splits: int = Field(default=20, ge=1)
-    retrain_cadence_days: int = Field(default=30, ge=1)
-    expected_return_weight: float = Field(default=0.30, ge=0, le=1)
-    downside_penalty_weight: float = Field(default=0.20, ge=0, le=1)
-    sell_risk_penalty_weight: float = Field(default=0.15, ge=0, le=1)
-    entry_downside_threshold: float = Field(default=0.55, ge=0, le=1)
-    reduce_sell_risk_threshold: float = Field(default=0.55, ge=0, le=1)
-    exit_sell_risk_threshold: float = Field(default=0.70, ge=0, le=1)
-    exit_downside_threshold: float = Field(default=0.75, ge=0, le=1)
-    promotion_min_expected_return_correlation: float = Field(default=0.0, ge=-1, le=1)
-    promotion_max_downside_brier: float = Field(default=0.25, ge=0, le=1)
-    promotion_max_sell_brier: float = Field(default=0.30, ge=0, le=1)
-
-    @model_validator(mode="after")
-    def validate_thresholds(self) -> ModelSettings:
-        if self.reduce_sell_risk_threshold >= self.exit_sell_risk_threshold:
-            raise ValueError(
-                "model sell-risk thresholds must satisfy reduce < exit"
-            )
-        if self.entry_downside_threshold >= self.exit_downside_threshold:
-            raise ValueError(
-                "model downside thresholds must satisfy entry < exit"
-            )
-        return self
-
-
 class BacktestSettings(BaseModel):
     """Execution assumptions and portfolio constraints for backtest and simulate mode."""
 
     initial_cash_usd: float = Field(default=100_000.0, gt=0)
     fee_rate_bps: float = Field(default=26.0, ge=0)
     slippage_bps: float = Field(default=10.0, ge=0)
-    max_positions: int = Field(default=5, ge=1, le=len(FIXED_UNIVERSE))
+    max_positions: int = Field(default=3, ge=1, le=len(FIXED_UNIVERSE))
     max_asset_weight: float = Field(default=0.35, gt=0, le=0.35)
     min_order_notional_usd: float = Field(default=25.0, gt=0)
-    rebalance_threshold: float = Field(default=0.02, ge=0, lt=1)
+    rebalance_threshold: float = Field(default=0.05, ge=0, lt=1)
     quantity_precision: int = Field(default=8, ge=0, le=12)
     constructive_exposure: float = Field(default=1.0, ge=0, le=1)
-    neutral_exposure: float = Field(default=0.5, ge=0, le=1)
-    defensive_exposure: float = Field(default=0.25, ge=0, le=1)
+    neutral_exposure: float = Field(default=0.78, ge=0, le=1)
+    defensive_exposure: float = Field(default=0.45, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_exposure_order(self) -> BacktestSettings:
@@ -229,8 +200,6 @@ class PathsSettings(BaseModel):
     artifacts_dir: Path = Path("artifacts")
     features_dir: Path = Path("artifacts/features")
     experiments_dir: Path = Path("artifacts/experiments")
-    models_dir: Path = Path("artifacts/models")
-    model_reports_dir: Path = Path("artifacts/reports/models")
     logs_dir: Path = Path("runtime/logs")
     state_dir: Path = Path("runtime/state")
 
@@ -258,7 +227,6 @@ class AppConfig(BaseModel):
     data: DataSettings = Field(default_factory=DataSettings)
     strategy: StrategySettings
     research: ResearchSettings = Field(default_factory=ResearchSettings)
-    model: ModelSettings = Field(default_factory=ModelSettings)
     backtest: BacktestSettings = Field(default_factory=BacktestSettings)
     alerts: AlertSettings
     paths: PathsSettings
@@ -283,8 +251,6 @@ class AppConfig(BaseModel):
             artifacts_dir=(self.project_root / self.paths.artifacts_dir).resolve(),
             features_dir=(self.project_root / self.paths.features_dir).resolve(),
             experiments_dir=(self.project_root / self.paths.experiments_dir).resolve(),
-            models_dir=(self.project_root / self.paths.models_dir).resolve(),
-            model_reports_dir=(self.project_root / self.paths.model_reports_dir).resolve(),
             logs_dir=(self.project_root / self.paths.logs_dir).resolve(),
             state_dir=(self.project_root / self.paths.state_dir).resolve(),
         )
@@ -299,20 +265,114 @@ class AppConfig(BaseModel):
         )
 
 
+STRATEGY_PRESETS: tuple[str, ...] = ("live_default", "max_profit")
+
+
+def apply_strategy_preset(config: AppConfig, preset: str) -> AppConfig:
+    """Return a config copy with a named strategy preset applied."""
+    effective = config.model_copy(deep=True)
+    if preset == "live_default":
+        _apply_live_default_preset(effective)
+        return effective
+    if preset == "max_profit":
+        _apply_max_profit_preset(effective)
+        return effective
+    raise ValueError(f"Unsupported strategy preset: {preset}")
+
+
+def identify_strategy_preset(config: AppConfig) -> str:
+    """Return the best-known preset label for the current config."""
+    for preset in STRATEGY_PRESETS:
+        candidate = apply_strategy_preset(config, preset)
+        if _strategy_preset_fingerprint(candidate) == _strategy_preset_fingerprint(config):
+            return preset
+    return "custom"
+
+
+def _apply_live_default_preset(config: AppConfig) -> None:
+    config.strategy.regime_layer_enabled = True
+    config.strategy.entry_filter_layer_enabled = True
+    config.strategy.volatility_layer_enabled = False
+    config.strategy.gradual_reduction_layer_enabled = False
+    config.strategy.entry_momentum_floor = 0.0
+    config.strategy.entry_trend_gap_floor = 0.0
+    config.strategy.hold_momentum_floor = -0.03
+    config.strategy.hold_trend_gap_floor = -0.03
+    config.strategy.max_realized_volatility = 0.30
+    config.strategy.reduction_volatility_threshold = 0.16
+    config.strategy.reduction_target_fraction = 0.35
+    config.strategy.held_asset_score_bonus = 0.02
+    config.strategy.elevated_caution_exposure_multiplier = 0.96
+    config.strategy.reduced_aggressiveness_exposure_multiplier = 0.78
+    config.strategy.catastrophe_exposure_multiplier = 0.32
+    config.backtest.max_positions = 3
+    config.backtest.rebalance_threshold = 0.05
+    config.backtest.neutral_exposure = 0.78
+    config.backtest.defensive_exposure = 0.45
+
+
+def _apply_max_profit_preset(config: AppConfig) -> None:
+    config.strategy.regime_layer_enabled = True
+    config.strategy.entry_filter_layer_enabled = True
+    config.strategy.volatility_layer_enabled = False
+    config.strategy.gradual_reduction_layer_enabled = False
+    config.strategy.entry_momentum_floor = -0.02
+    config.strategy.entry_trend_gap_floor = -0.01
+    config.strategy.hold_momentum_floor = -0.08
+    config.strategy.hold_trend_gap_floor = -0.06
+    config.strategy.max_realized_volatility = 0.45
+    config.strategy.reduction_volatility_threshold = 0.22
+    config.strategy.reduction_target_fraction = 0.25
+    config.strategy.held_asset_score_bonus = 0.03
+    config.strategy.elevated_caution_exposure_multiplier = 1.0
+    config.strategy.reduced_aggressiveness_exposure_multiplier = 0.85
+    config.strategy.catastrophe_exposure_multiplier = 0.40
+    config.backtest.max_positions = 3
+    config.backtest.rebalance_threshold = 0.05
+    config.backtest.neutral_exposure = 0.85
+    config.backtest.defensive_exposure = 0.55
+
+
+def _strategy_preset_fingerprint(config: AppConfig) -> tuple[object, ...]:
+    return (
+        config.strategy.regime_layer_enabled,
+        config.strategy.entry_filter_layer_enabled,
+        config.strategy.volatility_layer_enabled,
+        config.strategy.gradual_reduction_layer_enabled,
+        config.strategy.entry_momentum_floor,
+        config.strategy.entry_trend_gap_floor,
+        config.strategy.hold_momentum_floor,
+        config.strategy.hold_trend_gap_floor,
+        config.strategy.max_realized_volatility,
+        config.strategy.reduction_volatility_threshold,
+        config.strategy.reduction_target_fraction,
+        config.strategy.held_asset_score_bonus,
+        config.strategy.elevated_caution_exposure_multiplier,
+        config.strategy.reduced_aggressiveness_exposure_multiplier,
+        config.strategy.catastrophe_exposure_multiplier,
+        config.backtest.max_positions,
+        config.backtest.rebalance_threshold,
+        config.backtest.neutral_exposure,
+        config.backtest.defensive_exposure,
+    )
+
+
 def default_config_path() -> Path:
     """Resolve the default configuration path from explicit overrides or the app home."""
-    configured_path = os.getenv(BOT_CONFIG_PATH_ENV)
+    configured_path = os.getenv(CRYPTOTRADEBOT_CONFIG_PATH_ENV) or os.getenv(
+        LEGACY_BOT_CONFIG_PATH_ENV
+    )
     if configured_path:
         return Path(configured_path).expanduser().resolve()
     return app_home_layout().config_path.resolve()
 
 
 def default_tradebot_home() -> Path:
-    """Resolve the default Tradebot home directory."""
-    configured_home = os.getenv(TRADEBOT_HOME_ENV)
+    """Resolve the default CryptoTradeBot home directory."""
+    configured_home = os.getenv(CRYPTOTRADEBOT_HOME_ENV) or os.getenv(LEGACY_TRADEBOT_HOME_ENV)
     if configured_home:
         return Path(configured_home).expanduser().resolve()
-    return (Path.home() / ".tradebot").resolve()
+    return (Path.home() / ".cryptotradebot").resolve()
 
 
 def app_home_layout(home: Path | None = None) -> AppHomeLayout:
@@ -338,7 +398,6 @@ def default_config_payload() -> dict[str, Any]:
         "data": DataSettings().model_dump(mode="json"),
         "strategy": StrategySettings().model_dump(mode="json"),
         "research": ResearchSettings().model_dump(mode="json"),
-        "model": ModelSettings().model_dump(mode="json"),
         "backtest": BacktestSettings().model_dump(mode="json"),
         "alerts": AlertSettings().model_dump(mode="json"),
         "paths": PathsSettings().model_dump(mode="json"),
@@ -410,7 +469,7 @@ def initialize_app_home(
 
 def ensure_app_home_initialized() -> dict[str, object] | None:
     """Create the default application home on first use when no explicit config override exists."""
-    if os.getenv(BOT_CONFIG_PATH_ENV):
+    if os.getenv(CRYPTOTRADEBOT_CONFIG_PATH_ENV) or os.getenv(LEGACY_BOT_CONFIG_PATH_ENV):
         return None
     layout = app_home_layout()
     if layout.config_path.exists():
