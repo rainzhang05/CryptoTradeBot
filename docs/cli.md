@@ -150,7 +150,9 @@ This command must:
 - write run artifacts under `artifacts/backtests/<run_id>/`
 - update `artifacts/reports/backtests/latest_backtest_report.json`
 - support `--dataset-track <track>` and `--strategy-preset <preset>`
-- include yearly returns, benchmarks, regime and risk distributions, action and reason counts, average exposure, and targeted-asset frequencies in the report payload
+- anchor the equity curve and risk metrics from initial USD capital at the first executable signal timestamp
+- report both mark-to-market end value and a liquidation-adjusted end value that estimates final exit fees and slippage on any remaining open positions
+- include yearly returns, benchmarks, regime and risk distributions, action and reason counts, average exposure, targeted-asset frequencies, and liquidation-cost diagnostics in the report payload
 
 ### `cryptotradebot backtest report`
 
