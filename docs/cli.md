@@ -135,11 +135,13 @@ This command must:
 This command must:
 
 - build or reuse the deterministic feature dataset for the selected assets
+- default full-universe training to `research.default_dataset_track`, which ships as `dynamic_universe_kraken_only`
 - train the expected-return, downside-risk, and sell-risk models on point-in-time rows only
 - perform walk-forward validation across later timestamps
 - require enough aligned daily timestamps after feature lookbacks and forward-label windows are applied
 - write artifacts under `artifacts/models/<model_id>/`
 - update `artifacts/reports/models/latest_training_summary.json`
+- support `--dataset-track <track>` and `--family <family>`
 
 ### `tradebot model validate`
 
@@ -159,16 +161,19 @@ This command must:
 - record the promoted model reference used by runtime and backtests
 - update `artifacts/reports/models/latest_promotion_summary.json`
 - make the promoted model immediately available to the shared hybrid strategy path
+- persist the promoted pointer under `artifacts/models/production/latest_model.json`
 
 ### `tradebot features build`
 
 This command must:
 
 - read canonical Kraken daily candles for the selected assets
+- default full-universe builds to `research.default_dataset_track`
 - generate deterministic features and labels without future leakage in feature columns
 - reuse cached datasets when the deterministic `dataset_id` already exists unless a force rebuild is requested
 - write the dataset and manifest under `artifacts/features/<dataset_id>/`
 - prepare a matching experiment root under `artifacts/experiments/<dataset_id>/`
+- support `--dataset-track <track>`
 
 ### `tradebot research sweep`
 
@@ -195,6 +200,7 @@ This command must:
 - support loading a specific `sweep_id` when provided
 - surface the ranked rule-only, hybrid, and shortlist candidates
 - reference the stored comparison artifacts for yearly-return and benchmark detail
+- include profit-rate comparison fields such as CAGR, total return, drawdown, yearly returns, and benchmark deltas
 
 ### Backtesting and simulation
 
@@ -219,11 +225,15 @@ This command must:
 This command must:
 
 - build or reuse the deterministic feature dataset for the selected assets
+- default full-universe backtests to `research.default_dataset_track`
 - run a Kraken-only daily bar backtest using canonical `1d` candles
 - generate order intents, simulated fills, and portfolio accounting from shared backtest models
-- enrich feature rows with promoted-model predictions when the active model matches the dataset in use
+- enrich feature rows with promoted-model predictions when the active model is compatible with the dataset track, selected assets, research signature, and feature signature in use
+- infer the compatible dataset tail from the promoted bundle when prediction CSV coverage stops before the current tail, instead of silently degrading to rule-only
 - write run artifacts under `artifacts/backtests/<run_id>/`
 - update `artifacts/reports/backtests/latest_backtest_report.json`
+- support `--dataset-track <track>`, `--model-id <id>`, and `--use-active-model/--no-use-active-model`
+- include yearly returns, benchmarks, regime and risk distributions, action and reason counts, average exposure, and targeted-asset frequencies in the report payload
 
 ### `tradebot backtest report`
 
@@ -242,6 +252,7 @@ This command must:
 - load the active promoted model reference when available so simulation uses the same hybrid strategy path as backtests
 - update that state after each completed simulation cycle
 - return a clear waiting state when canonical data or deterministic signals are not yet available
+- support `--dataset-track <track>`
 
 ### Live trading and monitoring
 
@@ -258,6 +269,7 @@ This command must:
 - refresh Kraken's dead-man switch before each live decision cycle
 - sync balances and open orders from Kraken before making a new decision
 - build point-in-time signal rows from canonical Kraken data without forward labels
+- support `--dataset-track <track>` while keeping the live tradeable universe fixed to the documented ten assets
 - require an active promoted model artifact for live inference and freeze if it is missing
 - place market orders only through the shared order-intent path used by simulate mode
 - persist live runtime state under `runtime/state/live_state.json`
