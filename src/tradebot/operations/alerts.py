@@ -318,8 +318,8 @@ class RuntimeAlertService:
             return replace(event, email_error="smtp_host_not_configured")
 
         message = EmailMessage()
-        message["Subject"] = f"[tradebot][{event.severity.upper()}] {event.title}"
-        message["From"] = self.config.secrets.smtp_username or "tradebot@localhost"
+        message["Subject"] = f"[cryptotradebot][{event.severity.upper()}] {event.title}"
+        message["From"] = self.config.secrets.smtp_username or "cryptotradebot@localhost"
         message["To"] = recipient
         message.set_content(self._email_body(event))
 
