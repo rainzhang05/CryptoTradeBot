@@ -1,6 +1,6 @@
 # Crypto Trade Bot
 
-CLI-first Kraken spot trading bot with an interactive operator shell for research, simulation, and live operations.
+Kraken spot trading bot CLI with an interactive operator shell for research, simulation, and live operations.
 
 <p align="center">
   <img src="docs/assets/tradebot-shell-sample.png" alt="Crypto Trade Bot shell sample" width="620">
