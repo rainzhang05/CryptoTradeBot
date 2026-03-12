@@ -88,10 +88,10 @@ def test_status_command_reads_runtime_state(tmp_path: Path, monkeypatch) -> None
 def test_report_list_and_export_commands(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
     monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
-    report_path = tmp_path / "artifacts" / "reports" / "models" / "latest_validation_summary.json"
+    report_path = tmp_path / "artifacts" / "reports" / "backtests" / "latest_backtest_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text('{"model_id":"model-1"}', encoding="utf-8")
-    export_path = tmp_path / "exports" / "validation.json"
+    report_path.write_text('{"run_id":"run-1"}', encoding="utf-8")
+    export_path = tmp_path / "exports" / "report.json"
 
     list_result = runner.invoke(app, ["report", "list"])
     export_result = runner.invoke(
@@ -99,13 +99,13 @@ def test_report_list_and_export_commands(tmp_path: Path, monkeypatch) -> None:
         [
             "report",
             "export",
-            "artifacts/reports/models/latest_validation_summary.json",
+            "artifacts/reports/backtests/latest_backtest_report.json",
             str(export_path),
         ],
     )
 
     assert list_result.exit_code == 0
-    assert "artifacts/reports/models/latest_validation_summary.json" in list_result.stdout
+    assert "artifacts/reports/backtests/latest_backtest_report.json" in list_result.stdout
     assert export_result.exit_code == 0
     assert export_path.exists()
     assert '"destination":' in export_result.stdout
