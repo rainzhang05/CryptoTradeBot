@@ -21,7 +21,7 @@ When a command needs more input, the shell opens a form so you can fill in the v
 
 ## Runtime
 
-- `run`: start the shared runtime. In the shell form, choose `simulate` or `live`.
+- `run`: start the shared runtime. In the shell form, choose `simulate` or `live`, then optionally override the dataset track or strategy preset.
 - `stop`: request termination of a tracked runtime process.
 
 ## Configuration And Alerts
@@ -49,7 +49,7 @@ When a command needs more input, the shell opens a form so you can fill in the v
 
 ## Backtests And Reports
 
-- `backtest run`: execute a backtest using the current configuration. The shell form exposes the dataset track, optional model id, and active-model usage.
+- `backtest run`: execute a backtest using the current configuration. The shell form exposes the dataset track, optional strategy preset, optional model id, and active-model usage.
 - `backtest report`: open the latest or a selected backtest report.
 - `report list`: list saved reports and artifacts.
 - `report export`: copy one saved artifact to another path.
