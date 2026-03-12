@@ -278,8 +278,48 @@ def test_live_service_skips_repeated_decision_timestamp(tmp_path: Path, monkeypa
     assert len(fake_client.submissions) == first.fill_count
 
 
-def test_live_service_freezes_without_active_model(tmp_path: Path, monkeypatch) -> None:
+def test_live_service_uses_rule_only_fallback_without_active_model(
+    tmp_path: Path, monkeypatch
+) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+    research_service = ResearchService(config)
+    model_service = ModelService(config)
+    model_service.train_model(assets=("BTC", "ETH"))
+
+    service = LiveExecutionService(
+        config,
+        kraken_client=FakeKrakenClient(),
+        data_service=FakeDataService(),
+        research_service=research_service,
+        model_service=model_service,
+        strategy_engine=StrategyEngine(config),
+        sleep_fn=lambda _: None,
+    )
+    monkeypatch.setattr(service, "_latest_closed_timestamp", lambda: LATEST_TEST_TIMESTAMP)
+
+    summary = service.run_cycle(assets=("BTC", "ETH"))
+
+    assert summary.status == "executed"
+    assert summary.freeze_reason is None
+    assert "rule_only_live_fallback" in summary.incidents
+    assert summary.model_id is None
+
+
+def test_live_service_can_require_active_model_strictly(tmp_path: Path, monkeypatch) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    config.runtime.live_require_active_model = True
     _write_daily_series(
         tmp_path,
         "BTC",
