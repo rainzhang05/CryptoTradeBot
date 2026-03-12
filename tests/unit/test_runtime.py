@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tradebot.backtest.models import SimulationCycleSummary
+from tradebot.cancellation import CancellationToken, CommandCancelledError
 from tradebot.config import load_config
 from tradebot.execution.models import LiveCycleSummary
 from tradebot.operations.storage import (
@@ -147,3 +150,68 @@ KRAKEN_API_SECRET=dGVzdA==
     )
     assert '"status": "finished"' in context_payload
     assert '"mode": "live"' in context_payload
+
+
+def test_runtime_runs_continuously_until_cancelled_when_cycle_limit_is_omitted(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "settings.yaml"
+    config_path.write_text(
+        """
+app: {}
+runtime:
+  default_mode: simulate
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths:
+  data_dir: data
+  artifacts_dir: artifacts
+  logs_dir: runtime/logs
+  state_dir: runtime/state
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+    token = CancellationToken()
+
+    class FakeBacktestService:
+        def simulate_latest_cycle(
+            self,
+            dataset_track: str | None = None,
+        ) -> SimulationCycleSummary:
+            assert dataset_track is None
+            return SimulationCycleSummary(
+                dataset_id=None,
+                timestamp=None,
+                status="waiting_for_data",
+                regime_state=None,
+                risk_state=None,
+                equity_usd=config.backtest.initial_cash_usd,
+                cash_usd=config.backtest.initial_cash_usd,
+                fill_count=0,
+                fills=[],
+                state_file=str(tmp_path / "runtime" / "state" / "simulate_state.json"),
+            )
+
+    def cancel_after_first_sleep(seconds: float) -> None:
+        assert seconds == config.runtime.cycle_interval_seconds
+        token.cancel()
+
+    runtime = RuntimeService(
+        config,
+        backtest_service=FakeBacktestService(),
+        sleep_fn=cancel_after_first_sleep,
+    )
+
+    with pytest.raises(CommandCancelledError):
+        runtime.run(mode="simulate", cancellation_token=token)
+
+    context_payload = runtime_context_file(tmp_path / "runtime" / "state").read_text(
+        encoding="utf-8"
+    )
+    assert '"status": "cancelled"' in context_payload
+    assert '"cycle_limit": null' in context_payload
