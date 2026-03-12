@@ -83,6 +83,7 @@ class ResearchService:
             self.config.research,
             include_dynamic_fields=dynamic_track,
         )
+        feature_columns = self._feature_columns(fieldnames)
         row_count = write_dataset_rows(dataset_path, fieldnames, rows)
         experiment_root.mkdir(parents=True, exist_ok=True)
         if cancellation_token is not None:
@@ -96,7 +97,12 @@ class ResearchService:
             "primary_interval": self.config.research.primary_interval,
             "row_count": row_count,
             "fieldnames": fieldnames,
+            "feature_columns": feature_columns,
+            "feature_column_signature": self._feature_column_signature(feature_columns),
             "research_settings": self.config.research.model_dump(mode="json"),
+            "research_settings_signature": self._settings_signature(
+                self.config.research.model_dump(mode="json")
+            ),
             "asset_stats": [entry.to_dict() for entry in asset_stats],
             "canonical_inputs": {
                 asset: str(
@@ -275,5 +281,25 @@ class ResearchService:
 
     def _default_dataset_track(self, selected_assets: tuple[str, ...]) -> str:
         if selected_assets == FIXED_UNIVERSE:
-            return "official_fixed_10"
+            return self.config.research.default_dataset_track
         return "custom_selection"
+
+    @staticmethod
+    def _feature_columns(fieldnames: list[str]) -> list[str]:
+        return sorted(
+            fieldname
+            for fieldname in fieldnames
+            if fieldname != "timestamp" and not fieldname.startswith("label_")
+        )
+
+    @staticmethod
+    def _feature_column_signature(columns: list[str]) -> str:
+        return hashlib.sha256(json.dumps(columns, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
+
+    @staticmethod
+    def _settings_signature(payload: dict[str, object]) -> str:
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
