@@ -23,8 +23,8 @@ The interactive shell supports the same documented command surface as the direct
 - `data complete`: repair gaps and extend canonical candles.
 - `data source`: inspect source coverage and fallback usage.
 - `data prune-raw`: remove unsupported raw files.
-- `features build`: build deterministic point-in-time feature datasets.
-- `backtest run`: execute a backtest using the current configuration. The shell form exposes the dataset track and optional strategy preset.
+- `features build`: build deterministic point-in-time feature datasets. The shell form exposes asset selection, force rebuild, and dataset track.
+- `backtest run`: execute a backtest using the current configuration. The shell form exposes asset selection, force feature rebuild, dataset track, and optional strategy preset.
 - `backtest report`: inspect the latest or a specific backtest report.
 - `report list`: list stored reports and artifacts.
 - `report export`: export one stored report or artifact.
