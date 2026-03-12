@@ -226,18 +226,20 @@ Layer a globally installed, interactive terminal shell on top of the production 
 
 ### Includes
 
-- Add a full-screen terminal shell launched by bare `tradebot` on interactive TTYs.
-- Keep `tradebot <command> ...` stable for CI, scripts, Docker, and direct operator usage.
-- Add `tradebot shell` as an explicit shell entrypoint and keep `tradebot init` as an explicit bootstrap/reset command.
-- Move the default installed workspace to a single application home under `~/.tradebot/`, with `TRADEBOT_HOME` override support.
-- Auto-create the default application home on first use when no explicit `BOT_CONFIG_PATH` override is present.
+- Add a full-screen terminal shell launched by bare `cryptotradebot` on interactive TTYs.
+- Keep `cryptotradebot <command> ...` stable for CI, scripts, Docker, and direct operator usage.
+- Add `cryptotradebot shell` as an explicit shell entrypoint.
+- Replace the separate bootstrap and doctor flow with a single `cryptotradebot setup` command that initializes the app home, prepares runtime-ready market data, and runs operator preflight checks.
+- Add `cryptotradebot kraken auth set` so the operator can write Kraken credentials from the shell or direct CLI.
+- Move the default installed workspace to a single application home under `~/.cryptotradebot/`, with `CRYPTOTRADEBOT_HOME` override support and legacy `TRADEBOT_HOME` compatibility.
+- Auto-create the default application home on first use when no explicit `CRYPTOTRADEBOT_CONFIG_PATH` override is present, while preserving legacy `BOT_CONFIG_PATH` compatibility.
 - Introduce a shared command registry and structured execution-event layer reused by both direct commands and the shell.
 - Add guided parameter selection, command suggestions, readable transcript rendering, and cooperative cancellation in the shell.
 - Add distribution build and publish automation for global installation through PyPI and `pipx`.
 
 ### Deliverable
 
-- A globally installable `tradebot` package that launches an interactive terminal shell by default on interactive terminals, while preserving the full direct CLI contract for automation.
+- A globally installable `cryptotradebot` package that launches an interactive terminal shell by default on interactive terminals, while preserving the full direct CLI contract for automation.
 
 ## Final Deliverable Definition
 
