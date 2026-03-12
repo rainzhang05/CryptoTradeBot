@@ -35,27 +35,32 @@ strategy:
     - TRX
     - AVAX
     - LINK
+  regime_layer_enabled: true
+  entry_filter_layer_enabled: true
+  volatility_layer_enabled: false
+  gradual_reduction_layer_enabled: false
   min_source_confidence: 0.8
-  entry_momentum_floor: 0.0
-  entry_trend_gap_floor: 0.0
-  hold_momentum_floor: -0.03
-  hold_trend_gap_floor: -0.03
-  max_realized_volatility: 0.25
-  reduction_volatility_threshold: 0.12
+  entry_momentum_floor: -0.02
+  entry_trend_gap_floor: -0.01
+  hold_momentum_floor: -0.08
+  hold_trend_gap_floor: -0.06
+  max_realized_volatility: 0.45
+  reduction_volatility_threshold: 0.22
   severe_momentum_floor: -0.08
   severe_trend_gap_floor: -0.05
-  weak_relative_strength_floor: -0.03
-  reduction_target_fraction: 0.5
-  held_asset_score_bonus: 0.02
+  weak_relative_strength_floor: -0.08
+  reduction_target_fraction: 0.25
+  held_asset_score_bonus: 0.03
   drawdown_caution_threshold: 0.10
   drawdown_reduced_threshold: 0.20
   drawdown_catastrophe_threshold: 0.30
-  elevated_caution_exposure_multiplier: 0.8
-  reduced_aggressiveness_exposure_multiplier: 0.6
-  catastrophe_exposure_multiplier: 0.3
+  elevated_caution_exposure_multiplier: 1.0
+  reduced_aggressiveness_exposure_multiplier: 0.85
+  catastrophe_exposure_multiplier: 0.4
 
 research:
   primary_interval: 1d
+  default_dataset_track: dynamic_universe_kraken_only
   momentum_windows_days: [7, 30, 90]
   trend_windows_days: [50, 200]
   volatility_windows_days: [20, 60]
@@ -86,19 +91,21 @@ model:
   promotion_min_expected_return_correlation: 0.0
   promotion_max_downside_brier: 0.25
   promotion_max_sell_brier: 0.30
+  promotion_min_yearly_win_rate: 0.6
+  promotion_max_drawdown_gap: 0.10
 
 backtest:
   initial_cash_usd: 100000.0
   fee_rate_bps: 26.0
   slippage_bps: 10.0
-  max_positions: 5
+  max_positions: 3
   max_asset_weight: 0.35
   min_order_notional_usd: 25.0
-  rebalance_threshold: 0.02
+  rebalance_threshold: 0.05
   quantity_precision: 8
   constructive_exposure: 1.0
-  neutral_exposure: 0.5
-  defensive_exposure: 0.25
+  neutral_exposure: 0.85
+  defensive_exposure: 0.55
 
 alerts:
   email_recipient: null
