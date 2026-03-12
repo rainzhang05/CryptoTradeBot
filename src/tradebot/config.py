@@ -99,9 +99,9 @@ class StrategySettings(BaseModel):
     drawdown_caution_threshold: float = Field(default=0.10, gt=0, lt=1)
     drawdown_reduced_threshold: float = Field(default=0.20, gt=0, lt=1)
     drawdown_catastrophe_threshold: float = Field(default=0.30, gt=0, lt=1)
-    elevated_caution_exposure_multiplier: float = Field(default=0.9, gt=0, le=1)
-    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.68, gt=0, le=1)
-    catastrophe_exposure_multiplier: float = Field(default=0.24, gt=0, le=1)
+    elevated_caution_exposure_multiplier: float = Field(default=0.96, gt=0, le=1)
+    reduced_aggressiveness_exposure_multiplier: float = Field(default=0.78, gt=0, le=1)
+    catastrophe_exposure_multiplier: float = Field(default=0.32, gt=0, le=1)
 
     @field_validator("fixed_universe")
     @classmethod
@@ -206,14 +206,14 @@ class BacktestSettings(BaseModel):
     initial_cash_usd: float = Field(default=100_000.0, gt=0)
     fee_rate_bps: float = Field(default=26.0, ge=0)
     slippage_bps: float = Field(default=10.0, ge=0)
-    max_positions: int = Field(default=5, ge=1, le=len(FIXED_UNIVERSE))
+    max_positions: int = Field(default=3, ge=1, le=len(FIXED_UNIVERSE))
     max_asset_weight: float = Field(default=0.35, gt=0, le=0.35)
     min_order_notional_usd: float = Field(default=25.0, gt=0)
-    rebalance_threshold: float = Field(default=0.03, ge=0, lt=1)
+    rebalance_threshold: float = Field(default=0.05, ge=0, lt=1)
     quantity_precision: int = Field(default=8, ge=0, le=12)
     constructive_exposure: float = Field(default=1.0, ge=0, le=1)
-    neutral_exposure: float = Field(default=0.70, ge=0, le=1)
-    defensive_exposure: float = Field(default=0.35, ge=0, le=1)
+    neutral_exposure: float = Field(default=0.78, ge=0, le=1)
+    defensive_exposure: float = Field(default=0.45, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_exposure_order(self) -> BacktestSettings:
@@ -346,13 +346,13 @@ def _apply_live_default_preset(config: AppConfig) -> None:
     config.strategy.reduction_volatility_threshold = 0.16
     config.strategy.reduction_target_fraction = 0.35
     config.strategy.held_asset_score_bonus = 0.02
-    config.strategy.elevated_caution_exposure_multiplier = 0.90
-    config.strategy.reduced_aggressiveness_exposure_multiplier = 0.68
-    config.strategy.catastrophe_exposure_multiplier = 0.24
-    config.backtest.max_positions = 5
-    config.backtest.rebalance_threshold = 0.03
-    config.backtest.neutral_exposure = 0.70
-    config.backtest.defensive_exposure = 0.35
+    config.strategy.elevated_caution_exposure_multiplier = 0.96
+    config.strategy.reduced_aggressiveness_exposure_multiplier = 0.78
+    config.strategy.catastrophe_exposure_multiplier = 0.32
+    config.backtest.max_positions = 3
+    config.backtest.rebalance_threshold = 0.05
+    config.backtest.neutral_exposure = 0.78
+    config.backtest.defensive_exposure = 0.45
 
 
 def _apply_max_profit_preset(config: AppConfig) -> None:
