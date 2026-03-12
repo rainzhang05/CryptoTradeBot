@@ -223,3 +223,15 @@ def test_build_feature_store_dynamic_track_persists_track_name(tmp_path: Path) -
     manifest = json.loads(Path(summary.manifest_file).read_text(encoding="utf-8"))
     assert summary.dataset_track == "dynamic_universe_kraken_only"
     assert manifest["dataset_track"] == "dynamic_universe_kraken_only"
+
+
+def test_default_dataset_track_prefers_configured_dynamic_track_for_full_universe(
+    tmp_path: Path,
+) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    service = ResearchService(config)
+
+    assert service._default_dataset_track(config.strategy.fixed_universe) == (
+        "dynamic_universe_kraken_only"
+    )
+    assert service._default_dataset_track(("BTC", "ETH")) == "custom_selection"
