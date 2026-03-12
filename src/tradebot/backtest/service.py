@@ -743,7 +743,11 @@ class BacktestService:
         if len(timestamps) < 2:
             return None
         equity = 1.0
-        for previous_timestamp, current_timestamp in zip(timestamps[:-1], timestamps[1:], strict=True):
+        for previous_timestamp, current_timestamp in zip(
+            timestamps[:-1],
+            timestamps[1:],
+            strict=True,
+        ):
             asset_returns: list[float] = []
             for bars in bars_by_asset.values():
                 previous_bar = bars.get(previous_timestamp)
