@@ -35,12 +35,6 @@ research:
   breadth_window_days: 2
   dollar_volume_window_days: 2
   source_window_days: 2
-  forward_return_days: 1
-  downside_lookahead_days: 2
-  downside_threshold: 0.05
-  sell_lookahead_days: 3
-  sell_drawdown_threshold: 0.08
-  sell_return_threshold: -0.01
 alerts: {}
 paths: {}
 """,
