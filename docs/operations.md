@@ -62,7 +62,7 @@ The project must implement comprehensive logs.
 - separate human-readable terminal monitoring from durable log storage
 - no secret leakage in logs
 
-Phase 8 writes durable application logs to `runtime/logs/tradebot.log` in JSON-line format so CLI inspection commands can tail recent activity.
+Phase 8 writes durable application logs to `runtime/logs/cryptotradebot.log` in JSON-line format so CLI inspection commands can tail recent activity.
 Phase 9 also persists the latest runtime context under `runtime/state/runtime_context.json` and writes operator-facing runtime status reports under `artifacts/reports/runtime/latest_runtime_context.json`.
 
 ## Alerting Requirements
@@ -93,7 +93,7 @@ Email delivery credentials, if needed, are secrets and must be loaded through `.
 
 ## Interactive Shell Requirements
 
-Phase 11 introduces an interactive operator shell launched by bare `tradebot` on interactive terminals.
+Phase 11 introduces an interactive operator shell launched by bare `cryptotradebot` on interactive terminals.
 
 The shell must:
 
