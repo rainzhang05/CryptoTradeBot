@@ -157,11 +157,15 @@ def run(
         min=1,
         help="Optional cycle count override for testing or short runs.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional research/backtest dataset track override.",
+    ),
 ) -> None:
     """Start the shared simulate or live runtime loop."""
     payload = _invoke_direct(
         "run",
-        {"mode": mode, "max_cycles": max_cycles},
+        {"mode": mode, "max_cycles": max_cycles, "dataset_track": dataset_track},
         emitter=_runtime_emitter,
     )
     if not isinstance(payload, RuntimeRunResult):
@@ -311,12 +315,19 @@ def features_build(
         default=False,
         help="Rebuild the dataset even if the deterministic cache already exists.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional dataset track override.",
+    ),
 ) -> None:
     """Build a deterministic feature and label dataset from canonical daily candles."""
     typer.echo(
         render_direct_output(
             "features_build",
-            _invoke_direct("features_build", {"assets": assets, "force": force}),
+            _invoke_direct(
+                "features_build",
+                {"assets": assets, "force": force, "dataset_track": dataset_track},
+            ),
         )
     )
 
@@ -382,6 +393,14 @@ def model_train(
         default=False,
         help="Rebuild the feature dataset before training the model.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional dataset track override.",
+    ),
+    family: str = typer.Option(
+        default="ridge_logistic",
+        help="Model family to train.",
+    ),
 ) -> None:
     """Train the Phase 6 ML artifact with walk-forward validation."""
     typer.echo(
@@ -389,7 +408,12 @@ def model_train(
             "model_train",
             _invoke_direct(
                 "model_train",
-                {"assets": assets, "force_features": force_features},
+                {
+                    "assets": assets,
+                    "force_features": force_features,
+                    "dataset_track": dataset_track,
+                    "family": family,
+                },
             ),
         )
     )
@@ -434,6 +458,19 @@ def backtest_run(
         default=False,
         help="Rebuild the feature dataset before running the backtest.",
     ),
+    dataset_track: str | None = typer.Option(
+        default=None,
+        help="Optional dataset track override.",
+    ),
+    model_id: str | None = typer.Option(
+        default=None,
+        help="Optional explicit model artifact to use.",
+    ),
+    use_active_model: bool = typer.Option(
+        True,
+        "--use-active-model/--no-use-active-model",
+        help="Use the promoted active model when no explicit model id is provided.",
+    ),
 ) -> None:
     """Execute a reproducible Kraken-only backtest on canonical daily data."""
     typer.echo(
@@ -441,7 +478,13 @@ def backtest_run(
             "backtest_run",
             _invoke_direct(
                 "backtest_run",
-                {"assets": assets, "force_features": force_features},
+                {
+                    "assets": assets,
+                    "force_features": force_features,
+                    "dataset_track": dataset_track,
+                    "model_id": model_id,
+                    "use_active_model": use_active_model,
+                },
             ),
         )
     )
