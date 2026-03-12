@@ -18,7 +18,7 @@
 ## Feature Preparation
 
 1. Run `cryptotradebot features build`.
-2. Re-run with `--dataset-track dynamic_universe_kraken_only` when you want the long-history default explicitly.
+2. Re-run with `--dataset-track official_fixed_10` only when you intentionally want the shorter strict aligned-history comparison track instead of the default long-history dynamic track.
 
 ## Backtest Validation
 
