@@ -20,7 +20,6 @@ from tradebot.config import AppConfig
 from tradebot.execution.kraken import KrakenClient, KrakenClientError
 from tradebot.execution.storage import latest_live_status_file, live_state_file
 from tradebot.logging_config import get_logger, log_file
-from tradebot.model.storage import active_model_pointer_file
 from tradebot.operations.storage import latest_alerts_report_file, runtime_context_file
 from tradebot.runtime import pid_is_running, runtime_process_file
 
@@ -58,8 +57,6 @@ class OperationsService:
                 "artifacts_dir": self.paths.artifacts_dir,
                 "features_dir": self.paths.features_dir,
                 "experiments_dir": self.paths.experiments_dir,
-                "models_dir": self.paths.models_dir,
-                "model_reports_dir": self.paths.model_reports_dir,
                 "logs_dir": self.paths.logs_dir,
                 "state_dir": self.paths.state_dir,
             }.items()
@@ -107,8 +104,6 @@ class OperationsService:
                 "error": "Kraken private API key and secret are not configured",
                 "required_for_mode": self.config.runtime.default_mode == "live",
             }
-        active_model_pointer = active_model_pointer_file(self.paths.models_dir)
-
         return {
             "ok": ok,
             "config_path": str(self.config.config_path),
@@ -121,11 +116,6 @@ class OperationsService:
             },
             "default_mode": self.config.runtime.default_mode,
             "email_configured": bool(self.config.alerts.email_recipient),
-            "active_model": {
-                "pointer_file": str(active_model_pointer),
-                "exists": active_model_pointer.exists(),
-                "payload": self._read_json_file(active_model_pointer),
-            },
             "paths": path_entries,
         }
 
@@ -187,7 +177,7 @@ class OperationsService:
         }
 
     def runtime_status(self) -> dict[str, object]:
-        """Return the latest known runtime, model, and report state."""
+        """Return the latest known runtime and report state."""
         process_path = runtime_process_file(self.paths.state_dir)
         managed_process = None
         if process_path.exists():
@@ -201,7 +191,6 @@ class OperationsService:
         latest_backtest = self._read_json_file(
             latest_backtest_report_file(self.paths.artifacts_dir)
         )
-        active_model = self._read_json_file(active_model_pointer_file(self.paths.models_dir))
         runtime_context = self._read_json_file(runtime_context_file(self.paths.state_dir))
         latest_alerts = self._read_json_file(latest_alerts_report_file(self.paths.artifacts_dir))
 
@@ -213,7 +202,6 @@ class OperationsService:
             "live_state": live_state,
             "simulate_state": simulate_state,
             "latest_backtest": latest_backtest,
-            "active_model": active_model,
         }
 
     def stop_runtime(self) -> dict[str, object]:
@@ -303,7 +291,6 @@ class OperationsService:
                 "status",
                 "freeze_reason",
                 "dataset_id",
-                "model_id",
                 "fill_count",
                 "email_sent",
                 "email_error",
