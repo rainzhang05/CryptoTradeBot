@@ -57,6 +57,8 @@ Expected artifacts:
    - `tradebot model promote`
      This promotion step rechecks Kraken backtest uplift against the rule-only baseline and refuses promotion if the hybrid candidate does not improve on it.
 3. Start simulation with `tradebot run --mode simulate`.
+   Use `--strategy-preset max_profit` only for explicit research comparison runs. The checked-in
+   default is the hardened `live_default` preset.
 4. Inspect status with `tradebot status`.
 5. Tail logs with `tradebot logs tail --lines 50`.
 
@@ -77,22 +79,25 @@ Run this checklist before every live session:
 3. Confirm the alert recipient with `tradebot email set trader@example.com` if needed.
 4. Verify SMTP delivery with `tradebot email test`.
 5. Verify exchange connectivity with `tradebot doctor`.
-6. Confirm an active promoted model exists with `tradebot status`.
-7. Confirm canonical daily data is current with `tradebot data complete`.
+6. Confirm canonical daily data is current with `tradebot data complete`.
+7. Review `tradebot status` to see whether live mode will use a compatible promoted model or
+   operate in rule-only fallback mode.
 
 Do not start live mode when:
 
 - doctor reports failed exchange checks
-- there is no promoted model
 - latest daily signals are stale
 - the alert recipient or SMTP settings are intentionally absent for a monitored live run
 
 ## 5. Live Mode Operation
 
 1. Start the live runtime with `tradebot run --mode live`.
+   Use `--strategy-preset max_profit` only for explicit research or dry-run comparison, not as the
+   unattended live default.
 2. Watch the terminal monitoring output for:
    - mode, connectivity, regime, risk, holdings, and cash
-   - model summary and recent fills
+   - model summary, or rule-only fallback incidents when no compatible promoted model is active
+   - recent fills
    - alert lines beginning with `ALERT`
 3. Use `tradebot status` from another terminal to inspect:
    - the managed runtime process
@@ -131,7 +136,8 @@ When the bot freezes:
 5. Fix the underlying issue.
 6. Re-run `tradebot doctor`.
 7. Re-run `tradebot data complete` if data freshness or source confidence was involved.
-8. Confirm the promoted model is still valid with `tradebot status`.
+8. Confirm the promoted model is still valid with `tradebot status` when live mode is expected to
+   run with ML predictions.
 9. Restart `tradebot run --mode live` only after the preflight checks pass again.
 
 ## 7. Incident Investigation
