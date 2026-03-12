@@ -344,4 +344,4 @@ def test_stage5_generates_holdout_and_stress_specs_from_top_candidates(
     assert holdout_specs[0].parent_experiment_id == "candidate-stage4"
     assert len(stress_specs) == 1
     assert stress_specs[0].stage_name == "stage_5_stress_confirmation"
-    assert stress_specs[0].stress_multiplier == 1.5
+    assert stress_specs[0].stress_multiplier == 2.0
