@@ -108,6 +108,7 @@ class BacktestRunSummary:
     equity_curve_file: str
     decisions_file: str
     dataset_id: str
+    strategy_preset: str
     decision_count: int
     fill_count: int
     final_equity_usd: float
