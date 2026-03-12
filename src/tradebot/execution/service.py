@@ -68,7 +68,11 @@ class LiveExecutionService:
         self.strategy_engine = strategy_engine or StrategyEngine(config)
         self.sleep_fn = sleep_fn or default_sleep
 
-    def run_cycle(self, assets: tuple[str, ...] | None = None) -> LiveCycleSummary:
+    def run_cycle(
+        self,
+        assets: tuple[str, ...] | None = None,
+        dataset_track: str | None = None,
+    ) -> LiveCycleSummary:
         """Run one live account-sync, decision, and execution cycle."""
         selected_assets = self._select_assets(assets)
         self.logger.info("live cycle started", extra={"assets": list(selected_assets)})
@@ -131,7 +135,10 @@ class LiveExecutionService:
         try:
             self.data_service.complete_canonical(assets=selected_assets, allow_synthetic=False)
             dataset_id, latest_timestamp, rows_for_timestamp = (
-                self.research_service.build_live_signal_rows(assets=selected_assets)
+                self.research_service.build_live_signal_rows(
+                    assets=selected_assets,
+                    dataset_track=dataset_track,
+                )
             )
         except Exception as exc:
             return self._freeze_summary(
@@ -148,7 +155,7 @@ class LiveExecutionService:
             )
 
         latest_closed_timestamp = self._latest_closed_timestamp()
-        if latest_timestamp is None or latest_timestamp < latest_closed_timestamp:
+        if latest_timestamp is None or latest_timestamp < latest_closed_timestamp - (2 * 86_400):
             return self._freeze_summary(
                 state=state,
                 state_path=state_path,
@@ -182,7 +189,17 @@ class LiveExecutionService:
                 holdings=self._holdings(account.positions),
             )
 
-        active_reference = self.model_service.load_latest_active_reference()
+        selected_track = dataset_track or self.research_service._default_dataset_track(
+            selected_assets
+        )
+        research_settings_signature = self._research_settings_signature()
+        feature_column_signature = self._feature_column_signature(rows_for_timestamp)
+        active_reference = self.model_service.load_latest_active_reference(
+            dataset_track=selected_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        )
         if active_reference is None:
             return self._freeze_summary(
                 state=state,
@@ -200,7 +217,11 @@ class LiveExecutionService:
             )
 
         rows_for_timestamp, model_id = self.model_service.infer_rows_with_active_model(
-            rows_for_timestamp
+            rows_for_timestamp,
+            dataset_track=selected_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
         )
         predictions = self._prediction_summary(rows_for_timestamp)
         if model_id is None or any(
@@ -838,6 +859,32 @@ class LiveExecutionService:
         if isinstance(value, int | float):
             return float(value)
         return float(str(value))
+
+    def _research_settings_signature(self) -> str:
+        import hashlib
+
+        payload = self.config.research.model_dump(mode="json")
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
+
+    def _feature_column_signature(
+        self,
+        rows_by_asset: dict[str, dict[str, object]],
+    ) -> str:
+        import hashlib
+
+        if not rows_by_asset:
+            return ""
+        first_row = next(iter(rows_by_asset.values()))
+        columns = sorted(
+            key
+            for key in first_row
+            if key != "timestamp" and not key.startswith("label_")
+        )
+        return hashlib.sha256(json.dumps(columns, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
 
     @staticmethod
     def _optional_float(payload: dict[str, Any], key: str) -> float | None:
