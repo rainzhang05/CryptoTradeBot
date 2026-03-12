@@ -7,7 +7,7 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, OptionList, RichLog
+from textual.widgets import Button, Input, OptionList, RichLog, Static
 
 import tradebot.shell as shell_module
 from tradebot.config import initialize_app_home
@@ -46,6 +46,30 @@ async def test_shell_first_run_auto_bootstraps_home(
         assert transcript_widget.styles.scrollbar_size_horizontal == 0
         assert suggestions.styles.scrollbar_size_vertical == 0
         assert suggestions.styles.scrollbar_size_horizontal == 0
+
+
+@pytest.mark.anyio
+async def test_shell_uses_terminal_default_text_color_and_current_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "cryptotradebot-home"
+    initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
+
+    app = TradebotShellApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        brand = app.screen.query_one("#brand", Static)
+        transcript = app.screen.query_one("#transcript", RichLog)
+        input_widget = app.screen.query_one("#command-input", Input)
+
+        assert str(brand.renderable).startswith("Crypto Trade Bot  v0.2.0")
+        assert brand.styles.color.css == "ansi_default"
+        assert transcript.styles.color.css == "ansi_default"
+        assert input_widget.styles.color.css == "ansi_default"
 
 
 @pytest.mark.anyio
