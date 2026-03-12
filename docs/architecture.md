@@ -89,6 +89,7 @@ Phase 6 implements this through a local artifact-oriented model service that:
 - writes bundle, manifest, metrics, and prediction artifacts under `artifacts/models/<model_id>/`
 - writes latest operator-facing summaries under `artifacts/reports/models/`
 - maintains a promoted-model reference so runtime and backtests can load the active artifact deterministically
+- stores compatibility metadata such as dataset track, selected assets, research signature, and feature signature so promoted artifacts can be reused across compatible dataset tails
 
 ### 5. Strategy subsystem
 
@@ -147,7 +148,7 @@ Phase 4 implements this as a deterministic daily bar engine that:
 - writes `report.json`, `fills.csv`, `equity_curve.csv`, and `decisions.csv` under `artifacts/backtests/<run_id>/`
 - maintains `artifacts/reports/backtests/latest_backtest_report.json` as the operator-friendly latest pointer
 
-Phase 6 extends the same engine to enrich feature rows with promoted-model predictions when the active model matches the dataset in use.
+Phase 6 extends the same engine to enrich feature rows with promoted-model predictions when the active model is compatible with the dataset in use. When stored prediction rows stop before the compatible dataset tail, the backtest and simulate paths may infer the tail directly from the promoted bundle instead of silently falling back to rule-only behavior.
 
 ### 9. Runtime orchestration subsystem
 
@@ -222,6 +223,7 @@ These models must be reused across backtest, simulate, and live pathways wheneve
 - records the same observability artifacts as live wherever practical
 
 The current implementation reuses the backtest decision and simulated execution services for the latest available feature timestamp and persists portfolio state under `runtime/state/simulate_state.json`.
+The default full-universe optimize-and-evaluate path uses `dynamic_universe_kraken_only`, while the live tradeable universe remains the fixed documented ten assets.
 
 ### Live mode
 
