@@ -19,10 +19,14 @@ def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         ModelService,
         "_promotion_backtest_comparison",
-        lambda self, *, model_id, assets: {
+        lambda self, *, model_id, assets, dataset_track: {
             "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
             "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
             "incremental_total_return": 0.01,
+            "hybrid_cagr": 0.03,
+            "rule_only_cagr": 0.02,
+            "yearly_win_rate": 1.0,
+            "max_drawdown_gap": 0.01,
         },
     )
 
@@ -163,6 +167,72 @@ def test_enrich_rows_with_active_predictions_adds_model_scores(tmp_path: Path) -
     assert "sell_risk_score" in enriched["BTC"]
 
 
+def test_enrich_rows_with_active_predictions_uses_compatible_bundle_for_dataset_tail(
+    tmp_path: Path,
+) -> None:
+    config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    service = ModelService(config)
+    training = service.train_model(
+        assets=("BTC", "ETH"),
+        dataset_track="dynamic_universe_kraken_only",
+    )
+    service.promote_model(training.model_id)
+
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132, 136, 139],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131, 135, 138],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73, 75, 78],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72, 74, 77],
+    )
+
+    feature_store = service.research_service.build_feature_store(
+        assets=("BTC", "ETH"),
+        dataset_track="dynamic_universe_kraken_only",
+        force=True,
+    )
+    manifest = json.loads(Path(feature_store.manifest_file).read_text(encoding="utf-8"))
+    rows = service._load_dataset_rows(Path(feature_store.dataset_file))
+    latest_timestamp = max(int(row["timestamp"]) for row in rows)
+    rows_for_timestamp = {
+        str(row["asset"]): row for row in rows if int(row["timestamp"]) == latest_timestamp
+    }
+
+    enriched, model_id = service.enrich_rows_with_active_predictions(
+        dataset_id=feature_store.dataset_id,
+        rows_by_asset=rows_for_timestamp,
+        timestamp=latest_timestamp,
+        dataset_track=feature_store.dataset_track,
+        selected_assets=feature_store.selected_assets,
+        research_settings_signature=str(manifest["research_settings_signature"]),
+        feature_column_signature=str(manifest["feature_column_signature"]),
+    )
+
+    assert feature_store.dataset_id != training.dataset_id
+    assert model_id == training.model_id
+    assert "expected_return_score" in enriched["BTC"]
+    assert "downside_risk_score" in enriched["BTC"]
+    assert "sell_risk_score" in enriched["BTC"]
+
+
 def test_train_model_manifest_excludes_forward_label_columns(tmp_path: Path) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
     _write_daily_series(
@@ -243,6 +313,42 @@ def test_train_model_reports_aligned_timestamp_shortfall(tmp_path: Path) -> None
         service.train_model(assets=("BTC", "ETH"))
 
 
+def test_train_model_respects_retrain_cadence_days(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "retrain_cadence_days: 14",
+            "retrain_cadence_days: 3",
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+    _write_daily_series(
+        tmp_path,
+        "BTC",
+        [100, 101, 103, 106, 108, 111, 114, 118, 121, 125, 128, 132],
+        [99, 100, 102, 105, 107, 110, 113, 117, 120, 124, 127, 131],
+    )
+    _write_daily_series(
+        tmp_path,
+        "ETH",
+        [50, 51, 52, 53, 55, 58, 60, 63, 65, 68, 70, 73],
+        [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
+    )
+
+    service = ModelService(config)
+    feature_store = service.research_service.build_feature_store(assets=("BTC", "ETH"))
+    rows = service._load_dataset_rows(Path(feature_store.dataset_file))
+    timestamp_count = len(service._unique_timestamps(rows))
+    training = service.train_model(assets=("BTC", "ETH"))
+
+    validation_timestamps = timestamp_count - config.model.initial_train_timestamps
+    expected_splits = (
+        validation_timestamps + config.model.retrain_cadence_days - 1
+    ) // config.model.retrain_cadence_days
+    assert training.split_count == expected_splits
+
+
 def test_positive_class_probabilities_handle_single_class_outputs(tmp_path: Path) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
     service = ModelService(config)
@@ -275,10 +381,14 @@ def test_promote_model_rejects_when_hybrid_underperforms_rule_only(
     monkeypatch.setattr(
         ModelService,
         "_promotion_backtest_comparison",
-        lambda self, *, model_id, assets: {
+        lambda self, *, model_id, assets, dataset_track: {
             "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.01),
             "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.02),
             "incremental_total_return": -0.01,
+            "hybrid_cagr": 0.01,
+            "rule_only_cagr": 0.02,
+            "yearly_win_rate": 0.0,
+            "max_drawdown_gap": 0.0,
         },
     )
 
