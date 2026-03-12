@@ -96,7 +96,9 @@ The final system must include all of the following capabilities.
 
 ### Operator capabilities
 
-- Run setup, data, features, backtest, simulate, and live commands through the CLI.
+- Run `cryptotradebot setup` to initialize the operator home, prepare runtime-ready data, and validate non-secret prerequisites.
+- Run `cryptotradebot kraken auth set` to store Kraken API credentials in the active `.env`.
+- Run data, features, backtest, simulate, and live commands through the CLI.
 - View real-time monitoring output in the terminal during live execution.
 - Configure an email recipient for alerts.
 - Export logs, reports, and run artifacts.
