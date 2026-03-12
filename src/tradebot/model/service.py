@@ -94,6 +94,7 @@ class ModelService:
             cancellation_token=cancellation_token,
         )
         rows = self._load_dataset_rows(Path(feature_store.dataset_file))
+        rows_by_timestamp = self._rows_by_timestamp(rows)
         timestamps = self._unique_timestamps(rows)
         if len(timestamps) <= self.config.model.initial_train_timestamps:
             raise ValueError(
@@ -109,27 +110,34 @@ class ModelService:
             "family": family,
             "hyperparameters": hyperparameters or {},
         }
-        for timestamp in timestamps[self.config.model.initial_train_timestamps :]:
+        retrain_cadence_days = self.config.model.retrain_cadence_days
+        validation_timestamps = timestamps[self.config.model.initial_train_timestamps :]
+        total_retrains = math.ceil(len(validation_timestamps) / retrain_cadence_days)
+        train_rows: list[ModelRow] = []
+        for timestamp in timestamps[: self.config.model.initial_train_timestamps]:
+            train_rows.extend(rows_by_timestamp[timestamp])
+        bundle: dict[str, object] | None = None
+        for offset, timestamp in enumerate(validation_timestamps):
             if cancellation_token is not None:
                 cancellation_token.raise_if_cancelled()
-            train_rows = [row for row in rows if self._coerce_int(row["timestamp"]) < timestamp]
-            validation_rows = [
-                row for row in rows if self._coerce_int(row["timestamp"]) == timestamp
-            ]
-            bundle = self._fit_bundle(
-                train_rows,
-                family=family,
-                hyperparameters=hyperparameters,
-            )
+            if bundle is None or offset % retrain_cadence_days == 0:
+                bundle = self._fit_bundle(
+                    train_rows,
+                    family=family,
+                    hyperparameters=hyperparameters,
+                )
+                split_count += 1
+            validation_rows = rows_by_timestamp[timestamp]
+            assert bundle is not None
             predictions.extend(self._predict_rows(bundle, validation_rows))
-            split_count += 1
+            train_rows.extend(validation_rows)
             if progress_callback is not None:
                 progress_callback(
                     {
                         "split_count": split_count,
-                        "total_splits": len(
-                            timestamps[self.config.model.initial_train_timestamps :]
-                        ),
+                        "total_splits": total_retrains,
+                        "processed_timestamps": offset + 1,
+                        "total_timestamps": len(validation_timestamps),
                         "timestamp": timestamp,
                     }
                 )
@@ -153,6 +161,8 @@ class ModelService:
         predictions_path = model_predictions_file(self.paths.models_dir, model_id)
         bundle_path = model_bundle_file(self.paths.models_dir, model_id)
         metrics_payload = self._metrics_payload(predictions, split_count)
+        feature_columns = self._feature_columns(rows)
+        research_settings_payload = self.config.research.model_dump(mode="json")
         manifest_payload = {
             "model_id": model_id,
             "dataset_id": feature_store.dataset_id,
@@ -160,15 +170,22 @@ class ModelService:
             "selected_assets": list(feature_store.selected_assets),
             "dataset_track": feature_store.dataset_track,
             "model_settings": self.config.model.model_dump(mode="json"),
-            "research_settings": self.config.research.model_dump(mode="json"),
+            "research_settings": research_settings_payload,
+            "research_settings_signature": self._settings_signature(research_settings_payload),
             "training_profile": training_profile,
+            "model_family": family,
             "feature_dataset_file": feature_store.dataset_file,
             "feature_manifest_file": feature_store.manifest_file,
-            "feature_columns": self._feature_columns(rows),
+            "feature_columns": feature_columns,
+            "feature_column_signature": self._feature_column_signature(feature_columns),
             "label_columns": self._label_columns(),
             "split_count": split_count,
             "validation_row_count": len(predictions),
             "retrain_cadence_days": self.config.model.retrain_cadence_days,
+            "prediction_coverage": {
+                "start_timestamp": min((row["timestamp"] for row in predictions), default=None),
+                "end_timestamp": max((row["timestamp"] for row in predictions), default=None),
+            },
         }
         write_json(manifest_path, manifest_payload)
         write_json(metrics_path, metrics_payload)
@@ -248,19 +265,46 @@ class ModelService:
         validation = self.validate_model(model_id=model_id)
         if not validation.promotion_eligible:
             raise ValueError(f"Model {validation.model_id} does not satisfy promotion rules")
+        manifest_path = model_manifest_file(self.paths.models_dir, validation.model_id)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         comparison = self._promotion_backtest_comparison(
             model_id=validation.model_id,
             assets=validation.selected_assets,
+            dataset_track=str(manifest.get("dataset_track", self.config.research.default_dataset_track)),
         )
         hybrid = cast(Any, comparison["hybrid"])
         rule_only = cast(Any, comparison["rule_only"])
         incremental_total_return = self._coerce_float(comparison["incremental_total_return"])
+        hybrid_cagr = self._coerce_float(comparison["hybrid_cagr"])
+        rule_only_cagr = self._coerce_float(comparison["rule_only_cagr"])
+        yearly_win_rate = self._coerce_float(comparison["yearly_win_rate"])
+        max_drawdown_gap = self._coerce_float(comparison["max_drawdown_gap"])
         if incremental_total_return <= 0:
             raise ValueError(
                 "Model "
                 f"{validation.model_id} does not improve on the rule-only baseline "
                 f"(hybrid_total_return={hybrid.total_return:.6f}, "
                 f"rule_only_total_return={rule_only.total_return:.6f})"
+            )
+        if hybrid_cagr <= rule_only_cagr:
+            raise ValueError(
+                "Model "
+                f"{validation.model_id} does not improve CAGR on the rule-only baseline "
+                f"(hybrid_cagr={hybrid_cagr:.6f}, rule_only_cagr={rule_only_cagr:.6f})"
+            )
+        if yearly_win_rate < self.config.model.promotion_min_yearly_win_rate:
+            raise ValueError(
+                "Model "
+                f"{validation.model_id} does not win enough yearly holdouts "
+                f"(yearly_win_rate={yearly_win_rate:.2%}, "
+                f"required>={self.config.model.promotion_min_yearly_win_rate:.2%})"
+            )
+        if max_drawdown_gap > self.config.model.promotion_max_drawdown_gap:
+            raise ValueError(
+                "Model "
+                f"{validation.model_id} exceeds the maximum allowed drawdown gap "
+                f"(gap={max_drawdown_gap:.2%}, "
+                f"limit={self.config.model.promotion_max_drawdown_gap:.2%})"
             )
 
         pointer_path = active_model_pointer_file(self.paths.models_dir)
@@ -269,10 +313,14 @@ class ModelService:
             previous_pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
             previous_model_id = previous_pointer.get("model_id")
 
-        manifest_path = model_manifest_file(self.paths.models_dir, validation.model_id)
         payload = {
             "model_id": validation.model_id,
             "dataset_id": validation.dataset_id,
+            "dataset_track": manifest.get("dataset_track"),
+            "selected_assets": manifest.get("selected_assets"),
+            "research_settings_signature": manifest.get("research_settings_signature"),
+            "feature_column_signature": manifest.get("feature_column_signature"),
+            "model_family": manifest.get("model_family"),
             "manifest_file": str(manifest_path),
             "metrics_file": str(model_metrics_file(self.paths.models_dir, validation.model_id)),
             "predictions_file": str(
@@ -309,11 +357,38 @@ class ModelService:
         )
         return summary
 
-    def load_active_reference(self, *, dataset_id: str) -> ActiveModelReference | None:
-        return self._load_active_reference(dataset_id=dataset_id)
+    def load_active_reference(
+        self,
+        *,
+        dataset_id: str | None = None,
+        dataset_track: str | None = None,
+        selected_assets: tuple[str, ...] | None = None,
+        research_settings_signature: str | None = None,
+        feature_column_signature: str | None = None,
+    ) -> ActiveModelReference | None:
+        return self._load_active_reference(
+            dataset_id=dataset_id,
+            dataset_track=dataset_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        )
 
-    def load_latest_active_reference(self) -> ActiveModelReference | None:
-        return self._load_active_reference(dataset_id=None)
+    def load_latest_active_reference(
+        self,
+        *,
+        dataset_track: str | None = None,
+        selected_assets: tuple[str, ...] | None = None,
+        research_settings_signature: str | None = None,
+        feature_column_signature: str | None = None,
+    ) -> ActiveModelReference | None:
+        return self._load_active_reference(
+            dataset_id=None,
+            dataset_track=dataset_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        )
 
     def load_model_reference(self, model_id: str) -> ActiveModelReference:
         manifest_path = model_manifest_file(self.paths.models_dir, model_id)
@@ -325,24 +400,30 @@ class ModelService:
             raise FileNotFoundError(f"Model artifact does not exist: {model_id}")
 
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        return ActiveModelReference(
-            model_id=str(manifest["model_id"]),
-            dataset_id=str(manifest["dataset_id"]),
-            manifest_file=str(manifest_path),
-            metrics_file=str(metrics_path),
-            predictions_file=str(predictions_path),
-            bundle_file=str(bundle_path),
-            selected_assets=tuple(str(asset) for asset in manifest["selected_assets"]),
+        return self._reference_from_manifest(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            metrics_path=metrics_path,
+            predictions_path=predictions_path,
+            bundle_path=bundle_path,
+            model_id_override=model_id,
+            dataset_id_override=str(manifest["dataset_id"]),
         )
 
-    def _load_active_reference(self, *, dataset_id: str | None) -> ActiveModelReference | None:
+    def _load_active_reference(
+        self,
+        *,
+        dataset_id: str | None,
+        dataset_track: str | None,
+        selected_assets: tuple[str, ...] | None,
+        research_settings_signature: str | None,
+        feature_column_signature: str | None,
+    ) -> ActiveModelReference | None:
         pointer_path = active_model_pointer_file(self.paths.models_dir)
         if not pointer_path.exists():
             return None
 
         payload = json.loads(pointer_path.read_text(encoding="utf-8"))
-        if dataset_id is not None and str(payload.get("dataset_id")) != dataset_id:
-            return None
         manifest_path = Path(str(payload["manifest_file"]))
         required_paths = (
             manifest_path,
@@ -353,15 +434,25 @@ class ModelService:
         if any(not path.exists() for path in required_paths):
             return None
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        return ActiveModelReference(
-            model_id=str(payload["model_id"]),
-            dataset_id=str(payload["dataset_id"]),
-            manifest_file=str(payload["manifest_file"]),
-            metrics_file=str(payload["metrics_file"]),
-            predictions_file=str(payload["predictions_file"]),
-            bundle_file=str(payload["bundle_file"]),
-            selected_assets=tuple(str(asset) for asset in manifest["selected_assets"]),
+        reference = self._reference_from_manifest(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            metrics_path=Path(str(payload["metrics_file"])),
+            predictions_path=Path(str(payload["predictions_file"])),
+            bundle_path=Path(str(payload["bundle_file"])),
+            model_id_override=str(payload["model_id"]),
+            dataset_id_override=str(payload["dataset_id"]),
         )
+        if not self._reference_matches_context(
+            reference,
+            dataset_id=dataset_id,
+            dataset_track=dataset_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        ):
+            return None
+        return reference
 
     def enrich_rows_with_active_predictions(
         self,
@@ -369,22 +460,26 @@ class ModelService:
         dataset_id: str,
         rows_by_asset: dict[str, dict[str, object]],
         timestamp: int,
+        dataset_track: str | None = None,
+        selected_assets: tuple[str, ...] | None = None,
+        research_settings_signature: str | None = None,
+        feature_column_signature: str | None = None,
     ) -> tuple[dict[str, dict[str, object]], str | None]:
-        reference = self.load_active_reference(dataset_id=dataset_id)
+        reference = self.load_active_reference(
+            dataset_id=dataset_id,
+            dataset_track=dataset_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        )
         if reference is None:
             return rows_by_asset, None
 
-        prediction_index = self._load_prediction_index(Path(reference.predictions_file))
-        enriched: dict[str, dict[str, object]] = {}
-        for asset, row in rows_by_asset.items():
-            enriched_row = dict(row)
-            prediction_row = prediction_index.get((timestamp, asset))
-            if prediction_row is not None:
-                enriched_row["expected_return_score"] = prediction_row["expected_return_score"]
-                enriched_row["downside_risk_score"] = prediction_row["downside_risk_score"]
-                enriched_row["sell_risk_score"] = prediction_row["sell_risk_score"]
-            enriched[asset] = enriched_row
-        return enriched, reference.model_id
+        return self._enrich_rows_with_reference(
+            reference=reference,
+            rows_by_asset=rows_by_asset,
+            timestamp=timestamp,
+        )
 
     def enrich_rows_with_model_predictions(
         self,
@@ -393,66 +488,100 @@ class ModelService:
         dataset_id: str,
         rows_by_asset: dict[str, dict[str, object]],
         timestamp: int,
+        dataset_track: str | None = None,
+        selected_assets: tuple[str, ...] | None = None,
+        research_settings_signature: str | None = None,
+        feature_column_signature: str | None = None,
     ) -> tuple[dict[str, dict[str, object]], str]:
         reference = self.load_model_reference(model_id)
-        if reference.dataset_id != dataset_id:
+        if not self._reference_matches_context(
+            reference,
+            dataset_id=dataset_id,
+            dataset_track=dataset_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        ):
             raise ValueError(
-                f"Model {model_id} was trained on dataset {reference.dataset_id}, "
-                f"but the active backtest dataset is {dataset_id}"
+                f"Model {model_id} is not compatible with the active backtest dataset "
+                f"(dataset_id={dataset_id}, dataset_track={dataset_track or 'n/a'})"
             )
 
-        prediction_index = self._load_prediction_index(Path(reference.predictions_file))
-        enriched: dict[str, dict[str, object]] = {}
-        for asset, row in rows_by_asset.items():
-            enriched_row = dict(row)
-            prediction_row = prediction_index.get((timestamp, asset))
-            if prediction_row is not None:
-                enriched_row["expected_return_score"] = prediction_row["expected_return_score"]
-                enriched_row["downside_risk_score"] = prediction_row["downside_risk_score"]
-                enriched_row["sell_risk_score"] = prediction_row["sell_risk_score"]
-            enriched[asset] = enriched_row
-        return enriched, reference.model_id
+        enriched, applied_model_id = self._enrich_rows_with_reference(
+            reference=reference,
+            rows_by_asset=rows_by_asset,
+            timestamp=timestamp,
+        )
+        return enriched, applied_model_id
 
     def infer_rows_with_active_model(
         self,
         rows_by_asset: dict[str, dict[str, object]],
+        *,
+        dataset_track: str | None = None,
+        selected_assets: tuple[str, ...] | None = None,
+        research_settings_signature: str | None = None,
+        feature_column_signature: str | None = None,
     ) -> tuple[dict[str, dict[str, object]], str | None]:
         """Run the promoted model bundle on point-in-time rows for live inference."""
-        reference = self.load_latest_active_reference()
+        reference = self.load_latest_active_reference(
+            dataset_track=dataset_track,
+            selected_assets=selected_assets,
+            research_settings_signature=research_settings_signature,
+            feature_column_signature=feature_column_signature,
+        )
         if reference is None:
             return rows_by_asset, None
 
-        manifest = json.loads(Path(reference.manifest_file).read_text(encoding="utf-8"))
+        return self._infer_rows_with_reference(reference, rows_by_asset)
+
+    def _reference_from_manifest(
+        self,
+        *,
+        manifest: dict[str, object],
+        manifest_path: Path,
+        metrics_path: Path,
+        predictions_path: Path,
+        bundle_path: Path,
+        model_id_override: str,
+        dataset_id_override: str,
+    ) -> ActiveModelReference:
         feature_columns = [str(column) for column in manifest.get("feature_columns", [])]
-        if any(
-            any(column not in row for column in feature_columns)
-            for row in rows_by_asset.values()
-        ):
-            return rows_by_asset, None
-
-        bundle = pickle.loads(Path(reference.bundle_file).read_bytes())
-        ordered_assets = sorted(rows_by_asset)
-        ordered_rows = [rows_by_asset[asset] for asset in ordered_assets]
-        features = [self._feature_payload(row) for row in ordered_rows]
-        expected_values = list(bundle["expected_return"].predict(features))
-        downside_values = self._positive_class_probabilities(bundle["downside_risk"], features)
-        sell_values = self._positive_class_probabilities(bundle["sell_risk"], features)
-
-        enriched: dict[str, dict[str, object]] = {}
-        for asset, row, expected, downside, sell in zip(
-            ordered_assets,
-            ordered_rows,
-            expected_values,
-            downside_values,
-            sell_values,
-            strict=True,
-        ):
-            enriched[asset] = dict(row) | {
-                "expected_return_score": self._coerce_float(expected),
-                "downside_risk_score": self._coerce_float(downside),
-                "sell_risk_score": self._coerce_float(sell),
-            }
-        return enriched, reference.model_id
+        research_settings = cast(dict[str, object], manifest.get("research_settings", {}))
+        prediction_coverage = cast(
+            dict[str, object],
+            manifest.get("prediction_coverage", {}),
+        )
+        training_profile = cast(dict[str, object], manifest.get("training_profile", {}))
+        return ActiveModelReference(
+            model_id=model_id_override,
+            dataset_id=dataset_id_override,
+            dataset_track=str(
+                manifest.get("dataset_track", self.config.research.default_dataset_track)
+            ),
+            manifest_file=str(manifest_path),
+            metrics_file=str(metrics_path),
+            predictions_file=str(predictions_path),
+            bundle_file=str(bundle_path),
+            selected_assets=tuple(str(asset) for asset in manifest["selected_assets"]),
+            research_settings_signature=str(
+                manifest.get("research_settings_signature")
+                or self._settings_signature(research_settings)
+            ),
+            feature_column_signature=str(
+                manifest.get("feature_column_signature")
+                or self._feature_column_signature(feature_columns)
+            ),
+            model_family=str(
+                manifest.get("model_family")
+                or training_profile.get("family")
+                or "ridge_logistic"
+            ),
+            prediction_start_timestamp=self._optional_int(
+                prediction_coverage.get("start_timestamp")
+            ),
+            prediction_end_timestamp=self._optional_int(prediction_coverage.get("end_timestamp")),
+        )
 
     def _latest_trained_model_id(self) -> str:
         summary_path = latest_training_summary_file(self.paths.model_reports_dir)
@@ -466,6 +595,7 @@ class ModelService:
         *,
         model_id: str,
         assets: tuple[str, ...],
+        dataset_track: str,
     ) -> PromotionBacktestComparison:
         from tradebot.backtest.service import BacktestService
 
@@ -475,16 +605,27 @@ class ModelService:
             force_features=False,
             model_id=model_id,
             use_active_model=False,
+            dataset_track=dataset_track,
         )
         rule_only = backtest_service.run_backtest(
             assets=assets,
             force_features=False,
             use_active_model=False,
+            dataset_track=dataset_track,
         )
+        hybrid_report = backtest_service.load_backtest_report(hybrid.run_id)
+        rule_only_report = backtest_service.load_backtest_report(rule_only.run_id)
         return {
             "hybrid": hybrid,
             "rule_only": rule_only,
             "incremental_total_return": hybrid.total_return - rule_only.total_return,
+            "hybrid_cagr": hybrid.cagr or 0.0,
+            "rule_only_cagr": rule_only.cagr or 0.0,
+            "yearly_win_rate": self._yearly_outperformance_rate(
+                cast(dict[str, dict[str, object]], hybrid_report.get("yearly_returns", {})),
+                cast(dict[str, dict[str, object]], rule_only_report.get("yearly_returns", {})),
+            ),
+            "max_drawdown_gap": max(rule_only.max_drawdown - hybrid.max_drawdown, 0.0),
         }
 
     def _insufficient_training_data_message(
@@ -531,6 +672,13 @@ class ModelService:
 
     def _unique_timestamps(self, rows: list[ModelRow]) -> list[int]:
         return sorted({self._coerce_int(row["timestamp"]) for row in rows})
+
+    def _rows_by_timestamp(self, rows: list[ModelRow]) -> dict[int, list[ModelRow]]:
+        grouped: dict[int, list[ModelRow]] = {}
+        for row in rows:
+            timestamp = self._coerce_int(row["timestamp"])
+            grouped.setdefault(timestamp, []).append(row)
+        return grouped
 
     def _fit_bundle(
         self,
@@ -818,6 +966,108 @@ class ModelService:
                 }
         return index
 
+    def _reference_matches_context(
+        self,
+        reference: ActiveModelReference,
+        *,
+        dataset_id: str | None,
+        dataset_track: str | None,
+        selected_assets: tuple[str, ...] | None,
+        research_settings_signature: str | None,
+        feature_column_signature: str | None,
+    ) -> bool:
+        compatibility_checks = (
+            dataset_track is not None
+            or selected_assets is not None
+            or research_settings_signature is not None
+            or feature_column_signature is not None
+        )
+        if compatibility_checks:
+            if dataset_track is not None and reference.dataset_track != dataset_track:
+                return False
+            if selected_assets is not None and tuple(reference.selected_assets) != tuple(selected_assets):
+                return False
+            if (
+                research_settings_signature is not None
+                and reference.research_settings_signature != research_settings_signature
+            ):
+                return False
+            if (
+                feature_column_signature is not None
+                and reference.feature_column_signature != feature_column_signature
+            ):
+                return False
+            return True
+        if dataset_id is None:
+            return True
+        return reference.dataset_id == dataset_id
+
+    def _enrich_rows_with_reference(
+        self,
+        *,
+        reference: ActiveModelReference,
+        rows_by_asset: dict[str, dict[str, object]],
+        timestamp: int,
+    ) -> tuple[dict[str, dict[str, object]], str]:
+        prediction_index = self._load_prediction_index(Path(reference.predictions_file))
+        enriched = {asset: dict(row) for asset, row in rows_by_asset.items()}
+        missing_assets: list[str] = []
+        for asset, row in enriched.items():
+            prediction_row = prediction_index.get((timestamp, asset))
+            if prediction_row is None:
+                missing_assets.append(asset)
+                continue
+            row["expected_return_score"] = prediction_row["expected_return_score"]
+            row["downside_risk_score"] = prediction_row["downside_risk_score"]
+            row["sell_risk_score"] = prediction_row["sell_risk_score"]
+        if not missing_assets:
+            return enriched, reference.model_id
+
+        inferred_rows, _ = self._infer_rows_with_reference(
+            reference,
+            {asset: rows_by_asset[asset] for asset in missing_assets},
+        )
+        for asset, row in inferred_rows.items():
+            enriched[asset] = row
+        return enriched, reference.model_id
+
+    def _infer_rows_with_reference(
+        self,
+        reference: ActiveModelReference,
+        rows_by_asset: dict[str, dict[str, object]],
+    ) -> tuple[dict[str, dict[str, object]], str | None]:
+        manifest = json.loads(Path(reference.manifest_file).read_text(encoding="utf-8"))
+        feature_columns = [str(column) for column in manifest.get("feature_columns", [])]
+        if any(
+            any(column not in row for column in feature_columns)
+            for row in rows_by_asset.values()
+        ):
+            return rows_by_asset, None
+
+        bundle = pickle.loads(Path(reference.bundle_file).read_bytes())
+        ordered_assets = sorted(rows_by_asset)
+        ordered_rows = [rows_by_asset[asset] for asset in ordered_assets]
+        features = [self._feature_payload(row) for row in ordered_rows]
+        expected_values = list(bundle["expected_return"].predict(features))
+        downside_values = self._positive_class_probabilities(bundle["downside_risk"], features)
+        sell_values = self._positive_class_probabilities(bundle["sell_risk"], features)
+
+        enriched: dict[str, dict[str, object]] = {}
+        for asset, row, expected, downside, sell in zip(
+            ordered_assets,
+            ordered_rows,
+            expected_values,
+            downside_values,
+            sell_values,
+            strict=True,
+        ):
+            enriched[asset] = dict(row) | {
+                "expected_return_score": self._coerce_float(expected),
+                "downside_risk_score": self._coerce_float(downside),
+                "sell_risk_score": self._coerce_float(sell),
+            }
+        return enriched, reference.model_id
+
     def _positive_class_probabilities(
         self,
         model: Pipeline,
@@ -891,3 +1141,31 @@ class ModelService:
         if value in {None, "", "None"}:
             return None
         return self._coerce_int(value)
+
+    def _yearly_outperformance_rate(
+        self,
+        hybrid_yearly: dict[str, dict[str, object]],
+        rule_only_yearly: dict[str, dict[str, object]],
+    ) -> float:
+        shared_years = sorted(set(hybrid_yearly) & set(rule_only_yearly))
+        if not shared_years:
+            return 0.0
+        wins = 0
+        for year in shared_years:
+            hybrid_return = self._coerce_float(hybrid_yearly[year]["total_return"])
+            rule_only_return = self._coerce_float(rule_only_yearly[year]["total_return"])
+            if hybrid_return > rule_only_return:
+                wins += 1
+        return wins / len(shared_years)
+
+    @staticmethod
+    def _settings_signature(payload: dict[str, object]) -> str:
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
+
+    @staticmethod
+    def _feature_column_signature(columns: list[str]) -> str:
+        return hashlib.sha256(json.dumps(columns, sort_keys=True).encode("utf-8")).hexdigest()[
+            :16
+        ]
