@@ -1,11 +1,11 @@
 services:
-  tradebot:
+  cryptotradebot:
     build:
       context: .
     image: cryptotradebot:local
     environment:
-      BOT_CONFIG_PATH: ${BOT_CONFIG_PATH:-config/settings.yaml}
-      TRADEBOT_HOME: ${TRADEBOT_HOME:-/app}
+      CRYPTOTRADEBOT_CONFIG_PATH: ${CRYPTOTRADEBOT_CONFIG_PATH:-config/settings.yaml}
+      CRYPTOTRADEBOT_HOME: ${CRYPTOTRADEBOT_HOME:-/app}
       KRAKEN_API_KEY: ${KRAKEN_API_KEY:-}
       KRAKEN_API_SECRET: ${KRAKEN_API_SECRET:-}
       KRAKEN_API_OTP: ${KRAKEN_API_OTP:-}
@@ -13,7 +13,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-    command: ["doctor"]
+    command: ["setup"]
     volumes:
       - ./config:/app/config
       - ./data:/app/data
