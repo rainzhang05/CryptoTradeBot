@@ -157,11 +157,12 @@ paths: {}
             mode: str,
             max_cycles: int | None = None,
             *,
+            dataset_track: str | None = None,
             cancellation_token=None,
             on_cycle=None,
             on_alert=None,
         ):
-            del max_cycles, cancellation_token
+            del max_cycles, dataset_track, cancellation_token
             snapshot = RuntimeSnapshot(
                 mode=mode,
                 cycle=1,
