@@ -10,7 +10,7 @@ from tradebot.config import load_config
 from tradebot.data.models import Candle
 from tradebot.data.storage import write_candles
 from tradebot.research.features import build_dynamic_feature_rows, build_feature_rows
-from tradebot.research.service import ResearchService
+from tradebot.research.service import DATASET_TRACKS, ResearchService
 
 
 def _write_config(root: Path) -> Path:
@@ -35,12 +35,6 @@ research:
   breadth_window_days: 2
   dollar_volume_window_days: 2
   source_window_days: 2
-  forward_return_days: 1
-  downside_lookahead_days: 2
-  downside_threshold: 0.05
-  sell_lookahead_days: 3
-  sell_drawdown_threshold: 0.08
-  sell_return_threshold: -0.01
 alerts: {}
 paths:
   data_dir: data
@@ -85,7 +79,7 @@ def _daily_candles(
     return candles
 
 
-def test_build_feature_rows_generates_expected_labels_and_regime(tmp_path: Path) -> None:
+def test_build_feature_rows_generates_expected_features_and_regime(tmp_path: Path) -> None:
     config = load_config(config_path=_write_config(tmp_path), env_path=tmp_path / ".env")
     rows, _ = build_feature_rows(
         {
@@ -110,15 +104,19 @@ def test_build_feature_rows_generates_expected_labels_and_regime(tmp_path: Path)
         config.research,
     )
 
-    assert len(rows) == 2
+    assert len(rows) == 8
 
-    eth_row = next(row for row in rows if row["asset"] == "ETH")
+    eth_row = next(
+        row
+        for row in rows
+        if row["asset"] == "ETH" and int(row["timestamp"]) == 1_704_326_400
+    )
     assert eth_row["regime_state"] == "constructive"
     assert eth_row["regime_constructive"] == 1
     assert eth_row["momentum_2d"] == 53 / 52 - 1
-    assert eth_row["label_forward_return_1d"] == 55 / 53 - 1
-    assert eth_row["label_downside_risk_flag_2d"] == 1
-    assert eth_row["label_sell_risk_flag_3d"] == 0
+    assert "label_forward_return_1d" not in eth_row
+    assert "label_downside_risk_flag_2d" not in eth_row
+    assert "label_sell_risk_flag_3d" not in eth_row
     assert eth_row["binance_source_ratio_2d"] == 0.5
     assert eth_row["fallback_source_ratio_2d"] == 0.5
 
@@ -154,7 +152,7 @@ def test_build_feature_store_writes_manifest_and_uses_cache(tmp_path: Path) -> N
     assert Path(first.experiment_root).is_dir()
 
     manifest = json.loads(Path(first.manifest_file).read_text(encoding="utf-8"))
-    assert manifest["row_count"] == 2
+    assert manifest["row_count"] == 8
     assert manifest["selected_assets"] == ["BTC", "ETH"]
     assert manifest["experiment_layout"]["dataset_reference_field"] == "dataset_id"
 
@@ -235,3 +233,4 @@ def test_default_dataset_track_prefers_configured_dynamic_track_for_full_univers
         "dynamic_universe_kraken_only"
     )
     assert service._default_dataset_track(("BTC", "ETH")) == "custom_selection"
+    assert sorted(DATASET_TRACKS) == ["dynamic_universe_kraken_only", "official_fixed_10"]
