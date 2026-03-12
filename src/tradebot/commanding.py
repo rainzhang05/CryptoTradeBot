@@ -13,11 +13,11 @@ from tradebot import __version__
 from tradebot.backtest.service import BacktestService
 from tradebot.cancellation import CancellationToken
 from tradebot.config import (
+    STRATEGY_PRESETS,
     AppConfig,
     ConfigError,
-    STRATEGY_PRESETS,
-    apply_strategy_preset,
     app_home_layout,
+    apply_strategy_preset,
     default_config_path,
     default_tradebot_home,
     ensure_app_home_initialized,
@@ -88,6 +88,7 @@ class CommandSpec:
     tokens: tuple[str, ...]
     description: str
     fields: tuple[CommandFieldSpec, ...] = ()
+    guided_when_empty: bool = True
 
 
 @dataclass(frozen=True)
@@ -278,7 +279,7 @@ def handle_config_path(
     return config_path
 
 
-def handle_init(
+def handle_setup(
     params: dict[str, object],
     *,
     emitter: EventEmitter | None = None,
@@ -286,28 +287,67 @@ def handle_init(
 ) -> dict[str, object]:
     home = params.get("home")
     force = bool(params.get("force", False))
+    assets = _tuple_or_none(params.get("assets"))
     _check_cancel(cancellation_token)
-    _emit(emitter, "step_started", "Bootstrapping Tradebot home.")
-    summary = initialize_app_home(
-        home=(None if home in {None, ""} else Path(str(home))),
-        force=force,
+    setup_home = None if home in {None, ""} else Path(str(home))
+    _emit(emitter, "step_started", "Preparing CryptoTradeBot home.")
+    if setup_home is not None:
+        layout = app_home_layout(setup_home)
+        initialized = initialize_app_home(home=layout.home, force=force)
+    else:
+        config_path = default_config_path()
+        if config_path.parent.name == "config":
+            layout = app_home_layout(config_path.parent.parent)
+            initialized = initialize_app_home(home=layout.home, force=force)
+        else:
+            layout = app_home_layout(Path.cwd())
+            initialized = {
+                "home": str(Path.cwd().resolve()),
+                "config_path": str(config_path),
+                "env_path": str((config_path.parent / ".env").resolve()),
+                "data_dir": str((Path.cwd() / "data").resolve()),
+                "artifacts_dir": str((Path.cwd() / "artifacts").resolve()),
+                "runtime_dir": str((Path.cwd() / "runtime").resolve()),
+                "config_created": False,
+                "env_created": False,
+            }
+    _emit(emitter, "step_completed", "CryptoTradeBot home is ready.", initialized)
+    _check_cancel(cancellation_token)
+    config = load_config(
+        config_path=Path(str(initialized["config_path"])),
+        env_path=Path(str(initialized["env_path"])),
     )
-    _emit(emitter, "step_completed", "Tradebot home is ready.", summary)
-    return summary
+    configure_logging(config)
+    _emit(emitter, "step_started", "Running setup checks and refreshing runtime data.")
+    summary = cast(dict[str, object], OperationsService(config).setup_summary(assets=assets))
+    result = {
+        "initialized": initialized,
+        **summary,
+    }
+    _emit(emitter, "summary", "Setup finished.", result)
+    return result
 
 
-def handle_doctor(
+def handle_kraken_auth_set(
     params: dict[str, object],
     *,
     emitter: EventEmitter | None = None,
     cancellation_token: CancellationToken | None = None,
 ) -> dict[str, object]:
-    del params
     _check_cancel(cancellation_token)
-    _emit(emitter, "step_started", "Running environment and exchange checks.")
     config = _load_app_config()
-    summary = cast(dict[str, object], OperationsService(config).doctor_summary())
-    _emit(emitter, "summary", "Doctor checks finished.", summary)
+    _emit(emitter, "step_started", "Updating Kraken credentials.")
+    summary = cast(
+        dict[str, object],
+        OperationsService(config).set_kraken_auth(
+            str(params["api_key"]),
+            api_secret=(
+                None if params.get("api_secret") in {None, ""} else str(params["api_secret"])
+            ),
+            otp=(None if params.get("otp") in {None, ""} else str(params["otp"])),
+        ),
+    )
+    _emit(emitter, "summary", "Kraken credentials updated.", summary)
     return summary
 
 
@@ -679,9 +719,10 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec("version", ("version",), "Print the current application version."),
     CommandSpec("config_path", ("config-path",), "Print the resolved configuration path."),
     CommandSpec(
-        "init",
-        ("init",),
-        "Bootstrap the default application home and starter files.",
+        "setup",
+        ("setup",),
+        "Initialize the application home, prepare runtime-ready data, and run readiness checks.",
+        guided_when_empty=False,
         fields=(
             CommandFieldSpec(
                 name="home",
@@ -698,12 +739,41 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 default=False,
                 help="Rewrite starter config and env files when they already exist.",
             ),
+            CommandFieldSpec(
+                name="assets",
+                label="Assets",
+                flags=("--assets",),
+                multiple=True,
+                choice_provider=lambda: list(FIXED_UNIVERSE),
+                help="Optional asset subset for runtime-data preparation.",
+            ),
         ),
     ),
     CommandSpec(
-        "doctor",
-        ("doctor",),
-        "Validate config, local environment, and exchange connectivity.",
+        "kraken_auth_set",
+        ("kraken", "auth", "set"),
+        "Store Kraken credentials in the active environment file.",
+        fields=(
+            CommandFieldSpec(
+                name="api_key",
+                label="API key",
+                kind="argument",
+                required=True,
+                help="Kraken API key to store.",
+            ),
+            CommandFieldSpec(
+                name="api_secret",
+                label="API secret",
+                flags=("--secret",),
+                help="Optional Kraken API secret for live mode.",
+            ),
+            CommandFieldSpec(
+                name="otp",
+                label="OTP",
+                flags=("--otp",),
+                help="Optional Kraken OTP value.",
+            ),
+        ),
     ),
     CommandSpec("config_show", ("config", "show"), "Print the active non-secret configuration."),
     CommandSpec(
@@ -958,8 +1028,8 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
 COMMAND_HANDLERS: dict[str, Callable[..., object]] = {
     "version": handle_version,
     "config_path": handle_config_path,
-    "init": handle_init,
-    "doctor": handle_doctor,
+    "setup": handle_setup,
+    "kraken_auth_set": handle_kraken_auth_set,
     "config_show": handle_config_show,
     "config_validate": handle_config_validate,
     "run": handle_run,
