@@ -46,7 +46,6 @@ During long-running execution, the terminal monitoring surface must display at m
 - current portfolio
 - USD cash balance
 - most recent decision outcome
-- most recent model outputs summary
 - open orders
 - recent fills
 - warnings, freezes, and abnormal conditions
@@ -83,7 +82,6 @@ Alerts must be sent to:
 - data gap or data-integrity failure
 - portfolio drawdown threshold events
 - startup failure
-- model or inference failure
 
 Phase 9 persists alert-deduplication state under `runtime/state/alert_state.json` and writes the latest operator-facing alert history under `artifacts/reports/runtime/latest_alerts.json`.
 Terminal monitoring must render newly emitted alerts immediately, and email delivery must avoid repeating the same alert condition every cycle.
@@ -99,7 +97,7 @@ Phase 11 introduces an interactive operator shell launched by bare `tradebot` on
 
 The shell must:
 
-- present operator context such as active home, config path, runtime mode, and active model
+- present operator context such as active home, config path, runtime mode, and command state
 - render structured command progress and summaries in readable transcript form
 - keep the input surface locked while a long-running command is active
 - treat `Ctrl-C` as a shell-exit shortcut with a confirmation guard: the first press must log an instruction to press `Ctrl-C` again, and the second press within 5 seconds must exit the shell
@@ -117,7 +115,6 @@ The runtime must freeze new trading activity when any of the following occurs:
 - exchange connectivity is unreliable
 - order placement failures repeat beyond acceptable tolerance
 - account reconciliation fails
-- model artifacts are missing or invalid
 - configuration is invalid for the requested mode
 
 When frozen, the system must:
