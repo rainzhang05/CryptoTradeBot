@@ -115,6 +115,10 @@ class BacktestRunSummary:
     total_return: float
     max_drawdown: float
     total_fees_usd: float
+    net_liquidation_equity_usd: float | None = None
+    net_liquidation_total_return: float | None = None
+    estimated_liquidation_fee_usd: float | None = None
+    estimated_liquidation_slippage_usd: float | None = None
     start_timestamp: int | None = None
     end_timestamp: int | None = None
     cagr: float | None = None
