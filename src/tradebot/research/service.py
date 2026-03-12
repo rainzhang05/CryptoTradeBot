@@ -28,9 +28,22 @@ from tradebot.research.storage import (
     write_dataset_rows,
 )
 
+DATASET_TRACKS: dict[str, dict[str, object]] = {
+    "official_fixed_10": {
+        "assets": FIXED_UNIVERSE,
+        "track_type": "official",
+        "description": "Strict fixed-universe aligned-history dataset.",
+    },
+    "dynamic_universe_kraken_only": {
+        "assets": FIXED_UNIVERSE,
+        "track_type": "research",
+        "description": "Dynamic Kraken-only universe with per-asset activation dates.",
+    },
+}
+
 
 class ResearchService:
-    """Build reproducible feature and label datasets for the hybrid strategy."""
+    """Build reproducible feature datasets for the rule-only strategy."""
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -116,7 +129,7 @@ class ResearchService:
             },
             "experiment_layout": {
                 "root_dir": str(experiment_root),
-                "required_files": ["manifest.json", "metrics.json", "predictions.csv"],
+                "required_files": [],
                 "dataset_reference_field": "dataset_id",
             },
         }
@@ -252,7 +265,7 @@ class ResearchService:
         assets: tuple[str, ...] | None = None,
         dataset_track: str | None = None,
     ) -> tuple[str, int, dict[str, dict[str, object]]]:
-        """Build the latest point-in-time signal rows without forward labels."""
+        """Build the latest point-in-time signal rows."""
         selected_assets = self._select_assets(assets)
         selected_track = dataset_track or self._default_dataset_track(selected_assets)
         candles_by_asset = self._load_daily_candles(selected_assets)
