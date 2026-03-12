@@ -147,6 +147,7 @@ class RuntimeService:
         mode: str,
         max_cycles: int | None = None,
         *,
+        dataset_track: str | None = None,
         cancellation_token: CancellationToken | None = None,
         on_cycle: Callable[[RuntimeSnapshot], None] | None = None,
         on_alert: Callable[[AlertEvent], None] | None = None,
@@ -180,7 +181,11 @@ class RuntimeService:
             for cycle in range(1, cycle_limit + 1):
                 if cancellation_token is not None:
                     cancellation_token.raise_if_cancelled()
-                snapshot = self._run_cycle(mode=mode, cycle=cycle)
+                snapshot = self._run_cycle(
+                    mode=mode,
+                    cycle=cycle,
+                    dataset_track=dataset_track,
+                )
                 alerts = self.alert_service.process_snapshot(snapshot)
                 latest_alert_payloads = [alert.to_dict() for alert in alerts]
                 self.logger.info(
@@ -275,9 +280,14 @@ class RuntimeService:
         finally:
             self._clear_process(process_path)
 
-    def _run_cycle(self, mode: str, cycle: int) -> RuntimeSnapshot:
+    def _run_cycle(
+        self,
+        mode: str,
+        cycle: int,
+        dataset_track: str | None,
+    ) -> RuntimeSnapshot:
         if mode == "live":
-            live_summary = self.live_service.run_cycle()
+            live_summary = self.live_service.run_cycle(dataset_track=dataset_track)
             return RuntimeSnapshot(
                 mode=mode,
                 cycle=cycle,
@@ -304,7 +314,9 @@ class RuntimeService:
                 predictions=live_summary.predictions,
             )
 
-        simulate_summary = self.backtest_service.simulate_latest_cycle()
+        simulate_summary = self.backtest_service.simulate_latest_cycle(
+            dataset_track=dataset_track
+        )
         return RuntimeSnapshot(
             mode=mode,
             cycle=cycle,
