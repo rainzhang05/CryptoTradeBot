@@ -105,10 +105,15 @@ The Phase 3 implementation uses these deterministic daily research defaults:
 
 - primary feature interval: 1 day
 - default full-universe research and backtest dataset track: `dynamic_universe_kraken_only`
+- default runtime preset: `live_default`
 - default shell layers: regime filter on, entry filter on, volatility veto off, gradual
   reduction off
-- default concentration posture: maximum 3 positions, maximum 35% per asset, 5% rebalance
-  threshold, and a 3-point held-asset score bonus
+- default concentration posture: maximum 5 positions, maximum 35% per asset, 3% rebalance
+  threshold, and a 2-point held-asset score bonus
+- default live risk posture: neutral exposure 70%, defensive exposure 35%, elevated-caution
+  multiplier 90%, reduced-aggressiveness multiplier 68%, catastrophe multiplier 24%
+- default live entry and hold floors: entry momentum 0.0, entry trend gap 0.0, hold momentum
+  -3%, hold trend gap -3%, max realized volatility 30%, reduction volatility threshold 16%
 - momentum windows: 7, 30, and 90 trading days
 - trend-gap windows: 50 and 200 trading days
 - realized-volatility windows: 20 and 60 trading days
@@ -148,6 +153,9 @@ Phase 6 currently implements three supervised outputs from the deterministic fea
 - sell-risk classification for stronger reduction and exit confirmation
 
 Only predictions from the active promoted model that matches the current dataset may be consumed by the strategy engine.
+When no compatible promoted model is available, the runtime may continue in rule-only mode by
+default instead of freezing solely because ML is absent. Operators may still enable strict
+live-mode model requirements in configuration.
 
 ## Portfolio Construction
 
@@ -169,6 +177,13 @@ Portfolio weights must be generated through a bounded scoring process that combi
 The implementation should prefer normalized score-based allocation over equal weight because the project goal is to maximize expected return, but the final weights must remain capped for concentration control.
 
 The implemented allocation path combines rule-based scores, normalized expected-return ranking when promoted predictions are available, downside penalties, regime scaling, and drawdown-aware risk-state scaling before final concentration and cash normalization.
+
+## Runtime Presets
+
+The implementation keeps two named runtime presets:
+
+- `live_default`: the hardened runtime preset intended for simulate and live mode by default
+- `max_profit`: the more aggressive research and backtest preset used to inspect the upside limit
 
 ### Concentration rule
 
