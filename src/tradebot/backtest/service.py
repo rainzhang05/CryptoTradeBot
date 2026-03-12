@@ -121,6 +121,15 @@ class BacktestService:
                 execution_bars=execution_bars,
             ):
                 continue
+            if not equity_curve:
+                equity_curve.append(
+                    EquityPoint(
+                        timestamp=timestamp,
+                        equity_usd=portfolio.cash_usd,
+                        cash_usd=portfolio.cash_usd,
+                        gross_exposure=0.0,
+                    )
+                )
 
             strategy_decision = strategy_engine.evaluate(
                 timestamp=timestamp,
@@ -172,7 +181,7 @@ class BacktestService:
                     }
                 )
 
-        if not equity_curve:
+        if len(equity_curve) < 2:
             raise ValueError("Backtest did not produce any executable decision points")
 
         run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
@@ -222,6 +231,10 @@ class BacktestService:
 
         max_drawdown = self._max_drawdown(equity_curve)
         final_equity = equity_curve[-1].equity_usd
+        liquidation_metrics = self._liquidation_metrics(
+            portfolio=portfolio,
+            mark_bars=self._bars_at_timestamp(bars_by_asset, equity_curve[-1].timestamp),
+        )
         metrics = self._performance_metrics(
             initial_cash=self.config.backtest.initial_cash_usd,
             equity_curve=equity_curve,
@@ -248,6 +261,22 @@ class BacktestService:
             total_return=(final_equity / self.config.backtest.initial_cash_usd) - 1,
             max_drawdown=max_drawdown,
             total_fees_usd=portfolio.fees_paid_usd,
+            net_liquidation_equity_usd=cast(
+                float | None,
+                liquidation_metrics["net_liquidation_equity_usd"],
+            ),
+            net_liquidation_total_return=cast(
+                float | None,
+                liquidation_metrics["net_liquidation_total_return"],
+            ),
+            estimated_liquidation_fee_usd=cast(
+                float | None,
+                liquidation_metrics["estimated_liquidation_fee_usd"],
+            ),
+            estimated_liquidation_slippage_usd=cast(
+                float | None,
+                liquidation_metrics["estimated_liquidation_slippage_usd"],
+            ),
             start_timestamp=equity_curve[0].timestamp,
             end_timestamp=equity_curve[-1].timestamp,
             cagr=cast(float | None, metrics["cagr"]),
@@ -268,6 +297,7 @@ class BacktestService:
             "yearly_returns": yearly_returns,
             "benchmarks": benchmarks,
             "diagnostics": diagnostics,
+            "liquidation": liquidation_metrics,
             "period": {
                 "start_timestamp": equity_curve[0].timestamp,
                 "end_timestamp": equity_curve[-1].timestamp,
@@ -293,6 +323,7 @@ class BacktestService:
                 "decision_count": len(decisions),
                 "fill_count": len(fills),
                 "final_equity_usd": final_equity,
+                "net_liquidation_equity_usd": liquidation_metrics["net_liquidation_equity_usd"],
             },
         )
         return summary
@@ -637,6 +668,39 @@ class BacktestService:
             "total_return": total_return,
         }
 
+    def _liquidation_metrics(
+        self,
+        *,
+        portfolio: PortfolioState,
+        mark_bars: dict[str, Candle],
+    ) -> dict[str, float]:
+        fee_rate = self.config.backtest.fee_rate_bps / 10_000
+        slippage_rate = self.config.backtest.slippage_bps / 10_000
+        estimated_liquidation_fee_usd = 0.0
+        estimated_liquidation_slippage_usd = 0.0
+        net_liquidation_equity_usd = portfolio.cash_usd
+
+        for asset, position in portfolio.positions.items():
+            bar = mark_bars.get(asset)
+            if bar is None or position.quantity <= 0:
+                continue
+            mark_notional = position.quantity * bar.close
+            slippage_cost = max(mark_notional * slippage_rate, 0.0)
+            gross_liquidation_notional = max(mark_notional - slippage_cost, 0.0)
+            liquidation_fee = gross_liquidation_notional * fee_rate
+            estimated_liquidation_slippage_usd += slippage_cost
+            estimated_liquidation_fee_usd += liquidation_fee
+            net_liquidation_equity_usd += gross_liquidation_notional - liquidation_fee
+
+        return {
+            "net_liquidation_equity_usd": net_liquidation_equity_usd,
+            "net_liquidation_total_return": (
+                (net_liquidation_equity_usd / self.config.backtest.initial_cash_usd) - 1
+            ),
+            "estimated_liquidation_fee_usd": estimated_liquidation_fee_usd,
+            "estimated_liquidation_slippage_usd": estimated_liquidation_slippage_usd,
+        }
+
     def _yearly_returns(
         self,
         equity_curve: list[EquityPoint],
@@ -652,18 +716,19 @@ class BacktestService:
         for fill in fills:
             year = datetime.fromtimestamp(fill.timestamp, tz=UTC).year
             fill_counts[year] += 1
+        previous_equity: float | None = None
         for point in equity_curve:
             year = datetime.fromtimestamp(point.timestamp, tz=UTC).year
+            start_equity = previous_equity if previous_equity is not None else point.equity_usd
             entry = yearly.setdefault(
                 year,
                 {
-                    "start_equity_usd": point.equity_usd,
+                    "start_equity_usd": start_equity,
                     "end_equity_usd": point.equity_usd,
-                    "decision_count": 0,
-                    "fill_count": 0,
                 },
             )
             entry["end_equity_usd"] = point.equity_usd
+            previous_equity = point.equity_usd
 
         payload: dict[str, dict[str, object]] = {}
         for year, entry in sorted(yearly.items()):
