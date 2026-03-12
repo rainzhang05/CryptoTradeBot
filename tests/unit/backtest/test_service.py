@@ -91,12 +91,14 @@ def test_run_backtest_writes_report_and_artifacts(tmp_path: Path) -> None:
     summary = BacktestService(config).run_backtest(assets=("BTC", "ETH"))
 
     assert summary.fill_count >= 1
+    assert summary.strategy_preset == "custom"
     assert Path(summary.report_file).exists()
     assert Path(summary.equity_curve_file).exists()
     assert Path(summary.decisions_file).exists()
     report_payload = Path(summary.report_file).read_text(encoding="utf-8")
     assert '"diagnostics"' in report_payload
     assert '"dataset_track"' in report_payload
+    assert '"strategy_preset"' in report_payload
 
 
 def test_simulate_latest_cycle_persists_state_when_data_exists(tmp_path: Path) -> None:
