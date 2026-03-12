@@ -1,4 +1,4 @@
-"""Interactive Textual shell for Tradebot."""
+"""Interactive Textual shell for CryptoTradeBot."""
 
 from __future__ import annotations
 
@@ -298,7 +298,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
 
 
 class TradebotShellApp(App[None]):
-    """Interactive operator shell for the Tradebot command surface."""
+    """Interactive operator shell for the CryptoTradeBot command surface."""
 
     CSS = """
     App {
@@ -487,7 +487,9 @@ class TradebotShellApp(App[None]):
             yield RichLog(id="transcript", wrap=True, markup=True)
         with Vertical(id="input-region"):
             yield Input(
-                placeholder="Type a command like data source, features build, help, clear, or exit",
+                placeholder=(
+                    "Type a command like setup, kraken auth set, data source, help, clear, or exit"
+                ),
                 id="command-input",
             )
             yield OptionList(id="command-suggestions")
@@ -506,7 +508,7 @@ class TradebotShellApp(App[None]):
         if bootstrap_summary is not None:
             self._append_entry(
                 "system",
-                "Created your default Tradebot home.",
+                "Created your default CryptoTradeBot home.",
                 lines=(
                     f"Home: {bootstrap_summary['home']}",
                     "Starter config and environment files are now in place.",
@@ -526,7 +528,7 @@ class TradebotShellApp(App[None]):
         self._append_entry(
             "warning",
             "Press Ctrl+C again to exit the shell.",
-            lines=("Repeat the same shortcut within 5 seconds to close Tradebot shell.",),
+            lines=("Repeat the same shortcut within 5 seconds to close CryptoTradeBot shell.",),
             action_id=self._active_action_id,
         )
 
@@ -597,7 +599,11 @@ class TradebotShellApp(App[None]):
             )
             return
 
-        if parsed.spec.fields and not parsed.used_inline_arguments:
+        if (
+            parsed.spec.fields
+            and parsed.spec.guided_when_empty
+            and not parsed.used_inline_arguments
+        ):
             self.push_screen(
                 CommandFormScreen(parsed.spec, default_form_values(parsed.spec)),
                 lambda params: self._run_form_submission(
