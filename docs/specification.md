@@ -40,6 +40,9 @@ The software must be usable by a single operator on a local macOS machine while 
 
 - `simulate`: uses the same strategy and order-intent flow as live mode but never sends real orders.
 - `live`: sends real orders to Kraken and displays monitoring output in the terminal.
+- The runtime may trade in hardened rule-only mode when no compatible promoted model is
+  available; promoted-model predictions remain an optional refinement layer rather than a hard
+  live prerequisite by default.
 
 ### Operator model
 
