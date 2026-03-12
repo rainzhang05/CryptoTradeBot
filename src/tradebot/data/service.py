@@ -44,6 +44,8 @@ from tradebot.logging_config import get_logger
 class DataService:
     """Service for converting raw Kraken trades into canonical datasets."""
 
+    RUNTIME_BOOTSTRAP_CANDLE_LIMIT = 720
+
     def __init__(
         self,
         config: AppConfig,
@@ -187,15 +189,7 @@ class DataService:
             if cancellation_token is not None:
                 cancellation_token.raise_if_cancelled()
             self.logger.info("processing completion asset", extra={"asset": asset})
-            if any(
-                not canonical_candle_file(
-                    self.data_settings.canonical_dir,
-                    asset,
-                    interval,
-                ).exists()
-                for interval in self.data_settings.intervals
-            ):
-                self.import_kraken_raw(assets=(asset,))
+            self._ensure_canonical_seeded(asset)
 
             interval_results: list[dict[str, object]] = []
             for interval in self.data_settings.intervals:
@@ -287,6 +281,74 @@ class DataService:
         write_json(report_path, payload)
         self.logger.info("canonical completion finished", extra={"report_file": str(report_path)})
         return {"assets": completion_assets, "report_file": str(report_path)}
+
+    def _ensure_canonical_seeded(self, asset: str) -> None:
+        symbol_map = ASSET_SYMBOLS[asset]
+        raw_path = self.data_settings.raw_kraken_dir / symbol_map.kraken_raw_file
+        has_missing_or_empty = any(
+            not canonical_candle_file(self.data_settings.canonical_dir, asset, interval).exists()
+            or not self._canonical_file_has_rows(
+                canonical_candle_file(self.data_settings.canonical_dir, asset, interval)
+            )
+            for interval in self.data_settings.intervals
+        )
+        if raw_path.exists() and has_missing_or_empty:
+            self.import_kraken_raw(assets=(asset,))
+
+        bootstrapped_intervals: dict[str, int] = {}
+        for interval in self.data_settings.intervals:
+            candle_path = canonical_candle_file(self.data_settings.canonical_dir, asset, interval)
+            existing = read_candles(candle_path) if candle_path.exists() else []
+            if existing:
+                continue
+            seeded = self._bootstrap_recent_kraken_history(asset=asset, interval=interval)
+            if not seeded:
+                continue
+            write_candles(candle_path, seeded)
+            bootstrapped_intervals[interval] = len(seeded)
+            self.logger.info(
+                "bootstrapped recent canonical candles",
+                extra={
+                    "asset": asset,
+                    "interval": interval,
+                    "candle_count": len(seeded),
+                    "path": str(candle_path),
+                },
+            )
+
+        if bootstrapped_intervals:
+            write_json(
+                manifest_file(self.data_settings.canonical_dir, asset),
+                {
+                    "asset": asset,
+                    "pair": symbol_map.kraken_pair,
+                    "generated_at": datetime.now(tz=UTC).isoformat(),
+                    "bootstrap_source": "kraken_public_ohlc_recent_window",
+                    "bootstrap_limit": self.RUNTIME_BOOTSTRAP_CANDLE_LIMIT,
+                    "bootstrapped_intervals": bootstrapped_intervals,
+                },
+            )
+
+    def _bootstrap_recent_kraken_history(self, *, asset: str, interval: Interval) -> list[Candle]:
+        symbol_map = ASSET_SYMBOLS[asset]
+        target_end = self._latest_closed_timestamp(interval)
+        step = INTERVAL_SECONDS[interval]
+        start_ts = max(target_end - step * (self.RUNTIME_BOOTSTRAP_CANDLE_LIMIT - 1), 0)
+        return self._fetch_kraken_range(
+            asset=asset,
+            pair=symbol_map.kraken_raw_file.removesuffix(".csv"),
+            interval=interval,
+            start_ts=start_ts,
+            end_ts=target_end,
+        )
+
+    @staticmethod
+    def _canonical_file_has_rows(path: Path) -> bool:
+        if not path.exists():
+            return False
+        with path.open("r", encoding="utf-8") as handle:
+            next(handle, None)
+            return next(handle, None) is not None
 
     def _import_single_asset(self, asset: str, raw_path: Path) -> AssetImportResult:
         symbol_map = ASSET_SYMBOLS[asset]
