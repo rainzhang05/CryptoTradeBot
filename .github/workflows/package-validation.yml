@@ -41,12 +41,12 @@ jobs:
 
           root = Path.cwd()
           home = root / ".ci-install-home"
-          script = root / ".ci-install-venv" / "bin" / "tradebot"
+          script = root / ".ci-install-venv" / "bin" / "cryptotradebot"
           if sys.platform == "win32":
             script = script.with_suffix(".exe")
 
           env = os.environ.copy()
-          env["TRADEBOT_HOME"] = str(home)
+          env["CRYPTOTRADEBOT_HOME"] = str(home)
 
           help_result = subprocess.run(
             [str(script), "--help"],
@@ -80,7 +80,7 @@ jobs:
             check=False,
           )
           assert no_arg_result.returncode == 0, no_arg_result.stderr
-          assert "Usage: tradebot" in plain_text(no_arg_result.stdout)
+          assert "Usage: cryptotradebot" in plain_text(no_arg_result.stdout)
           PY
 
   runtime-safety:
@@ -146,7 +146,7 @@ jobs:
           alerts: {}
           paths: {}
           YAML
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/python - <<'PY'
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/python - <<'PY'
           from pathlib import Path
           from tradebot.data.models import Candle
           from tradebot.data.storage import write_candles
@@ -177,17 +177,17 @@ jobs:
               ]
               write_candles(path, candles)
           PY
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot features build --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest run --assets BTC --assets ETH
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot backtest report
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot run --mode simulate --max-cycles 1
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot features build --assets BTC --assets ETH
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot backtest run --assets BTC --assets ETH
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot backtest report
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot run --mode simulate --max-cycles 1
 
       - name: Validate operator CLI workflow
         run: |
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot status
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report list
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot report export artifacts/reports/backtests/latest_backtest_report.json .ci-release/exports/latest_backtest_report.json
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot email set trader@example.com
-          BOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/tradebot logs tail --lines 1
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot status
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot report list
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot report export artifacts/reports/backtests/latest_backtest_report.json .ci-release/exports/latest_backtest_report.json
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot email set trader@example.com
+          CRYPTOTRADEBOT_CONFIG_PATH="$PWD/.ci-release/config/settings.yaml" .venv/bin/cryptotradebot logs tail --lines 1
           test -f .ci-release/exports/latest_backtest_report.json
           grep -q "trader@example.com" .ci-release/config/settings.yaml
