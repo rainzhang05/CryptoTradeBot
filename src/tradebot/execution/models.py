@@ -70,7 +70,6 @@ class LiveState:
     open_orders: dict[str, KrakenOrderState] = field(default_factory=dict)
     recent_fills: list[FillEvent] = field(default_factory=list)
     last_decision_timestamp: int | None = None
-    last_model_id: str | None = None
     last_regime: str | None = None
     last_risk_state: str | None = None
     peak_equity_usd: float | None = None
@@ -86,7 +85,6 @@ class LiveState:
             "open_orders": {txid: order.to_dict() for txid, order in self.open_orders.items()},
             "recent_fills": [fill.to_dict() for fill in self.recent_fills],
             "last_decision_timestamp": self.last_decision_timestamp,
-            "last_model_id": self.last_model_id,
             "last_regime": self.last_regime,
             "last_risk_state": self.last_risk_state,
             "peak_equity_usd": self.peak_equity_usd,
@@ -117,13 +115,11 @@ class LiveCycleSummary:
     incidents: list[str]
     state_file: str
     freeze_reason: str | None = None
-    model_id: str | None = None
     decision_executed: bool = False
     portfolio_drawdown: float | None = None
     target_weights: dict[str, float] = field(default_factory=dict)
     decision_actions: dict[str, str] = field(default_factory=dict)
     decision_reasons: dict[str, str] = field(default_factory=dict)
-    predictions: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -143,11 +139,9 @@ class LiveCycleSummary:
             "incidents": list(self.incidents),
             "state_file": self.state_file,
             "freeze_reason": self.freeze_reason,
-            "model_id": self.model_id,
             "decision_executed": self.decision_executed,
             "portfolio_drawdown": self.portfolio_drawdown,
             "target_weights": self.target_weights,
             "decision_actions": self.decision_actions,
             "decision_reasons": self.decision_reasons,
-            "predictions": self.predictions,
         }
