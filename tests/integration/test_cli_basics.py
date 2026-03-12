@@ -189,7 +189,6 @@ paths: {}
                 holdings={"BTC": 0.5},
                 open_order_count=0,
                 incidents=["trade_executed"],
-                model_id="model-1",
                 decision_executed=True,
             )
             if on_cycle is not None:
