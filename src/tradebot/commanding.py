@@ -28,7 +28,7 @@ from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
 from tradebot.model.service import ModelService
 from tradebot.operations import OperationsService
-from tradebot.research.experiments import ResearchSweepService
+from tradebot.research.experiments import DATASET_TRACKS, ResearchSweepService
 from tradebot.research.service import ResearchService
 from tradebot.runtime import RuntimeService, RuntimeSnapshot
 
@@ -191,6 +191,10 @@ def _list_research_sweep_ids() -> list[str]:
         if "sweep_id" in manifest:
             sweep_ids.append(path.name)
     return sweep_ids
+
+
+def _list_dataset_tracks() -> list[str]:
+    return sorted(DATASET_TRACKS)
 
 
 def _load_app_config() -> AppConfig:
@@ -407,17 +411,23 @@ def handle_run(
     config = _load_app_config()
     effective_mode = str(params.get("mode") or config.runtime.default_mode)
     max_cycles = params.get("max_cycles")
+    dataset_track = params.get("dataset_track")
     cycle_limit = None if max_cycles in {None, ""} else int(str(max_cycles))
     _emit(
         emitter,
         "step_started",
         "Starting shared runtime.",
-        {"mode": effective_mode, "max_cycles": cycle_limit},
+        {
+            "mode": effective_mode,
+            "max_cycles": cycle_limit,
+            "dataset_track": dataset_track,
+        },
     )
     runtime = RuntimeService(config)
     snapshots = runtime.run(
         mode=effective_mode,
         max_cycles=cycle_limit,
+        dataset_track=(None if dataset_track in {None, ""} else str(dataset_track)),
         cancellation_token=cancellation_token,
         on_cycle=lambda snapshot: _emit(
             emitter,
@@ -665,10 +675,12 @@ def handle_features_build(
     config = _load_app_config()
     assets = _tuple_or_none(params.get("assets"))
     force = bool(params.get("force", False))
+    dataset_track = params.get("dataset_track")
     _emit(emitter, "step_started", "Building deterministic feature store.")
     summary = ResearchService(config).build_feature_store(
         assets=assets,
         force=force,
+        dataset_track=(None if dataset_track in {None, ""} else str(dataset_track)),
         cancellation_token=cancellation_token,
     ).to_dict()
     _emit(emitter, "summary", "Feature build finished.", summary)
@@ -723,10 +735,14 @@ def handle_model_train(
     config = _load_app_config()
     assets = _tuple_or_none(params.get("assets"))
     force_features = bool(params.get("force_features", False))
+    dataset_track = params.get("dataset_track")
+    family = str(params.get("family", "ridge_logistic"))
     _emit(emitter, "step_started", "Training model artifact.")
     summary = ModelService(config).train_model(
         assets=assets,
         force_features=force_features,
+        dataset_track=(None if dataset_track in {None, ""} else str(dataset_track)),
+        family=family,
         cancellation_token=cancellation_token,
         progress_callback=(
             None
@@ -780,10 +796,16 @@ def handle_backtest_run(
     config = _load_app_config()
     assets = _tuple_or_none(params.get("assets"))
     force_features = bool(params.get("force_features", False))
+    model_id = params.get("model_id")
+    dataset_track = params.get("dataset_track")
+    use_active_model = bool(params.get("use_active_model", True))
     _emit(emitter, "step_started", "Running backtest.")
     summary = BacktestService(config).run_backtest(
         assets=assets,
         force_features=force_features,
+        model_id=(None if model_id in {None, ""} else str(model_id)),
+        use_active_model=use_active_model,
+        dataset_track=(None if dataset_track in {None, ""} else str(dataset_track)),
         cancellation_token=cancellation_token,
         progress_callback=(
             None
@@ -865,6 +887,13 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 flags=("--max-cycles",),
                 value_type="int",
                 help="Optional cycle count override.",
+            ),
+            CommandFieldSpec(
+                name="dataset_track",
+                label="Dataset track",
+                flags=("--dataset-track",),
+                choice_provider=_list_dataset_tracks,
+                help="Optional research/backtest dataset track override.",
             ),
         ),
     ),
@@ -1019,6 +1048,12 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 value_type="bool",
                 default=False,
             ),
+            CommandFieldSpec(
+                name="dataset_track",
+                label="Dataset track",
+                flags=("--dataset-track",),
+                choice_provider=_list_dataset_tracks,
+            ),
         ),
     ),
     CommandSpec(
@@ -1087,6 +1122,24 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 value_type="bool",
                 default=False,
             ),
+            CommandFieldSpec(
+                name="dataset_track",
+                label="Dataset track",
+                flags=("--dataset-track",),
+                choice_provider=_list_dataset_tracks,
+            ),
+            CommandFieldSpec(
+                name="family",
+                label="Model family",
+                flags=("--family",),
+                choices=(
+                    "ridge_logistic",
+                    "elastic_net_logistic",
+                    "random_forest",
+                    "hist_gradient_boosting",
+                ),
+                default="ridge_logistic",
+            ),
         ),
     ),
     CommandSpec(
@@ -1133,6 +1186,26 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 flags=("--force-features",),
                 value_type="bool",
                 default=False,
+            ),
+            CommandFieldSpec(
+                name="dataset_track",
+                label="Dataset track",
+                flags=("--dataset-track",),
+                choice_provider=_list_dataset_tracks,
+            ),
+            CommandFieldSpec(
+                name="model_id",
+                label="Model id",
+                flags=("--model-id",),
+                choice_provider=_list_model_ids,
+            ),
+            CommandFieldSpec(
+                name="use_active_model",
+                label="Use active model",
+                flags=("--use-active-model",),
+                negative_flags=("--no-use-active-model",),
+                value_type="bool",
+                default=True,
             ),
         ),
     ),
