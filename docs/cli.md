@@ -40,7 +40,7 @@ Commands should follow a short noun-plus-action style such as:
 
 - `cryptotradebot version`: print the installed application version.
 - `cryptotradebot config-path`: print the resolved active configuration path.
-- `cryptotradebot run`: start continuous runtime.
+- `cryptotradebot run`: start continuous runtime unless a cycle limit override is supplied.
 - `cryptotradebot stop`: stop a managed runtime if process control is implemented.
 - `cryptotradebot status`: show current runtime status, positions, balances, and health.
 - `cryptotradebot setup`: initialize the application home, prepare runtime-ready data, and run readiness checks.
@@ -79,6 +79,7 @@ This command must:
 - create the default application home under `~/.cryptotradebot/` unless overridden by `CRYPTOTRADEBOT_HOME`
 - preserve `CRYPTOTRADEBOT_CONFIG_PATH` as the highest-precedence explicit config override for existing workflows while honoring the older override names for compatibility
 - create `config/settings.yaml`, `.env`, `data/`, `artifacts/`, and `runtime/` beneath the application home when they do not already exist
+- accept an optional fixed-universe asset subset for runtime-data preparation
 - bootstrap a recent Kraken-native canonical data window sufficient for live and simulate mode when a fuller local history does not yet exist
 - run canonical completion, integrity validation, and deterministic feature preparation needed for live and simulate readiness
 - validate configuration loading and Kraken public system status
@@ -127,6 +128,7 @@ This command must:
 This command must:
 
 - read canonical Kraken daily candles for the selected assets
+- accept optional `--assets` overrides within the fixed V1 universe
 - default full-universe builds to `research.default_dataset_track`
 - generate deterministic point-in-time feature rows without future leakage
 - reuse cached datasets when the deterministic `dataset_id` already exists unless a force rebuild is requested
@@ -136,7 +138,7 @@ This command must:
 ### Backtesting and simulation
 
 - `cryptotradebot backtest run`: execute a backtest.
-- `cryptotradebot backtest report`: view or export backtest results.
+- `cryptotradebot backtest report`: view stored backtest results.
 - `cryptotradebot run --mode simulate`: start continuous simulation mode.
 
 ### `cryptotradebot backtest run`
@@ -144,6 +146,8 @@ This command must:
 This command must:
 
 - build or reuse the deterministic feature dataset for the selected assets
+- accept optional `--assets` overrides within the fixed V1 universe
+- support `--force-features` to rebuild the feature dataset before running the backtest
 - default full-universe backtests to `research.default_dataset_track`
 - run a Kraken-only daily bar backtest using canonical `1d` candles
 - generate order intents, simulated fills, and portfolio accounting from shared backtest models
@@ -169,6 +173,7 @@ This command must:
 - reuse the same target-weight and simulated execution path as the backtest service wherever practical
 - load the latest persisted simulated portfolio state from `runtime/state/simulate_state.json`
 - update that state after each completed simulation cycle
+- run continuously by default unless `--max-cycles` or `runtime.max_cycles` imposes a limit
 - return a clear waiting state when canonical data or deterministic signals are not yet available
 - support `--dataset-track <track>` and `--strategy-preset <preset>`
 
@@ -186,5 +191,6 @@ This command must:
 - build point-in-time signal rows from canonical Kraken data without forward labels
 - evaluate the same deterministic strategy path used in backtests and simulate mode
 - sync Kraken balances and open orders before placing new orders
+- run continuously by default unless `--max-cycles` or `runtime.max_cycles` imposes a limit
 - freeze on stale daily data, exchange failures, unsupported pairs, reconciliation errors, or repeated order failures
 - support `--dataset-track <track>` and `--strategy-preset <preset>`
