@@ -30,19 +30,19 @@ For the full authoritative behavior, flags, and requirements, see [`cli.md`](./c
 
 ## Research And Models
 
-- `tradebot features build`: build or reuse the deterministic feature dataset.
+- `tradebot features build [--dataset-track TRACK]`: build or reuse the deterministic feature dataset.
 - `tradebot research sweep [--preset broad_staged] [--resume] [--max-workers N] [--limit N]`: run the staged research evaluation harness.
 - `tradebot research report [sweep_id]`: show the latest or a specific research sweep report.
-- `tradebot model train`: train the expected-return, downside-risk, and sell-risk models.
+- `tradebot model train [--dataset-track TRACK] [--family FAMILY]`: train the expected-return, downside-risk, and sell-risk models.
 - `tradebot model validate`: evaluate whether a model artifact is eligible for promotion.
 - `tradebot model promote`: promote a validated model only after it beats the rule-only Kraken backtest baseline for the same dataset.
 
 ## Backtesting And Runtime
 
-- `tradebot backtest run`: run a Kraken-only backtest from canonical daily data.
+- `tradebot backtest run [--dataset-track TRACK] [--model-id ID] [--use-active-model/--no-use-active-model]`: run a Kraken-only backtest from canonical daily data.
 - `tradebot backtest report [run_id]`: show the latest or a specific backtest report.
-- `tradebot run --mode simulate`: start the shared runtime in simulate mode.
-- `tradebot run --mode live`: start the shared runtime in live mode.
+- `tradebot run --mode simulate [--dataset-track TRACK]`: start the shared runtime in simulate mode.
+- `tradebot run --mode live [--dataset-track TRACK]`: start the shared runtime in live mode.
 - `tradebot status`: show the latest known runtime, portfolio, and health state.
 - `tradebot stop`: request termination of a tracked managed runtime process.
 
