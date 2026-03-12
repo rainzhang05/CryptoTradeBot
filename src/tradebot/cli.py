@@ -19,6 +19,8 @@ from tradebot.runtime import RuntimeSnapshot
 
 app = typer.Typer(help="CLI for the crypto spot trading bot.")
 config_app = typer.Typer(help="Inspect and validate non-secret configuration.")
+kraken_app = typer.Typer(help="Manage Kraken-specific operator workflows.")
+kraken_auth_app = typer.Typer(help="Manage Kraken API credentials.")
 data_app = typer.Typer(help="Import, inspect, and validate local market data.")
 features_app = typer.Typer(help="Build deterministic research datasets.")
 backtest_app = typer.Typer(help="Run historical backtests and inspect reports.")
@@ -28,6 +30,8 @@ logs_app = typer.Typer(help="Inspect durable application logs.")
 ASSETS_OPTION = typer.Option(default=None)
 
 app.add_typer(config_app, name="config")
+app.add_typer(kraken_app, name="kraken")
+kraken_app.add_typer(kraken_auth_app, name="auth")
 app.add_typer(data_app, name="data")
 app.add_typer(features_app, name="features")
 app.add_typer(backtest_app, name="backtest")
@@ -65,7 +69,7 @@ def _runtime_emitter(event: Any) -> None:
 
 
 def launch_shell() -> None:
-    """Launch the interactive Tradebot shell."""
+    """Launch the interactive CryptoTradeBot shell."""
     from tradebot.shell import TradebotShellApp
 
     TradebotShellApp().run()
@@ -82,9 +86,9 @@ def main(argv: list[str] | None = None) -> None:
         if _is_interactive_terminal():
             launch_shell()
             return
-        app(prog_name="tradebot", args=["--help"])
+        app(prog_name="cryptotradebot", args=["--help"])
         return
-    app(prog_name="tradebot", args=args)
+    app(prog_name="cryptotradebot", args=args)
 
 
 @app.command("version")
@@ -99,8 +103,8 @@ def config_path() -> None:
     typer.echo(render_direct_output("config_path", _invoke_direct("config_path")))
 
 
-@app.command("init")
-def init(
+@app.command("setup")
+def setup(
     home: str | None = typer.Option(
         default=None,
         help="Optional application-home override.",
@@ -109,10 +113,13 @@ def init(
         default=False,
         help="Rewrite starter config and env files when they already exist.",
     ),
+    assets: list[str] | None = ASSETS_OPTION,
 ) -> None:
-    """Bootstrap the default application home and starter files."""
-    payload = _invoke_direct("init", {"home": home, "force": force})
-    typer.echo(render_direct_output("init", payload))
+    """Initialize the app home, prepare runtime-ready data, and run readiness checks."""
+    payload = _invoke_direct("setup", {"home": home, "force": force, "assets": assets})
+    typer.echo(render_direct_output("setup", payload))
+    if isinstance(payload, dict) and not bool(payload["ok"]):
+        raise typer.Exit(code=1)
 
 
 @app.command("shell")
@@ -120,14 +127,22 @@ def shell_command() -> None:
     """Launch the interactive operator shell explicitly."""
     launch_shell()
 
-
-@app.command("doctor")
-def doctor() -> None:
-    """Validate config, local environment, and exchange connectivity."""
-    payload = _invoke_direct("doctor")
-    typer.echo(render_direct_output("doctor", payload))
-    if isinstance(payload, dict) and not bool(payload["ok"]):
-        raise typer.Exit(code=1)
+@kraken_auth_app.command("set")
+def kraken_auth_set(
+    api_key: str = typer.Argument(..., help="Kraken API key."),
+    secret: str | None = typer.Option(default=None, help="Optional Kraken API secret."),
+    otp: str | None = typer.Option(default=None, help="Optional Kraken OTP value."),
+) -> None:
+    """Write Kraken credentials into the active environment file."""
+    typer.echo(
+        render_direct_output(
+            "kraken_auth_set",
+            _invoke_direct(
+                "kraken_auth_set",
+                {"api_key": api_key, "api_secret": secret, "otp": otp},
+            ),
+        )
+    )
 
 
 @config_app.command("show")
