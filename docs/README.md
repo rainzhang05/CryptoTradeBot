@@ -40,6 +40,7 @@ This project is a production-grade crypto spot trading bot with these fixed V1 p
 - User interface: CLI only
 - Runtime modes: `simulate` and `live`
 - Strategy shape: deterministic rule-only portfolio allocation with named presets
+- Root operator command: `cryptotradebot`
 - Research default dataset track: `dynamic_universe_kraken_only`
 - Runtime presets: `live_default` and `max_profit`
 - Universe policy: fixed V1 universe of 10 Kraken-tradable large-cap assets
