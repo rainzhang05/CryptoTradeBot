@@ -18,7 +18,6 @@ Required for:
 
 - feature calculations
 - strategy rules
-- model input preparation
 - portfolio math
 - configuration loading and validation
 - exchange adapter logic that can be isolated
@@ -40,8 +39,8 @@ Required for:
 - deterministic strategy outputs on fixture datasets
 - dynamic-universe feature generation and active-universe breadth handling
 - simulate versus expected-fill behavior
-- model inference contract stability
-- research sweep ranking, resume behavior, and report generation consistency
+- backtest report generation consistency
+- preset comparison behavior where presets intentionally diverge
 
 ### End-to-end or smoke tests
 
@@ -53,9 +52,8 @@ Required for:
 
 ## Strategy-Specific Validation Requirements
 
-- compare hybrid strategy results against a rule-only baseline
-- compare promoted model outputs against prior production model outputs
-- ensure no leakage in training or validation windows
+- compare named rule-only presets against each other where behavior intentionally differs
+- ensure deterministic datasets contain only point-in-time feature values
 - ensure Kraken-based evaluation remains the official benchmark
 
 ## CI Requirements
