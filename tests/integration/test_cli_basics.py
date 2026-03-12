@@ -119,7 +119,18 @@ paths: {}
     )
     monkeypatch.setenv("BOT_CONFIG_PATH", str(config_path))
 
-    result = runner.invoke(app, ["run", "--mode", "simulate", "--max-cycles", "1"])
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--mode",
+            "simulate",
+            "--max-cycles",
+            "1",
+            "--strategy-preset",
+            "max_profit",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "Completed 1 cycle(s) in simulate mode." in result.stdout
