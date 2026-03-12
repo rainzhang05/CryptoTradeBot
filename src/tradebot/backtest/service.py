@@ -31,7 +31,7 @@ from tradebot.backtest.storage import (
     write_csv_rows,
 )
 from tradebot.cancellation import CancellationToken
-from tradebot.config import AppConfig
+from tradebot.config import AppConfig, identify_strategy_preset
 from tradebot.data.integrity import read_candles
 from tradebot.data.models import Candle
 from tradebot.data.storage import canonical_candle_file, write_json
@@ -69,6 +69,7 @@ class BacktestService:
     ) -> BacktestRunSummary:
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
+        strategy_preset = identify_strategy_preset(self.config)
         self.logger.info(
             "backtest started",
             extra={
@@ -77,6 +78,7 @@ class BacktestService:
                 "model_id": model_id,
                 "use_active_model": use_active_model,
                 "dataset_track": dataset_track,
+                "strategy_preset": strategy_preset,
                 "start_timestamp": start_timestamp,
                 "end_timestamp": end_timestamp,
             },
@@ -295,6 +297,7 @@ class BacktestService:
             equity_curve_file=str(equity_path),
             decisions_file=str(decisions_path),
             dataset_id=feature_store.dataset_id,
+            strategy_preset=strategy_preset,
             decision_count=len(decisions),
             fill_count=len(fills),
             final_equity_usd=final_equity,
@@ -318,6 +321,7 @@ class BacktestService:
             "model_id": applied_model_id,
             "model_family": applied_model_family,
             "dataset_track": feature_store.dataset_track,
+            "strategy_preset": strategy_preset,
             "metrics": metrics,
             "yearly_returns": yearly_returns,
             "benchmarks": benchmarks,
