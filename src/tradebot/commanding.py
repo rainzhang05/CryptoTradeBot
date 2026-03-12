@@ -28,10 +28,8 @@ from tradebot.config import (
 from tradebot.constants import FIXED_UNIVERSE, SUPPORTED_MODES
 from tradebot.data.service import DataService
 from tradebot.logging_config import configure_logging
-from tradebot.model.service import ModelService
 from tradebot.operations import OperationsService
-from tradebot.research.experiments import DATASET_TRACKS, ResearchSweepService
-from tradebot.research.service import ResearchService
+from tradebot.research.service import DATASET_TRACKS, ResearchService
 from tradebot.runtime import RuntimeService, RuntimeSnapshot
 
 EventKind = Literal[
@@ -129,11 +127,6 @@ def _command_root() -> Path:
     return Path.cwd().resolve()
 
 
-def _models_dir() -> Path:
-    root = _command_root()
-    return root / "artifacts" / "models"
-
-
 def _backtests_dir() -> Path:
     root = _command_root()
     return root / "artifacts" / "backtests"
@@ -142,18 +135,6 @@ def _backtests_dir() -> Path:
 def _artifacts_dir() -> Path:
     root = _command_root()
     return root / "artifacts"
-
-
-def _experiments_dir() -> Path:
-    root = _command_root()
-    return root / "artifacts" / "experiments"
-
-
-def _list_model_ids() -> list[str]:
-    directory = _models_dir()
-    if not directory.exists():
-        return []
-    return sorted(path.name for path in directory.iterdir() if path.is_dir())
 
 
 def _list_backtest_run_ids() -> list[str]:
@@ -172,27 +153,6 @@ def _list_report_sources() -> list[str]:
         for path in directory.rglob("*")
         if path.is_file()
     )
-
-
-def _list_research_sweep_ids() -> list[str]:
-    directory = _experiments_dir()
-    if not directory.exists():
-        return []
-    sweep_ids: list[str] = []
-    for path in sorted(directory.iterdir()):
-        if not path.is_dir():
-            continue
-        manifest_path = path / "manifest.json"
-        results_path = path / "results.csv"
-        if not manifest_path.exists() or not results_path.exists():
-            continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
-        if "sweep_id" in manifest:
-            sweep_ids.append(path.name)
-    return sweep_ids
 
 
 def _list_dataset_tracks() -> list[str]:
@@ -259,8 +219,6 @@ def render_runtime_snapshot(snapshot: RuntimeSnapshot) -> str:
             f"fills={snapshot.fill_count}",
             f"recent_fills={_render_fill_summary(snapshot)}",
             f"open_orders={snapshot.open_order_count}",
-            f"model={snapshot.model_id or 'n/a'}",
-            f"model_summary={_render_model_summary(snapshot)}",
             f"decision_executed={'yes' if snapshot.decision_executed else 'no'}",
             f"freeze={snapshot.freeze_reason or 'none'}",
             f"incidents={incidents or 'none'}",
@@ -293,32 +251,6 @@ def _render_fill_summary(snapshot: RuntimeSnapshot) -> str:
         quantity = float(fill.get("quantity", 0.0))
         rendered.append(f"{asset}:{side}:{quantity:.6f}")
     return ",".join(rendered)
-
-
-def _render_model_summary(snapshot: RuntimeSnapshot) -> str:
-    predictions = getattr(snapshot, "predictions", {})
-    if not predictions:
-        return "n/a"
-    ranked = sorted(
-        predictions.items(),
-        key=lambda item: float(item[1].get("expected_return_score", 0.0)),
-        reverse=True,
-    )
-    top_asset, top_scores = ranked[0]
-    high_downside = sum(
-        1
-        for scores in predictions.values()
-        if float(scores.get("downside_risk_score", 0.0)) >= 0.55
-    )
-    high_sell_risk = sum(
-        1
-        for scores in predictions.values()
-        if float(scores.get("sell_risk_score", 0.0)) >= 0.55
-    )
-    return (
-        f"top={top_asset}:{float(top_scores.get('expected_return_score', 0.0)):.3f},"
-        f"downside_flags={high_downside},sell_flags={high_sell_risk}"
-    )
 
 
 def handle_version(
@@ -697,105 +629,6 @@ def handle_features_build(
     return summary
 
 
-def handle_research_sweep(
-    params: dict[str, object],
-    *,
-    emitter: EventEmitter | None = None,
-    cancellation_token: CancellationToken | None = None,
-) -> dict[str, object]:
-    del cancellation_token
-    config = _load_app_config()
-    preset = str(params.get("preset", "broad_staged"))
-    resume = bool(params.get("resume", False))
-    max_workers = int(str(params.get("max_workers", 1)))
-    limit = params.get("limit")
-    summary = ResearchSweepService(config).run_sweep(
-        preset=preset,
-        resume=resume,
-        max_workers=max_workers,
-        limit=(None if limit in {None, ""} else int(str(limit))),
-    )
-    _emit(emitter, "summary", "Research sweep finished.", summary)
-    return summary
-
-
-def handle_research_report(
-    params: dict[str, object],
-    *,
-    emitter: EventEmitter | None = None,
-    cancellation_token: CancellationToken | None = None,
-) -> dict[str, object]:
-    del cancellation_token
-    config = _load_app_config()
-    sweep_id = params.get("sweep_id")
-    summary = ResearchSweepService(config).load_report(
-        sweep_id=(None if sweep_id in {None, ""} else str(sweep_id))
-    )
-    _emit(emitter, "summary", "Loaded research sweep report.", summary)
-    return summary
-
-
-def handle_model_train(
-    params: dict[str, object],
-    *,
-    emitter: EventEmitter | None = None,
-    cancellation_token: CancellationToken | None = None,
-) -> dict[str, object]:
-    _check_cancel(cancellation_token)
-    config = _load_app_config()
-    assets = _tuple_or_none(params.get("assets"))
-    force_features = bool(params.get("force_features", False))
-    dataset_track = params.get("dataset_track")
-    family = str(params.get("family", "ridge_logistic"))
-    _emit(emitter, "step_started", "Training model artifact.")
-    summary = ModelService(config).train_model(
-        assets=assets,
-        force_features=force_features,
-        dataset_track=(None if dataset_track in {None, ""} else str(dataset_track)),
-        family=family,
-        cancellation_token=cancellation_token,
-        progress_callback=(
-            None
-            if emitter is None
-            else lambda payload: _emit(emitter, "status", "Model training progress.", payload)
-        ),
-    ).to_dict()
-    _emit(emitter, "summary", "Model training finished.", summary)
-    return summary
-
-
-def handle_model_validate(
-    params: dict[str, object],
-    *,
-    emitter: EventEmitter | None = None,
-    cancellation_token: CancellationToken | None = None,
-) -> dict[str, object]:
-    _check_cancel(cancellation_token)
-    config = _load_app_config()
-    model_id = params.get("model_id")
-    summary = ModelService(config).validate_model(
-        model_id=(None if model_id in {None, ""} else str(model_id))
-    ).to_dict()
-    _emit(emitter, "summary", "Model validation finished.", summary)
-    return summary
-
-
-def handle_model_promote(
-    params: dict[str, object],
-    *,
-    emitter: EventEmitter | None = None,
-    cancellation_token: CancellationToken | None = None,
-) -> dict[str, object]:
-    _check_cancel(cancellation_token)
-    config = _load_app_config()
-    model_id = params.get("model_id")
-    summary = ModelService(config).promote_model(
-        model_id=(None if model_id in {None, ""} else str(model_id))
-    ).to_dict()
-    _emit(emitter, "summary", "Model promoted.", summary)
-    return summary
-
-
 def handle_backtest_run(
     params: dict[str, object],
     *,
@@ -806,9 +639,7 @@ def handle_backtest_run(
     config = _load_app_config()
     assets = _tuple_or_none(params.get("assets"))
     force_features = bool(params.get("force_features", False))
-    model_id = params.get("model_id")
     dataset_track = params.get("dataset_track")
-    use_active_model = bool(params.get("use_active_model", True))
     strategy_preset = params.get("strategy_preset")
     if strategy_preset not in {None, ""}:
         config = apply_strategy_preset(config, str(strategy_preset))
@@ -816,8 +647,6 @@ def handle_backtest_run(
     summary = BacktestService(config).run_backtest(
         assets=assets,
         force_features=force_features,
-        model_id=(None if model_id in {None, ""} else str(model_id)),
-        use_active_model=use_active_model,
         dataset_track=(None if dataset_track in {None, ""} else str(dataset_track)),
         cancellation_token=cancellation_token,
         progress_callback=(
@@ -1052,7 +881,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         "features_build",
         ("features", "build"),
-        "Build a deterministic feature and label dataset.",
+        "Build a deterministic feature dataset.",
         fields=(
             CommandFieldSpec(
                 name="assets",
@@ -1073,118 +902,6 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 label="Dataset track",
                 flags=("--dataset-track",),
                 choice_provider=_list_dataset_tracks,
-            ),
-        ),
-    ),
-    CommandSpec(
-        "research_sweep",
-        ("research", "sweep"),
-        "Run a staged research sweep across datasets, rules, and ML variants.",
-        fields=(
-            CommandFieldSpec(
-                name="preset",
-                label="Preset",
-                flags=("--preset",),
-                default="broad_staged",
-                choices=("broad_staged",),
-            ),
-            CommandFieldSpec(
-                name="resume",
-                label="Resume",
-                flags=("--resume",),
-                value_type="bool",
-                default=False,
-            ),
-            CommandFieldSpec(
-                name="max_workers",
-                label="Max workers",
-                flags=("--max-workers",),
-                value_type="int",
-                default=1,
-            ),
-            CommandFieldSpec(
-                name="limit",
-                label="Experiment limit",
-                flags=("--limit",),
-                value_type="int",
-            ),
-        ),
-    ),
-    CommandSpec(
-        "research_report",
-        ("research", "report"),
-        "Print the latest or a specific research sweep report.",
-        fields=(
-            CommandFieldSpec(
-                name="sweep_id",
-                label="Sweep id",
-                kind="argument",
-                choice_provider=_list_research_sweep_ids,
-            ),
-        ),
-    ),
-    CommandSpec(
-        "model_train",
-        ("model", "train"),
-        "Train the Phase 6 ML artifact with walk-forward validation.",
-        fields=(
-            CommandFieldSpec(
-                name="assets",
-                label="Assets",
-                flags=("--assets",),
-                multiple=True,
-                choice_provider=lambda: list(FIXED_UNIVERSE),
-            ),
-            CommandFieldSpec(
-                name="force_features",
-                label="Force feature rebuild",
-                flags=("--force-features",),
-                value_type="bool",
-                default=False,
-            ),
-            CommandFieldSpec(
-                name="dataset_track",
-                label="Dataset track",
-                flags=("--dataset-track",),
-                choice_provider=_list_dataset_tracks,
-            ),
-            CommandFieldSpec(
-                name="family",
-                label="Model family",
-                flags=("--family",),
-                choices=(
-                    "ridge_logistic",
-                    "elastic_net_logistic",
-                    "random_forest",
-                    "hist_gradient_boosting",
-                ),
-                default="ridge_logistic",
-            ),
-        ),
-    ),
-    CommandSpec(
-        "model_validate",
-        ("model", "validate"),
-        "Validate one trained model artifact against the promotion rules.",
-        fields=(
-            CommandFieldSpec(
-                name="model_id",
-                label="Model id",
-                flags=("--model-id",),
-                choice_provider=_list_model_ids,
-            ),
-        ),
-    ),
-    CommandSpec(
-        "model_promote",
-        ("model", "promote"),
-        "Promote one validated model artifact to the active strategy pointer.",
-        fields=(
-            CommandFieldSpec(
-                name="model_id",
-                label="Model id",
-                flags=("--model-id",),
-                choice_provider=_list_model_ids,
             ),
         ),
     ),
@@ -1212,20 +929,6 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
                 label="Dataset track",
                 flags=("--dataset-track",),
                 choice_provider=_list_dataset_tracks,
-            ),
-            CommandFieldSpec(
-                name="model_id",
-                label="Model id",
-                flags=("--model-id",),
-                choice_provider=_list_model_ids,
-            ),
-            CommandFieldSpec(
-                name="use_active_model",
-                label="Use active model",
-                flags=("--use-active-model",),
-                negative_flags=("--no-use-active-model",),
-                value_type="bool",
-                default=True,
             ),
             CommandFieldSpec(
                 name="strategy_preset",
@@ -1274,11 +977,6 @@ COMMAND_HANDLERS: dict[str, Callable[..., object]] = {
     "data_complete": handle_data_complete,
     "data_prune_raw": handle_data_prune_raw,
     "features_build": handle_features_build,
-    "research_sweep": handle_research_sweep,
-    "research_report": handle_research_report,
-    "model_train": handle_model_train,
-    "model_validate": handle_model_validate,
-    "model_promote": handle_model_promote,
     "backtest_run": handle_backtest_run,
     "backtest_report": handle_backtest_report,
 }
