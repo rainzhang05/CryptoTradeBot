@@ -200,7 +200,9 @@ class LiveExecutionService:
             research_settings_signature=research_settings_signature,
             feature_column_signature=feature_column_signature,
         )
-        if active_reference is None:
+        model_id: str | None = None
+        predictions: dict[str, dict[str, float]] = {}
+        if active_reference is None and self.config.runtime.live_require_active_model:
             return self._freeze_summary(
                 state=state,
                 state_path=state_path,
@@ -215,39 +217,45 @@ class LiveExecutionService:
                 open_orders=account.open_orders,
                 holdings=self._holdings(account.positions),
             )
-
-        rows_for_timestamp, model_id = self.model_service.infer_rows_with_active_model(
-            rows_for_timestamp,
-            dataset_track=selected_track,
-            selected_assets=selected_assets,
-            research_settings_signature=research_settings_signature,
-            feature_column_signature=feature_column_signature,
-        )
-        predictions = self._prediction_summary(rows_for_timestamp)
-        if model_id is None or any(
-            prediction_key not in row
-            for row in rows_for_timestamp.values()
-            for prediction_key in (
-                "expected_return_score",
-                "downside_risk_score",
-                "sell_risk_score",
+        if active_reference is None:
+            incidents.append("rule_only_live_fallback")
+            self.logger.warning(
+                "live cycle using rule-only fallback",
+                extra={"dataset_id": dataset_id, "timestamp": latest_timestamp},
             )
-        ):
-            return self._freeze_summary(
-                state=state,
-                state_path=state_path,
-                report_path=report_path,
-                freeze_reason="missing_model_predictions",
-                system_status=system_status,
-                incidents=incidents + ["missing_model_predictions"],
-                dataset_id=dataset_id,
-                timestamp=latest_timestamp,
-                cash_usd=account.cash_usd,
-                positions=account.positions,
-                open_orders=account.open_orders,
-                holdings=self._holdings(account.positions),
-                predictions=predictions,
+        else:
+            rows_for_timestamp, model_id = self.model_service.infer_rows_with_active_model(
+                rows_for_timestamp,
+                dataset_track=selected_track,
+                selected_assets=selected_assets,
+                research_settings_signature=research_settings_signature,
+                feature_column_signature=feature_column_signature,
             )
+            predictions = self._prediction_summary(rows_for_timestamp)
+            if model_id is None or any(
+                prediction_key not in row
+                for row in rows_for_timestamp.values()
+                for prediction_key in (
+                    "expected_return_score",
+                    "downside_risk_score",
+                    "sell_risk_score",
+                )
+            ):
+                return self._freeze_summary(
+                    state=state,
+                    state_path=state_path,
+                    report_path=report_path,
+                    freeze_reason="missing_model_predictions",
+                    system_status=system_status,
+                    incidents=incidents + ["missing_model_predictions"],
+                    dataset_id=dataset_id,
+                    timestamp=latest_timestamp,
+                    cash_usd=account.cash_usd,
+                    positions=account.positions,
+                    open_orders=account.open_orders,
+                    holdings=self._holdings(account.positions),
+                    predictions=predictions,
+                )
 
         prices_by_asset = self._prices_by_asset(selected_assets)
         if any(asset not in prices_by_asset for asset in selected_assets):
