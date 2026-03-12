@@ -108,10 +108,10 @@ The Phase 3 implementation uses these deterministic daily research defaults:
 - default runtime preset: `live_default`
 - default shell layers: regime filter on, entry filter on, volatility veto off, gradual
   reduction off
-- default concentration posture: maximum 5 positions, maximum 35% per asset, 3% rebalance
+- default concentration posture: maximum 3 positions, maximum 35% per asset, 5% rebalance
   threshold, and a 2-point held-asset score bonus
-- default live risk posture: neutral exposure 70%, defensive exposure 35%, elevated-caution
-  multiplier 90%, reduced-aggressiveness multiplier 68%, catastrophe multiplier 24%
+- default live risk posture: neutral exposure 78%, defensive exposure 45%, elevated-caution
+  multiplier 96%, reduced-aggressiveness multiplier 78%, catastrophe multiplier 32%
 - default live entry and hold floors: entry momentum 0.0, entry trend gap 0.0, hold momentum
   -3%, hold trend gap -3%, max realized volatility 30%, reduction volatility threshold 16%
 - momentum windows: 7, 30, and 90 trading days
