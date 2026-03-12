@@ -158,12 +158,12 @@ Responsibilities:
 
 Phase 8 implements the documented CLI surface through operator-oriented services that:
 
-- validate Kraken connectivity through `tradebot doctor`
+- validate operator readiness through `cryptotradebot setup`
 - expose tracked runtime status and managed-process stop control
 - manage the configured alert email recipient and SMTP test flow
 - expose the latest runtime context and alert history for operator inspection
 - list and export stored reports and artifacts
-- tail durable JSON log files from `runtime/logs/tradebot.log`
+- tail durable JSON log files from `runtime/logs/cryptotradebot.log`
 
 Phase 11 extends the CLI subsystem with:
 
@@ -227,9 +227,9 @@ The system must persist enough state to resume safely after restart.
 
 Phase 4 also persists simulate-mode portfolio state so repeated local runs can resume from the last simulated holdings and cash balance.
 Phase 7 also persists live-mode balances, holdings, open orders, fills, and freeze state so live runs can resume after restart with Kraken reconciliation.
-Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `tradebot status` and `tradebot stop` can inspect or manage an active runtime process.
+Phase 8 also persists foreground runtime-process metadata under `runtime/state/runtime_process.json` so `cryptotradebot status` and `cryptotradebot stop` can inspect or manage an active runtime process.
 Phase 9 also persists runtime context under `runtime/state/runtime_context.json`, alert-deduplication state under `runtime/state/alert_state.json`, and operator-facing mirrors under `artifacts/reports/runtime/`.
-Phase 11 changes the default installed workspace from the repository root to a user application home rooted at `~/.tradebot/`, with `TRADEBOT_HOME` and `BOT_CONFIG_PATH` overrides for explicit workflows.
+Phase 11 changes the default installed workspace from the repository root to a user application home rooted at `~/.cryptotradebot/`, with `CRYPTOTRADEBOT_HOME` and `CRYPTOTRADEBOT_CONFIG_PATH` overrides for explicit workflows plus compatibility support for the older `TRADEBOT_HOME` and `BOT_CONFIG_PATH` names.
 
 ## Storage Layout Expectations
 
