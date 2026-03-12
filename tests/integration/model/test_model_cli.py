@@ -21,10 +21,14 @@ def _stub_promotion_backtest_comparison(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         ModelService,
         "_promotion_backtest_comparison",
-        lambda self, *, model_id, assets: {
+        lambda self, *, model_id, assets, dataset_track: {
             "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
             "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.01),
             "incremental_total_return": 0.01,
+            "hybrid_cagr": 0.03,
+            "rule_only_cagr": 0.02,
+            "yearly_win_rate": 1.0,
+            "max_drawdown_gap": 0.01,
         },
     )
 
@@ -106,9 +110,24 @@ def test_model_train_validate_and_promote_commands(tmp_path: Path, monkeypatch) 
       [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
     )
 
-    train_result = runner.invoke(app, ["model", "train", "--assets", "BTC", "--assets", "ETH"])
+    train_result = runner.invoke(
+        app,
+        [
+            "model",
+            "train",
+            "--assets",
+            "BTC",
+            "--assets",
+            "ETH",
+            "--dataset-track",
+            "dynamic_universe_kraken_only",
+            "--family",
+            "ridge_logistic",
+        ],
+    )
     assert train_result.exit_code == 0
     assert '"model_id":' in train_result.stdout
+    assert '"dataset_id":' in train_result.stdout
 
     validate_result = runner.invoke(app, ["model", "validate"])
     assert validate_result.exit_code == 0
@@ -144,7 +163,19 @@ def test_model_train_reports_actionable_error_when_history_is_too_short(
         [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
     )
 
-    result = runner.invoke(app, ["model", "train", "--assets", "BTC", "--assets", "ETH"])
+    result = runner.invoke(
+        app,
+        [
+            "model",
+            "train",
+            "--assets",
+            "BTC",
+            "--assets",
+            "ETH",
+            "--dataset-track",
+            "dynamic_universe_kraken_only",
+        ],
+    )
 
     assert result.exit_code == 1
     assert "Not enough usable aligned feature timestamps" in result.stderr
@@ -175,7 +206,19 @@ def test_model_promote_fails_cleanly_when_validation_gates_fail(
         [49, 50, 51, 52, 54, 57, 59, 62, 64, 67, 69, 72],
     )
 
-    train_result = runner.invoke(app, ["model", "train", "--assets", "BTC", "--assets", "ETH"])
+    train_result = runner.invoke(
+        app,
+        [
+            "model",
+            "train",
+            "--assets",
+            "BTC",
+            "--assets",
+            "ETH",
+            "--dataset-track",
+            "dynamic_universe_kraken_only",
+        ],
+    )
     assert train_result.exit_code == 0
 
     promote_result = runner.invoke(app, ["model", "promote"])
@@ -204,14 +247,30 @@ def test_model_promote_fails_cleanly_when_hybrid_matches_rule_only(
     monkeypatch.setattr(
         ModelService,
         "_promotion_backtest_comparison",
-        lambda self, *, model_id, assets: {
+        lambda self, *, model_id, assets, dataset_track: {
             "hybrid": SimpleNamespace(run_id="hybrid-run", total_return=0.02),
             "rule_only": SimpleNamespace(run_id="rule-only-run", total_return=0.02),
             "incremental_total_return": 0.0,
+            "hybrid_cagr": 0.02,
+            "rule_only_cagr": 0.02,
+            "yearly_win_rate": 1.0,
+            "max_drawdown_gap": 0.01,
         },
     )
 
-    train_result = runner.invoke(app, ["model", "train", "--assets", "BTC", "--assets", "ETH"])
+    train_result = runner.invoke(
+        app,
+        [
+            "model",
+            "train",
+            "--assets",
+            "BTC",
+            "--assets",
+            "ETH",
+            "--dataset-track",
+            "dynamic_universe_kraken_only",
+        ],
+    )
     assert train_result.exit_code == 0
 
     promote_result = runner.invoke(app, ["model", "promote"])
