@@ -505,6 +505,7 @@ def load_config(config_path: Path | None = None, env_path: Path | None = None) -
 
     if not isinstance(raw_config, dict):
         raise ConfigError("Top-level YAML config must be a mapping")
+    raw_config = _upgrade_legacy_runtime_defaults(resolved_config_path, raw_config)
 
     merged_config: dict[str, Any] = {
         **raw_config,
@@ -525,6 +526,45 @@ def load_config(config_path: Path | None = None, env_path: Path | None = None) -
         return AppConfig.model_validate(merged_config)
     except ValidationError as exc:
         raise ConfigError(f"Invalid application configuration: {exc}") from exc
+
+
+def _upgrade_legacy_runtime_defaults(
+    config_path: Path,
+    raw_config: dict[str, Any],
+) -> dict[str, Any]:
+    runtime = raw_config.get("runtime")
+    app = raw_config.get("app")
+    if not isinstance(runtime, dict) or not isinstance(app, dict):
+        return raw_config
+    if runtime.get("max_cycles") != 1:
+        return raw_config
+    if app.get("environment", "local") != "local":
+        return raw_config
+    if app.get("log_level", "INFO") != "INFO":
+        return raw_config
+    if app.get("log_format", "json") != "json":
+        return raw_config
+
+    legacy_defaults: dict[str, object] = {
+        "default_mode": "simulate",
+        "cycle_interval_seconds": 1.0,
+        "live_order_poll_seconds": 2.0,
+        "live_order_timeout_seconds": 20.0,
+        "live_dead_man_switch_seconds": 60,
+        "live_max_order_failures": 2,
+    }
+    if any(runtime.get(key, value) != value for key, value in legacy_defaults.items()):
+        return raw_config
+
+    upgraded = {
+        **raw_config,
+        "runtime": {
+            **runtime,
+            "max_cycles": None,
+        },
+    }
+    config_path.write_text(yaml.safe_dump(upgraded, sort_keys=False), encoding="utf-8")
+    return upgraded
 
 
 def sanitized_config_payload(config: AppConfig) -> dict[str, Any]:
