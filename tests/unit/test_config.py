@@ -103,6 +103,29 @@ paths: {}
     assert config.runtime.max_cycles is None
 
 
+def test_load_config_accepts_explicit_null_runtime_cycle_limit(
+    tmp_path: Path,
+) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app: {}
+runtime:
+  default_mode: simulate
+  max_cycles: null
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+    )
+
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+    assert config.runtime.max_cycles is None
+
+
 def test_load_config_upgrades_legacy_starter_cycle_limit_to_continuous(
     tmp_path: Path,
 ) -> None:
