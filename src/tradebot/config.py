@@ -52,12 +52,19 @@ class RuntimeSettings(BaseModel):
     """Runtime settings shared by simulate and live mode."""
 
     default_mode: Literal["simulate", "live"] = "simulate"
-    max_cycles: int | None = Field(default=None, ge=1)
+    max_cycles: int | None = None
     cycle_interval_seconds: float = Field(default=1.0, gt=0)
     live_order_poll_seconds: float = Field(default=2.0, gt=0)
     live_order_timeout_seconds: float = Field(default=20.0, gt=0)
     live_dead_man_switch_seconds: int = Field(default=60, ge=0)
     live_max_order_failures: int = Field(default=2, ge=1)
+
+    @field_validator("max_cycles")
+    @classmethod
+    def validate_max_cycles(cls, value: int | None) -> int | None:
+        if value is not None and value < 1:
+            raise ValueError("runtime.max_cycles must be at least 1 when provided")
+        return value
 
 
 class ExchangeSettings(BaseModel):
