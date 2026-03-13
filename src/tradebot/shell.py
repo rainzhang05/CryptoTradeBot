@@ -74,6 +74,16 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     """Guided parameter-selection screen for shell commands."""
 
     CSS = """
+    * {
+        scrollbar-background: ansi_default;
+        scrollbar-background-hover: ansi_default;
+        scrollbar-background-active: ansi_default;
+        scrollbar-color: ansi_bright_black;
+        scrollbar-color-hover: #8b5cf6;
+        scrollbar-color-active: #8b5cf6;
+        scrollbar-corner-color: ansi_default;
+    }
+
     CommandFormScreen {
         align: center middle;
         background: ansi_default;
@@ -87,7 +97,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
         background: ansi_default;
         color: ansi_default;
         padding: 1 2;
-        scrollbar-size: 0 0;
+        scrollbar-size-vertical: 1;
     }
 
     Input {
@@ -104,7 +114,7 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
     SelectionList {
         border: round #6d28d9;
         color: ansi_default;
-        scrollbar-size: 0 0;
+        scrollbar-size-vertical: 1;
     }
 
     OptionList:focus,
@@ -203,15 +213,6 @@ class CommandFormScreen(ModalScreen[dict[str, object] | None]):
                 yield Static(field_spec.help, classes="field-help")
 
     def on_mount(self) -> None:
-        form = self.query_one("#command-form", VerticalScroll)
-        form.show_vertical_scrollbar = False
-        form.show_horizontal_scrollbar = False
-        for option_list in self.query(OptionList):
-            option_list.show_vertical_scrollbar = False
-            option_list.show_horizontal_scrollbar = False
-        for selection_list in self.query(SelectionList):
-            selection_list.show_vertical_scrollbar = False
-            selection_list.show_horizontal_scrollbar = False
         for field_spec in self.spec.fields:
             if (
                 field_spec.resolved_choices()
@@ -301,6 +302,16 @@ class TradebotShellApp(App[None]):
     """Interactive operator shell for the CryptoTradeBot command surface."""
 
     CSS = """
+    * {
+        scrollbar-background: ansi_default;
+        scrollbar-background-hover: ansi_default;
+        scrollbar-background-active: ansi_default;
+        scrollbar-color: ansi_bright_black;
+        scrollbar-color-hover: #8b5cf6;
+        scrollbar-color-active: #8b5cf6;
+        scrollbar-corner-color: ansi_default;
+    }
+
     App {
         background: ansi_default;
         color: ansi_default;
@@ -336,7 +347,7 @@ class TradebotShellApp(App[None]):
         padding: 1 2;
         background: ansi_default;
         color: ansi_default;
-        scrollbar-size: 0 0;
+        scrollbar-size-vertical: 1;
     }
 
     #input-region {
@@ -367,7 +378,7 @@ class TradebotShellApp(App[None]):
         margin-top: 1;
         background: ansi_default;
         color: ansi_default;
-        scrollbar-size: 0 0;
+        scrollbar-size-vertical: 1;
     }
 
     #command-suggestions:focus {
@@ -377,7 +388,7 @@ class TradebotShellApp(App[None]):
     OptionList {
         background: ansi_default;
         color: ansi_default;
-        scrollbar-size: 0 0;
+        scrollbar-size-vertical: 1;
     }
 
     OptionList > .option-list--option-highlighted {
@@ -410,7 +421,7 @@ class TradebotShellApp(App[None]):
     SelectionList {
         background: ansi_default;
         color: ansi_default;
-        scrollbar-size: 0 0;
+        scrollbar-size-vertical: 1;
     }
 
     Static {
@@ -496,12 +507,7 @@ class TradebotShellApp(App[None]):
 
     def on_mount(self) -> None:
         bootstrap_summary = ensure_app_home_initialized()
-        transcript = self._main_screen().query_one("#transcript", RichLog)
         suggestions = self._main_screen().query_one("#command-suggestions", OptionList)
-        transcript.show_vertical_scrollbar = False
-        transcript.show_horizontal_scrollbar = False
-        suggestions.show_vertical_scrollbar = False
-        suggestions.show_horizontal_scrollbar = False
         suggestions.display = False
         self._refresh_context_entry(resolve_status=True)
         self._append_entry("system", "Crypto Trade Bot shell ready.")
