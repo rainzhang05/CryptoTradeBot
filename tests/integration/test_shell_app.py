@@ -7,7 +7,8 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, OptionList, RichLog, Static
+from textual.containers import VerticalScroll
+from textual.widgets import Button, Input, OptionList, RichLog, SelectionList, Static
 
 import tradebot.shell as shell_module
 from tradebot.config import initialize_app_home
@@ -42,10 +43,8 @@ async def test_shell_first_run_auto_bootstraps_home(
         assert "Session:" in transcript
         assert "Created your default CryptoTradeBot home" in transcript
         assert "Shell help" not in transcript
-        assert transcript_widget.styles.scrollbar_size_vertical == 0
-        assert transcript_widget.styles.scrollbar_size_horizontal == 0
-        assert suggestions.styles.scrollbar_size_vertical == 0
-        assert suggestions.styles.scrollbar_size_horizontal == 0
+        assert transcript_widget.styles.scrollbar_size_vertical == 1
+        assert suggestions.styles.scrollbar_size_vertical == 1
 
 
 @pytest.mark.anyio
@@ -102,6 +101,32 @@ async def test_shell_shows_command_suggestions_and_guided_form(
         await pilot.pause()
 
         assert app.screen.query_one("#form-run", Button)
+        command_form = app.screen.query_one("#command-form", VerticalScroll)
+        assert command_form.styles.scrollbar_size_vertical == 1
+        assets_selection = app.screen.query_one("#field-assets-selection", SelectionList)
+        assert assets_selection.styles.scrollbar_size_vertical == 1
+
+
+@pytest.mark.anyio
+async def test_shell_scrollbars_use_visible_terminal_adaptive_styling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "cryptotradebot-home"
+    initialize_app_home(home=home)
+    monkeypatch.delenv("CRYPTOTRADEBOT_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("BOT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("CRYPTOTRADEBOT_HOME", str(home))
+
+    app = TradebotShellApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        transcript = app.screen.query_one("#transcript", RichLog)
+        suggestions = app.screen.query_one("#command-suggestions", OptionList)
+
+        assert transcript.styles.scrollbar_background.css == "ansi_default"
+        assert transcript.styles.scrollbar_color.css == "ansi_bright_black"
+        assert suggestions.styles.scrollbar_color_hover.css == "rgb(139,92,246)"
 
 
 @pytest.mark.anyio
