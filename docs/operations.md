@@ -100,6 +100,7 @@ The shell must:
 - present operator context such as active home, config path, runtime mode, and command state
 - render structured command progress and summaries in readable transcript form
 - adapt its default foreground text to the terminal's active background and foreground palette while keeping the violet shell border accents stable
+- show a simple right-side scrollbar automatically on transcript, forms, and other overflow regions, with thumb colors that remain visible on both light and dark terminal palettes
 - keep the input surface locked while a long-running command is active
 - treat `Ctrl-C` as a shell-exit shortcut with a confirmation guard: the first press must log an instruction to press `Ctrl-C` again, and the second press within 5 seconds must exit the shell
 - keep durable JSON logs and operator-facing reports as the system of record beneath the hood
