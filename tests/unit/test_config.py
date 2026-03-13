@@ -103,6 +103,38 @@ paths: {}
     assert config.runtime.max_cycles is None
 
 
+def test_load_config_upgrades_legacy_starter_cycle_limit_to_continuous(
+    tmp_path: Path,
+) -> None:
+    config_path = write_config(
+        tmp_path,
+        """
+app:
+  environment: local
+  log_level: INFO
+  log_format: json
+runtime:
+  default_mode: simulate
+  max_cycles: 1
+  cycle_interval_seconds: 1.0
+  live_order_poll_seconds: 2.0
+  live_order_timeout_seconds: 20.0
+  live_dead_man_switch_seconds: 60
+  live_max_order_failures: 2
+exchange: {}
+strategy:
+  fixed_universe: [BTC, ETH, BNB, XRP, SOL, ADA, DOGE, TRX, AVAX, LINK]
+alerts: {}
+paths: {}
+""",
+    )
+
+    config = load_config(config_path=config_path, env_path=tmp_path / ".env")
+
+    assert config.runtime.max_cycles is None
+    assert "max_cycles: null" in config_path.read_text(encoding="utf-8")
+
+
 def test_apply_strategy_preset_can_switch_to_max_profit_profile(tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path,
